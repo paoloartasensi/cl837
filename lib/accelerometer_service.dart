@@ -1,56 +1,8 @@
 import 'dart:async';
+import 'dart:core';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-/// Classe per analizzare la frequenza di campionamento
-class FrequencyAnalyzer {
-  final int windowSizeMs;
-  final List<DateTime> _timestamps = [];
-  DateTime? _lastPrintTime;
-  double _currentFrequency = 0;
-  double _currentInterval = 0;
-  
-  FrequencyAnalyzer({this.windowSizeMs = 1000});
-
-  double get frequency => _currentFrequency;
-  double get interval => _currentInterval;
-
-  void addSample(DateTime timestamp) {
-    _timestamps.add(timestamp);
-    
-    // Rimuovi i timestamp più vecchi della finestra
-    while (_timestamps.isNotEmpty && 
-           timestamp.difference(_timestamps.first).inMilliseconds > windowSizeMs) {
-      _timestamps.removeAt(0);
-    }
-
-    // Aggiorna le statistiche ogni 500ms
-    if (_lastPrintTime == null || 
-        timestamp.difference(_lastPrintTime!).inMilliseconds >= 500) {
-      _currentFrequency = calculateFrequency();
-      _currentInterval = calculateAverageInterval();
-      _lastPrintTime = timestamp;
-    }
-  }
-
-  double calculateFrequency() {
-    if (_timestamps.length < 2) return 0;
-    final duration = _timestamps.last.difference(_timestamps.first).inMicroseconds / 1000000;
-    if (duration == 0) return 0;
-    return (_timestamps.length - 1) / duration;
-  }
-
-  double calculateAverageInterval() {
-    if (_timestamps.length < 2) return 0;
-    double totalInterval = 0;
-    for (int i = 1; i < _timestamps.length; i++) {
-      totalInterval += _timestamps[i].difference(_timestamps[i-1]).inMicroseconds / 1000;
-    }
-    return totalInterval / (_timestamps.length - 1);
-  }
-}
-
-/// Enumerazione delle frequenze di campionamento dell'accelerometro
 enum AccelerometerFrequency {
   hz25(0, "25 Hz"),
   hz50(1, "50 Hz"),
@@ -63,13 +15,22 @@ enum AccelerometerFrequency {
   const AccelerometerFrequency(this.value, this.label);
 }
 
-/// Classe per rappresentare i dati dell'accelerometro
+enum DataRateMode {
+  normal(1, "Normal Rate"),
+  doubleR(2, "2x Rate"),
+  half(0.5, "1/2 Rate"),
+  quarter(0.25, "1/4 Rate");
+
+  final double factor;
+  final String label;
+  const DataRateMode(this.factor, this.label);
+}
+
 class AccelerometerData {
   final DateTime timestamp;
   final double x;
   final double y;
   final double z;
-  final List<int> rawBytes;
   final double frequency;
   final double interval;
 
@@ -78,30 +39,11 @@ class AccelerometerData {
     required this.x,
     required this.y,
     required this.z,
-    required this.rawBytes,
     required this.frequency,
     required this.interval,
   });
-
-  @override
-  String toString() {
-    return '[${_formatTime(timestamp)}] '
-           'X: ${x.toStringAsFixed(3)}g '
-           'Y: ${y.toStringAsFixed(3)}g '
-           'Z: ${z.toStringAsFixed(3)}g '
-           'Rate: ${frequency.toStringAsFixed(1)}Hz '
-           'Interval: ${interval.toStringAsFixed(1)}ms';
-  }
-
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:'
-           '${time.minute.toString().padLeft(2, '0')}:'
-           '${time.second.toString().padLeft(2, '0')}.'
-           '${time.millisecond.toString().padLeft(3, '0')}';
-  }
 }
 
-/// Servizio per gestire la comunicazione Bluetooth con l'accelerometro
 class AccelerometerService {
   static const String _serviceUuid = 'aae28f00-71b5-42a1-8c3c-f9cf6ac969d0';
   static const String _dataCharacteristicUuid = 'aae28f01-71b5-42a1-8c3c-f9cf6ac969d0';
@@ -110,88 +52,56 @@ class AccelerometerService {
   static const double _scaleFactor = 8.0 / 32768.0; // Per range ±8g
   
   final _dataStreamController = StreamController<AccelerometerData>.broadcast();
-  final _frequencyStreamController = StreamController<AccelerometerFrequency>.broadcast();
   final _stateStreamController = StreamController<bool>.broadcast();
-  final _frequencyAnalyzer = FrequencyAnalyzer();
 
   BluetoothCharacteristic? _dataCharacteristic;
   BluetoothCharacteristic? _txCharacteristic;
   StreamSubscription? _dataSubscription;
-  AccelerometerFrequency _currentFrequency = AccelerometerFrequency.hz50;
+
+  DateTime? _lastDataTime;
+  final List<double> _intervals = [];
+  static const int _maxIntervals = 10;
+
+  DataRateMode _currentMode = DataRateMode.normal;
+  int _dataCounter = 0;
+  AccelerometerData? _bufferedData;
 
   Stream<AccelerometerData> get dataStream => _dataStreamController.stream;
-  Stream<AccelerometerFrequency> get frequencyStream => _frequencyStreamController.stream;
   Stream<bool> get connectionStream => _stateStreamController.stream;
-  AccelerometerFrequency get currentFrequency => _currentFrequency;
 
-  int _calculateChecksum(List<int> data) {
-    int sum = 0;
-    for (var byte in data) {
-      sum += byte;
-    }
-    sum = -sum;
-    sum ^= 0x3a;
-    return sum & 0xFF;
-  }
-
-  Future<void> sendCommand(int cmd, List<int> values) async {
-    if (_txCharacteristic == null) {
-      throw StateError('TX characteristic not found');
-    }
-
-    try {
-      final int len = values.length + 4;
-      final command = [0xFF, len, cmd];
-      final packetWithValues = [...command, ...values];
-      final check = _calculateChecksum(packetWithValues);
-      final commandWithCheck = [...packetWithValues, check];
-
-      debugPrint('📡 Sending command: ${commandWithCheck.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
-      
-      await Future.delayed(const Duration(milliseconds: 50));
-      await _txCharacteristic!.write(commandWithCheck, withoutResponse: false);
-      await Future.delayed(const Duration(milliseconds: 50));
-    } catch (e) {
-      debugPrint('❌ Error sending command: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> set3DFrequency(AccelerometerFrequency frequency) async {
-    try {
-      debugPrint('🕒 Setting frequency to: ${frequency.label}');
-      await sendCommand(116, [0, 11, frequency.value]);
-      _currentFrequency = frequency;
-      _frequencyStreamController.add(frequency);
-      await _restartNotifications();
-    } catch (e) {
-      debugPrint('❌ Error setting frequency: $e');
-      rethrow;
-    }
-  }
-
-  Future<void> _restartNotifications() async {
-    if (_dataCharacteristic == null) return;
-    
-    await _dataCharacteristic!.setNotifyValue(false);
-    await Future.delayed(const Duration(milliseconds: 100));
-    await _dataCharacteristic!.setNotifyValue(true);
+  void setDataRateMode(DataRateMode mode) {
+    _currentMode = mode;
+    _dataCounter = 0;
+    _bufferedData = null;
   }
 
   void _processRawData(List<int> value) {
-    if (value.length < 3) {
-      debugPrint('❌ Invalid data length: ${value.length}');
-      return;
-    }
+    if (value.length < 3) return;
 
     try {
-      if (value[0] != 0xFF) {
-        debugPrint('❌ Invalid header: ${value[0]}');
-        return;
-      }
+      if (value[0] != 0xFF) return;
 
       final command = value[2];
       if (command == 0x0c) {
+        final now = DateTime.now();
+        
+        // Calculate interval and frequency
+        if (_lastDataTime != null) {
+          final interval = now.difference(_lastDataTime!).inMicroseconds / 1000.0;
+          _intervals.add(interval);
+          if (_intervals.length > _maxIntervals) {
+            _intervals.removeAt(0);
+          }
+        }
+        _lastDataTime = now;
+
+        // Calculate average frequency
+        double avgInterval = 0.0;
+        if (_intervals.isNotEmpty) {
+          avgInterval = _intervals.reduce((a, b) => a + b) / _intervals.length;
+        }
+        final double frequency = avgInterval > 0 ? (1000.0 / avgInterval) : 0.0;
+
         for (var i = 3; i < value.length - 1; i += 6) {
           if (i + 5 >= value.length) break;
           
@@ -203,25 +113,67 @@ class AccelerometerService {
           final y = rawY * _scaleFactor;
           final z = rawZ * _scaleFactor;
 
-          final timestamp = DateTime.now();
-          _frequencyAnalyzer.addSample(timestamp);
-
           final data = AccelerometerData(
-            timestamp: timestamp,
+            timestamp: now,
             x: x,
             y: y,
             z: z,
-            rawBytes: value.sublist(i, i + 6),
-            frequency: _frequencyAnalyzer.frequency,
-            interval: _frequencyAnalyzer.interval
+            frequency: frequency * _currentMode.factor,  // Adjust reported frequency
+            interval: avgInterval / _currentMode.factor  // Adjust reported interval
           );
 
-          _dataStreamController.add(data);
+          _processDataWithMode(data);
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('❌ Error processing data: $e');
-      debugPrint(stackTrace.toString());
+    } catch (e) {
+      debugPrint('Error processing data: $e');
+    }
+  }
+
+  void _processDataWithMode(AccelerometerData data) {
+    switch (_currentMode) {
+      case DataRateMode.normal:
+        _dataStreamController.add(data);
+        break;
+      
+      case DataRateMode.doubleR:
+        // Simulate double rate by interpolating between current and previous data
+        if (_bufferedData != null) {
+          final interpolatedData = AccelerometerData(
+            timestamp: DateTime.fromMillisecondsSinceEpoch(
+              (_bufferedData!.timestamp.millisecondsSinceEpoch + 
+               data.timestamp.millisecondsSinceEpoch) ~/ 2
+            ),
+            x: (_bufferedData!.x + data.x) / 2,
+            y: (_bufferedData!.y + data.y) / 2,
+            z: (_bufferedData!.z + data.z) / 2,
+            frequency: data.frequency,
+            interval: data.interval
+          );
+          _dataStreamController.add(_bufferedData!);
+          _dataStreamController.add(interpolatedData);
+          _dataStreamController.add(data);
+          _bufferedData = null;
+        } else {
+          _bufferedData = data;
+        }
+        break;
+      
+      case DataRateMode.half:
+        // Send every other sample
+        if (_dataCounter % 2 == 0) {
+          _dataStreamController.add(data);
+        }
+        _dataCounter++;
+        break;
+      
+      case DataRateMode.quarter:
+        // Send every fourth sample
+        if (_dataCounter % 4 == 0) {
+          _dataStreamController.add(data);
+        }
+        _dataCounter++;
+        break;
     }
   }
 
@@ -241,18 +193,16 @@ class AccelerometerService {
       }
 
       _dataSubscription = characteristic.value.listen(
-        (value) {
-          _processRawData(value);
-        },
+        _processRawData,
         onError: (error) {
-          debugPrint('❌ Notification stream error: $error');
+          debugPrint('Notification error: $error');
           _stateStreamController.add(false);
         },
       );
       
       _stateStreamController.add(true);
     } catch (e) {
-      debugPrint('❌ Error setting up notifications: $e');
+      debugPrint('Setup notifications error: $e');
       _stateStreamController.add(false);
       rethrow;
     }
@@ -264,7 +214,7 @@ class AccelerometerService {
       
       final service = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase() == _serviceUuid.toLowerCase(),
-        orElse: () => throw Exception('Accelerometer service not found'),
+        orElse: () => throw Exception('Service not found'),
       );
 
       _dataCharacteristic = null;
@@ -284,11 +234,9 @@ class AccelerometerService {
       if (_dataCharacteristic == null || _txCharacteristic == null) {
         throw Exception('Required characteristics not found');
       }
-
-      await set3DFrequency(_currentFrequency);
       
     } catch (e) {
-      debugPrint('❌ Error during initialization: $e');
+      debugPrint('Start error: $e');
       _stateStreamController.add(false);
       rethrow;
     }
@@ -298,12 +246,15 @@ class AccelerometerService {
     await _dataSubscription?.cancel();
     _dataSubscription = null;
     _stateStreamController.add(false);
+    _intervals.clear();
+    _lastDataTime = null;
+    _bufferedData = null;
+    _dataCounter = 0;
   }
 
   void dispose() {
     stop();
     _dataStreamController.close();
-    _frequencyStreamController.close();
     _stateStreamController.close();
   }
 }

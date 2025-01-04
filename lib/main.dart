@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -28,6 +29,92 @@ class MyApp extends StatelessWidget {
   }
 }
 
+class OscilloscopePainter extends CustomPainter {
+  final Queue<AccelerometerData> data;
+  static const int maxPoints = 100;
+
+  OscilloscopePainter(this.data);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final xPath = Path();
+    final yPath = Path();
+    final zPath = Path();
+
+    final xPaint = Paint()
+      ..color = Colors.red
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    final yPaint = Paint()
+      ..color = Colors.green
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    final zPaint = Paint()
+      ..color = Colors.blue
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    // Draw grid
+    final gridPaint = Paint()
+      ..color = Colors.grey.withOpacity(0.2)
+      ..strokeWidth = 1;
+
+    // Horizontal grid lines
+    for (int i = 0; i <= 4; i++) {
+      double y = size.height * i / 4;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // Vertical grid lines
+    for (int i = 0; i <= 8; i++) {
+      double x = size.width * i / 8;
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), gridPaint);
+    }
+
+    // Zero line
+    final zeroPaint = Paint()
+      ..color = Colors.grey.withOpacity(0.5)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(0, size.height / 2),
+      Offset(size.width, size.height / 2),
+      zeroPaint
+    );
+
+    if (data.isEmpty) return;
+
+    var points = data.toList();
+    for (var i = 0; i < points.length; i++) {
+      var point = points[i];
+      double x = size.width * i / maxPoints;
+      
+      // Normalize values from ±8g to 0..1
+      double yX = size.height * (1 - (point.x + 8) / 16);
+      double yY = size.height * (1 - (point.y + 8) / 16);
+      double yZ = size.height * (1 - (point.z + 8) / 16);
+
+      if (i == 0) {
+        xPath.moveTo(x, yX);
+        yPath.moveTo(x, yY);
+        zPath.moveTo(x, yZ);
+      } else {
+        xPath.lineTo(x, yX);
+        yPath.lineTo(x, yY);
+        zPath.lineTo(x, yZ);
+      }
+    }
+
+    canvas.drawPath(xPath, xPaint);
+    canvas.drawPath(yPath, yPaint);
+    canvas.drawPath(zPath, zPaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
 class BluetoothAccelerometerPage extends StatefulWidget {
   const BluetoothAccelerometerPage({Key? key}) : super(key: key);
 
@@ -43,44 +130,17 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
   AccelerometerData? latestData;
   bool isScanning = false;
   bool isConnecting = false;
-  bool isSettingFrequency = false;
-  AccelerometerFrequency currentFrequency = AccelerometerFrequency.hz50;
-  StreamSubscription? _connectionSubscription;
-  StreamSubscription? _frequencySubscription;
+  
+  final Queue<AccelerometerData> plotData = Queue();
+  static const int maxPlotPoints = 100;
+  
+  StreamSubscription? _dataSubscription;
+  DataRateMode _selectedDataRate = DataRateMode.normal;
 
   @override
   void initState() {
     super.initState();
     _initializeBluetooth();
-    _setupServiceSubscriptions();
-  }
-
-  void _setupServiceSubscriptions() {
-    _connectionSubscription = _accelerometerService.connectionStream.listen((isConnected) {
-      if (!isConnected && mounted) {
-        setState(() {
-          connectedDevice = null;
-          latestData = null;
-        });
-      }
-    });
-
-    _frequencySubscription = _accelerometerService.frequencyStream.listen((frequency) {
-      if (mounted) {
-        setState(() {
-          currentFrequency = frequency;
-          isSettingFrequency = false;
-        });
-      }
-    });
-
-    _accelerometerService.dataStream.listen((data) {
-      if (mounted) {
-        setState(() {
-          latestData = data;
-        });
-      }
-    });
   }
 
   Future<void> _initializeBluetooth() async {
@@ -149,6 +209,16 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
     try {
       await device.connect(timeout: const Duration(seconds: 10));
       await _accelerometerService.start(device);
+
+      _dataSubscription = _accelerometerService.dataStream.listen((data) {
+        setState(() {
+          latestData = data;
+          plotData.add(data);
+          if (plotData.length > maxPlotPoints) {
+            plotData.removeFirst();
+          }
+        });
+      });
       
       if (mounted) {
         setState(() {
@@ -157,7 +227,6 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
         });
       }
 
-      await _accelerometerService.set3DFrequency(currentFrequency);
     } catch (e) {
       debugPrint('Error during connection: $e');
       if (mounted) {
@@ -171,6 +240,7 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
 
   Future<void> disconnectDevice() async {
     try {
+      await _dataSubscription?.cancel();
       await _accelerometerService.stop();
       await connectedDevice?.disconnect();
     } catch (e) {
@@ -181,6 +251,7 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
       setState(() {
         connectedDevice = null;
         latestData = null;
+        plotData.clear();
       });
     }
   }
@@ -193,6 +264,35 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
         content: Text(message),
         backgroundColor: Colors.red,
         duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  Widget _buildDataRateDropdown() {
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(horizontal: 16.0),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+        child: DropdownButton<DataRateMode>(
+          value: _selectedDataRate,
+          isExpanded: true,
+          underline: Container(),
+          items: DataRateMode.values.map((mode) {
+            return DropdownMenuItem<DataRateMode>(
+              value: mode,
+              child: Text(mode.label),
+            );
+          }).toList(),
+          onChanged: (DataRateMode? newMode) {
+            if (newMode != null) {
+              setState(() {
+                _selectedDataRate = newMode;
+                _accelerometerService.setDataRateMode(newMode);
+              });
+            }
+          },
+        ),
       ),
     );
   }
@@ -216,33 +316,33 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
                     fontWeight: FontWeight.bold,
                   ),
                 ),
-                if (latestData != null) Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      DateFormat('HH:mm:ss.SSS').format(latestData!.timestamp),
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
+                if (latestData != null)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        DateFormat('HH:mm:ss.SSS').format(latestData!.timestamp),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Rate: ${latestData!.frequency.toStringAsFixed(1)} Hz',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
+                      Text(
+                        'Rate: ${latestData!.frequency.toStringAsFixed(1)} Hz',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                    Text(
-                      'Interval: ${latestData!.interval.toStringAsFixed(1)} ms',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 14,
+                      Text(
+                        'Interval: ${latestData!.interval.toStringAsFixed(1)} ms',
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 16),
@@ -252,6 +352,21 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
               _buildAxisRow('Y', latestData!.y, Colors.green),
               const SizedBox(height: 8),
               _buildAxisRow('Z', latestData!.z, Colors.blue),
+              const SizedBox(height: 16),
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.withOpacity(0.2)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CustomPaint(
+                    painter: OscilloscopePainter(plotData),
+                    size: const Size(double.infinity, 200),
+                  ),
+                ),
+              ),
             ] else
               const Center(
                 child: Text(
@@ -306,63 +421,9 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
     );
   }
 
-  Widget _buildFrequencySelector() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          const Text(
-            'Sample Rate:', 
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold
-            )
-          ),
-          DropdownButton<AccelerometerFrequency>(
-            value: currentFrequency,
-            onChanged: isSettingFrequency ? null : (AccelerometerFrequency? newValue) async {
-              if (newValue != null) {
-                setState(() {
-                  isSettingFrequency = true;
-                });
-                try {
-                  await _accelerometerService.set3DFrequency(newValue);
-                  if (mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Frequency set to ${newValue.label}'),
-                        backgroundColor: Colors.green,
-                        duration: const Duration(seconds: 2),
-                      ),
-                    );
-                  }
-                } catch (e) {
-                  showError('Error setting frequency: $e');
-                  setState(() {
-                    isSettingFrequency = false;
-                  });
-                }
-              }
-            },
-            items: AccelerometerFrequency.values
-                .map<DropdownMenuItem<AccelerometerFrequency>>(
-                    (AccelerometerFrequency frequency) {
-              return DropdownMenuItem<AccelerometerFrequency>(
-                value: frequency,
-                child: Text(frequency.label),
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   void dispose() {
-    _connectionSubscription?.cancel();
-    _frequencySubscription?.cancel();
+    _dataSubscription?.cancel();
     _accelerometerService.dispose();
     disconnectDevice();
     super.dispose();
@@ -404,8 +465,12 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
             ),
           ),
           if (connectedDevice != null) ...[
-            _buildFrequencySelector(),
-            _buildCurrentValuesCard(),
+            _buildDataRateDropdown(),
+            Expanded(
+              child: SingleChildScrollView(
+                child: _buildCurrentValuesCard(),
+              ),
+            ),
           ],
         ],
       ),
