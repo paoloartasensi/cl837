@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.android.chileaf" >
+
+    <uses-sdk
+        android:minSdkVersion="21"
+        android:targetSdkVersion="33" />
+
+    <!--
+     Bluetooth permissions require to check Bluetooth Adapter state
+     and starting LE scan.
+    -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH"
+        android:maxSdkVersion="30" />
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_ADMIN"
+        android:maxSdkVersion="30" />
+    <!--
+    Location permission is required on Android 6+.
+    Since Android 10 the FINE LOCATION will be required.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+
+    <!--
+	 Bluetooth Scan permission is required from Android S onwards.
+
+	 Note: This permission may be used with "usesPermissionFlag". If you don't need location,
+	       declare this permission with this flag set to "neverForLocation".
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" />
+
+    <application>
+        <uses-library
+            android:name="org.apache.http.legacy"
+            android:required="false" />
+
+        <!-- &lt;!&ndash; -->
+        <!-- Service used to scan in background to emulate scanning with -->
+        <!-- PendingIntent on Android 4.3 - 7.x. Service will scan in background with given -->
+        <!-- settings and filters. -->
+        <!-- &ndash;&gt; -->
+        <!-- <service -->
+        <!-- android:name=".bluetooth.scanner.ScannerService" -->
+        <!-- android:exported="false" /> -->
+        <!-- &lt;!&ndash; -->
+        <!-- The receiver used to scan with PendingIntent on Android 8+. -->
+        <!-- It will translate results from android.bluetooth.le package to -->
+        <!-- com.android.chileaf.bluetooth, apply filters or perform batching, -->
+        <!-- depending on the settings. -->
+        <!-- &ndash;&gt; -->
+        <!-- <receiver -->
+        <!-- android:name=".bluetooth.scanner.PendingIntentReceiver" -->
+        <!-- android:exported="true" -->
+        <!-- tools:ignore="ExportedReceiver"> -->
+        <!-- <intent-filter> -->
+        <!-- <action android:name="com.android.chileaf.bluetooth.ACTION_FOUND" /> -->
+        <!-- </intent-filter> -->
+        <!-- </receiver> -->
+
+
+        <!--
+		Service used to scan in background to emulate scanning with
+		PendingIntent on Android 4.3 - 7.x. Service will scan in background with given
+		settings and filters.
+        -->
+        <service
+            android:name="no.nordicsemi.android.support.v18.scanner.ScannerService"
+            android:exported="false" />
+        <!--
+		The receiver used to scan with PendingIntent on Android 8+.
+		It will translate results from android.bluetooth.le package to
+		no.nordicsemi.android.support.v18, apply filters or perform batching,
+		depending on the settings.
+        -->
+        <receiver
+            android:name="no.nordicsemi.android.support.v18.scanner.PendingIntentReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver" >
+            <intent-filter>
+                <action android:name="no.nordicsemi.android.support.v18.ACTION_FOUND" />
+            </intent-filter>
+        </receiver>
+    </application>
+
+</manifest>
