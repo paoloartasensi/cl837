@@ -26,7 +26,7 @@ class SensorService {
   // Accelerometer Service & Characteristics
   static const String _accelServiceUuid = 'aae28f00-71b5-42a1-8c3c-f9cf6ac969d0';
   static const String _accelDataCharUuid = 'aae28f01-71b5-42a1-8c3c-f9cf6ac969d0';
-  static const double _scaleFactor = 8.0 / 32768.0; // For ±8 g range
+  static const double _scaleFactor = 8.0 / 32768.0; // For z8 g range
 
   final _dataStreamController = StreamController<SensorData>.broadcast();
   final _stateStreamController = StreamController<bool>.broadcast();
@@ -121,7 +121,6 @@ class SensorService {
 
       await heartRateService.start(device);
       await batteryService.start(device);
-
       _stateStreamController.add(true);
     } catch (e) {
       debugPrint('Start error: $e');

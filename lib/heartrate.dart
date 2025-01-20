@@ -5,9 +5,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 class HeartRateData {
   final int? heartRate;
 
-  const HeartRateData({
-    this.heartRate,
-  });
+  const HeartRateData({this.heartRate});
 }
 
 class HeartRateService {
@@ -20,7 +18,6 @@ class HeartRateService {
   StreamSubscription? _heartRateSubscription;
 
   Stream<HeartRateData> get dataStream => _dataStreamController.stream;
-
   int? get lastHeartRate => _lastHeartRate;
 
   void _processHeartRate(List<int> value) {
@@ -60,8 +57,7 @@ class HeartRateService {
       );
       debugPrint('Found Heart Rate characteristic: ${hrChar.uuid}');
       debugPrint('Heart Rate Properties: read=${hrChar.properties.read}, notify=${hrChar.properties.notify}');
-      
-      
+
       if (hrChar.properties.notify) {
         final success = await hrChar.setNotifyValue(true);
         if (success) {
@@ -71,23 +67,6 @@ class HeartRateService {
             },
             onError: (e) => debugPrint('Heart rate notification error: $e'),
           );
-        }
-      }
-
-      // Enable notifications
-      if (hrChar.properties.notify) {
-        try {
-          final success = await hrChar.setNotifyValue(true);
-          debugPrint('Heart Rate notifications enabled: $success');
-          _heartRateSubscription = hrChar.lastValueStream.listen(
-            (value) {
-              debugPrint('Heart Rate notification received: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-              _processHeartRate(value);
-            },
-            onError: (e) => debugPrint('Heart rate notification error: $e'),
-          );
-        } catch (e) {
-          debugPrint('Error setting up heart rate notifications: $e');
         }
       } else {
         debugPrint('Heart Rate characteristic does not support notify');

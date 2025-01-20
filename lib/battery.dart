@@ -5,9 +5,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 class BatteryData {
   final int? batteryLevel;
 
-  const BatteryData({
-    this.batteryLevel,
-  });
+  const BatteryData({this.batteryLevel});
 }
 
 class BatteryService {
@@ -20,7 +18,6 @@ class BatteryService {
   StreamSubscription? _batterySubscription;
 
   Stream<BatteryData> get dataStream => _dataStreamController.stream;
-
   int? get lastBatteryLevel => _lastBatteryLevel;
 
   void _processBattery(List<int> value) {
