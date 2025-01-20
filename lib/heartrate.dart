@@ -2,41 +2,48 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
-class HeartRateData {
-  final int? heartRate;
-
-  const HeartRateData({this.heartRate});
+class HeartRateServiceException implements Exception {
+  final String message;
+  HeartRateServiceException(this.message);
+  
+  @override
+  String toString() => 'HeartRateServiceException: $message';
 }
 
 class HeartRateService {
-  // Heart Rate Service & Characteristic
-  static const String _heartRateServiceUuid = '0000180d-0000-1000-8000-00805f9b34fb';
-  static const String _heartRateCharUuid = '00002a37-0000-1000-8000-00805f9b34fb';
+  // Heart Rate Service & Characteristic UUIDs - shortened version
+  static const String _heartRateServiceUuid = '180d';
+  static const String _heartRateCharUuid = '2a37';
 
   int? _lastHeartRate;
-  final _dataStreamController = StreamController<HeartRateData>.broadcast();
+  final _dataStreamController = StreamController<int?>.broadcast();
   StreamSubscription? _heartRateSubscription;
 
-  Stream<HeartRateData> get dataStream => _dataStreamController.stream;
+  Stream<int?> get dataStream => _dataStreamController.stream;
   int? get lastHeartRate => _lastHeartRate;
 
   void _processHeartRate(List<int> value) {
     try {
       debugPrint('Raw heart rate data: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
       if (value.isEmpty) return;
+
+      // First byte contains flags
       final flags = value[0];
-      final isHint16 = (flags & 0x01) == 1;
-      int heartRate;
-      if (isHint16 && value.length >= 3) {
-        heartRate = value[1] | (value[2] << 8);
-      } else if (value.length >= 2) {
-        heartRate = value[1];
-      } else {
-        return;
+      final isFormat16Bit = (flags & 0x01) != 0;  // Check first bit
+      debugPrint('Heart Rate flags: 0x${flags.toRadixString(16)} (16-bit format: $isFormat16Bit)');
+
+      // Heart rate measurement value format
+      if (value.length >= 2) {
+        if (isFormat16Bit && value.length >= 3) {
+          // 16-bit format
+          _lastHeartRate = value[1] | (value[2] << 8);
+        } else {
+          // 8-bit format
+          _lastHeartRate = value[1];
+        }
+        debugPrint('Processed Heart Rate: $_lastHeartRate BPM');
+        _dataStreamController.add(_lastHeartRate);
       }
-      _lastHeartRate = heartRate;
-      debugPrint('Processed Heart Rate: $_lastHeartRate BPM');
-      _dataStreamController.add(HeartRateData(heartRate: _lastHeartRate));
     } catch (e) {
       debugPrint('Error processing heart rate data: $e');
     }
@@ -45,34 +52,70 @@ class HeartRateService {
   Future<void> start(BluetoothDevice device) async {
     try {
       debugPrint('Setting up Heart Rate service...');
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
       final services = await device.discoverServices();
-      final hrService = services.firstWhere(
-        (s) => s.uuid.toString().toLowerCase() == _heartRateServiceUuid.toLowerCase(),
-        orElse: () => throw Exception('Heart rate service not found'),
-      );
-      debugPrint('Found Heart Rate service: ${hrService.uuid}');
-      final hrChar = hrService.characteristics.firstWhere(
-        (c) => c.uuid.toString().toLowerCase() == _heartRateCharUuid.toLowerCase(),
-        orElse: () => throw Exception('Heart rate characteristic not found'),
-      );
-      debugPrint('Found Heart Rate characteristic: ${hrChar.uuid}');
-      debugPrint('Heart Rate Properties: read=${hrChar.properties.read}, notify=${hrChar.properties.notify}');
+      debugPrint('Found ${services.length} services:');
+      for (var service in services) {
+        debugPrint('Service: ${service.uuid}');
+        for (var char in service.characteristics) {
+          debugPrint('  Char: ${char.uuid}');
+          debugPrint('    Properties: Read=${char.properties.read}, Notify=${char.properties.notify}');
+        }
+      }
 
-      if (hrChar.properties.notify) {
-        final success = await hrChar.setNotifyValue(true);
-        if (success) {
-          _heartRateSubscription = hrChar.lastValueStream.listen(
+      final heartRateService = services.firstWhere(
+        (s) => s.uuid.toString().toLowerCase().contains(_heartRateServiceUuid.toLowerCase()),
+        orElse: () => throw HeartRateServiceException('Heart Rate service not found'),
+      );
+
+      debugPrint('Found Heart Rate service: ${heartRateService.uuid}');
+      final heartRateChar = heartRateService.characteristics.firstWhere(
+        (c) => c.uuid.toString().toLowerCase().contains(_heartRateCharUuid.toLowerCase()),
+        orElse: () => throw HeartRateServiceException('Heart Rate characteristic not found'),
+      );
+
+      debugPrint('Found Heart Rate characteristic: ${heartRateChar.uuid}');
+      debugPrint('Heart Rate Properties: read=${heartRateChar.properties.read}, notify=${heartRateChar.properties.notify}');
+
+      // Heart rate measurement only supports notifications
+      if (heartRateChar.properties.notify) {
+        try {
+          final success = await heartRateChar.setNotifyValue(true);
+          debugPrint('Heart Rate notifications enabled: $success');
+
+          if (!success) {
+            throw HeartRateServiceException('Failed to enable heart rate notifications');
+          }
+
+          _heartRateSubscription = heartRateChar.lastValueStream.listen(
             (value) {
-              _processHeartRate(value);
+              try {
+                debugPrint('Heart Rate notification received');
+                _processHeartRate(value);
+              } catch (e) {
+                debugPrint('Heart Rate notification processing error: $e');
+              }
             },
-            onError: (e) => debugPrint('Heart rate notification error: $e'),
+            onError: (e) {
+              debugPrint('Heart Rate notification stream error: $e');
+            },
           );
+
+          debugPrint('Heart Rate subscription set up successfully');
+        } catch (e) {
+          debugPrint('Error setting up heart rate notifications: $e');
+          rethrow;
         }
       } else {
-        debugPrint('Heart Rate characteristic does not support notify');
+        throw HeartRateServiceException('Heart Rate characteristic does not support notifications');
       }
+
+      debugPrint('Heart Rate service setup complete');
     } catch (e) {
-      debugPrint('Heart rate complete setup error: $e');
+      debugPrint('Heart Rate service start failed: $e');
+      _lastHeartRate = null;
+      rethrow;
     }
   }
 

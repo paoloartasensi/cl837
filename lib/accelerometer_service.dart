@@ -26,14 +26,16 @@ class SensorService {
   // Accelerometer Service & Characteristics
   static const String _accelServiceUuid = 'aae28f00-71b5-42a1-8c3c-f9cf6ac969d0';
   static const String _accelDataCharUuid = 'aae28f01-71b5-42a1-8c3c-f9cf6ac969d0';
-  static const double _scaleFactor = 8.0 / 32768.0; // For z8 g range
+  static const double _scaleFactor = 8.0 / 32768.0; // For ±8 g range
 
   final _dataStreamController = StreamController<SensorData>.broadcast();
   final _stateStreamController = StreamController<bool>.broadcast();
   StreamSubscription? _accelSubscription;
+  bool _isAccelerometerWorking = false;
 
   Stream<SensorData> get dataStream => _dataStreamController.stream;
   Stream<bool> get connectionStream => _stateStreamController.stream;
+  bool get isAccelerometerWorking => _isAccelerometerWorking;
 
   void _processAccelData(List<int> value, int? heartRate, int? batteryLevel) {
     if (value.length < 3) return;
@@ -43,12 +45,15 @@ class SensorService {
         final now = DateTime.now();
         for (var i = 3; i < value.length - 1; i += 6) {
           if (i + 5 >= value.length) break;
+          
           final rawX = _convertToSigned16(value[i] | (value[i + 1] << 8));
           final rawY = _convertToSigned16(value[i + 2] | (value[i + 3] << 8));
           final rawZ = _convertToSigned16(value[i + 4] | (value[i + 5] << 8));
+          
           final x = rawX * _scaleFactor;
           final y = rawY * _scaleFactor;
           final z = rawZ * _scaleFactor;
+
           _dataStreamController.add(SensorData(
             timestamp: now,
             x: x,
@@ -69,63 +74,129 @@ class SensorService {
     return (value & 0x8000) != 0 ? -(0x10000 - value) : value;
   }
 
-  Future<void> start(BluetoothDevice device, HeartRateService heartRateService, BatteryService batteryService) async {
+  Future<void> _startAccelerometer(BluetoothDevice device) async {
     try {
-      debugPrint('\n=== STARTING BLE SERVICE SETUP ===');
+      debugPrint('\n=== STARTING ACCELEROMETER SETUP ===');
       final services = await device.discoverServices();
-      debugPrint('Found ${services.length} services:');
-      for (var service in services) {
-        debugPrint('Service: ${service.uuid}');
+      
+      // Setup Accelerometer
+      final accelService = services.firstWhere(
+        (s) => s.uuid.toString().toLowerCase() == _accelServiceUuid.toLowerCase(),
+        orElse: () => throw Exception('Accelerometer service not found'),
+      );
+      
+      debugPrint('Found Accelerometer service: ${accelService.uuid}');
+      final accelChar = accelService.characteristics.firstWhere(
+        (c) => c.uuid.toString().toLowerCase() == _accelDataCharUuid.toLowerCase(),
+        orElse: () => throw Exception('Accelerometer characteristic not found'),
+      );
+      
+      debugPrint('Found Accelerometer characteristic: ${accelChar.uuid}');
+      debugPrint('Accelerometer Properties: read=${accelChar.properties.read}, notify=${accelChar.properties.notify}');
+
+      // Enable notifications
+      final success = await accelChar.setNotifyValue(true);
+      debugPrint('Accelerometer notifications enabled: $success');
+
+      if (!success) {
+        throw Exception('Failed to enable accelerometer notifications');
       }
 
-      // Log all discovered services and their characteristics
-      for (var service in services) {
-        debugPrint('Service UUID: ${service.uuid}');
-        for (var char in service.characteristics) {
-          debugPrint(' Characteristic UUID: ${char.uuid}');
-          debugPrint(' Properties: read=${char.properties.read}, write=${char.properties.write}, notify=${char.properties.notify}, indicate=${char.properties.indicate}');
+      _accelSubscription = accelChar.lastValueStream.listen(
+        (value) {
+          debugPrint('Accelerometer data received: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+          _processAccelData(value, null, null);  // Initial values without HR and battery
+        },
+        onError: (error) {
+          debugPrint('Accelerometer notification error: $error');
+          _stateStreamController.add(false);
+          _isAccelerometerWorking = false;
+        },
+      );
+
+      _isAccelerometerWorking = true;
+    } catch (e) {
+      debugPrint('Accelerometer setup error: $e');
+      _isAccelerometerWorking = false;
+      rethrow;
+    }
+  }
+
+  Future<void> _startServiceWithRetry(Future<void> Function() startFunction) async {
+    const maxRetries = 3;
+    for (var i = 0; i < maxRetries; i++) {
+      try {
+        await startFunction();
+        return;
+      } catch (e) {
+        if (i == maxRetries - 1) {
+          debugPrint('Service failed after $maxRetries retries: $e');
+          rethrow;
+        } else {
+          debugPrint('Retrying service after error: $e');
+          await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
         }
       }
+    }
+  }
 
-      // Setup Accelerometer
-      try {
-        debugPrint('Setting up Accelerometer service...');
-        final accelService = services.firstWhere(
-          (s) => s.uuid.toString().toLowerCase() == _accelServiceUuid.toLowerCase(),
-          orElse: () => throw Exception('Accelerometer service not found'),
-        );
-        debugPrint('Found Accelerometer service: ${accelService.uuid}');
-        final accelChar = accelService.characteristics.firstWhere(
-          (c) => c.uuid.toString().toLowerCase() == _accelDataCharUuid.toLowerCase(),
-          orElse: () => throw Exception('Accelerometer characteristic not found'),
-        );
-        debugPrint('Found Accelerometer characteristic: ${accelChar.uuid}');
-        debugPrint('Accelerometer Properties: read=${accelChar.properties.read}, notify=${accelChar.properties.notify}');
+  Future<void> start(BluetoothDevice device, HeartRateService heartRateService,
+      BatteryService batteryService) async {
+    try {
+      // Start accelerometer service first - this is critical
+      await _startAccelerometer(device);
+      
+      // Start heart rate and battery services in parallel with error handling
+      await Future.wait([
+        _startServiceWithRetry(() => heartRateService.start(device))
+            .catchError((e) {
+          debugPrint('Heart rate service failed to start: $e');
+          return null; // Continue without heart rate
+        }),
+        _startServiceWithRetry(() => batteryService.start(device))
+            .catchError((e) {
+          debugPrint('Battery service failed to start: $e');
+          return null; // Continue without battery
+        }),
+      ], eagerError: false);
 
-        // Enable notifications
-        final success = await accelChar.setNotifyValue(true);
-        debugPrint('Accelerometer notifications enabled: $success');
-        _accelSubscription = accelChar.lastValueStream.listen(
-          (value) {
-            debugPrint('Accelerometer data received: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-            _processAccelData(value, heartRateService.lastHeartRate, batteryService.lastBatteryLevel);
-          },
-          onError: (error) {
-            debugPrint('Accelerometer notification error: $error');
-            _stateStreamController.add(false);
-          },
-        );
-      } catch (e) {
-        debugPrint('Accelerometer setup error: $e');
-      }
+      // Set up subscriptions for heart rate and battery updates
+      heartRateService.dataStream.listen((heartRate) {
+        if (_accelSubscription != null && _isAccelerometerWorking) {
+          // Update the sensor data with the new heart rate
+          _dataStreamController.add(SensorData(
+            timestamp: DateTime.now(),
+            x: 0, // These will be updated by next accelerometer reading
+            y: 0,
+            z: 0,
+            heartRate: heartRate,
+            batteryLevel: batteryService.lastBatteryLevel,
+          ));
+        }
+      }, onError: (e) => debugPrint('Heart rate stream error: $e'));
 
-      await heartRateService.start(device);
-      await batteryService.start(device);
+      batteryService.dataStream.listen((battery) {
+        if (_accelSubscription != null && _isAccelerometerWorking) {
+          // Update the sensor data with the new battery level
+          _dataStreamController.add(SensorData(
+            timestamp: DateTime.now(),
+            x: 0, // These will be updated by next accelerometer reading
+            y: 0,
+            z: 0,
+            heartRate: heartRateService.lastHeartRate,
+            batteryLevel: battery,
+          ));
+        }
+      }, onError: (e) => debugPrint('Battery stream error: $e'));
+
       _stateStreamController.add(true);
     } catch (e) {
       debugPrint('Start error: $e');
       _stateStreamController.add(false);
-      rethrow;
+      if (!_isAccelerometerWorking) {
+        // Only rethrow if accelerometer failed
+        rethrow;
+      }
     }
   }
 
@@ -133,6 +204,7 @@ class SensorService {
     debugPrint('Stopping BLE services...');
     await _accelSubscription?.cancel();
     _accelSubscription = null;
+    _isAccelerometerWorking = false;
     _stateStreamController.add(false);
     debugPrint('All BLE services stopped');
   }

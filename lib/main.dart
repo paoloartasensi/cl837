@@ -16,7 +16,7 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({Key? key}) : super(key: key);
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -33,7 +33,7 @@ class MyApp extends StatelessWidget {
 }
 
 class SensorDisplayPage extends StatefulWidget {
-  const SensorDisplayPage({Key? key}) : super(key: key);
+  const SensorDisplayPage({super.key});
 
   @override
   State<SensorDisplayPage> createState() => _SensorDisplayPageState();
@@ -44,12 +44,13 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
   final HeartRateService _heartRateService = HeartRateService();
   final BatteryService _batteryService = BatteryService();
   static const String targetDeviceName = 'CL837-0753644';
+  
   BluetoothDevice? connectedDevice;
   SensorData? latestData;
   bool isScanning = false;
   bool isConnecting = false;
   late StreamSubscription<SensorData> _dataSubscription;
-
+  
   @override
   void initState() {
     super.initState();
@@ -72,11 +73,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
 
   Future<void> startScan() async {
     if (isScanning) return;
+    
     setState(() {
       isScanning = true;
     });
+
     try {
       await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+      
       FlutterBluePlus.scanResults.listen((results) {
         for (ScanResult r in results) {
           debugPrint('Found device: ${r.device.name}');
@@ -87,8 +91,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
           }
         }
       });
-      await Future.delayed(const Duration(seconds: 5));
 
+      await Future.delayed(const Duration(seconds: 5));
+      
       if (mounted) {
         setState(() {
           isScanning = false;
@@ -110,14 +115,34 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     setState(() {
       isConnecting = true;
     });
+
     try {
       await device.connect(timeout: const Duration(seconds: 10));
-      await _sensorService.start(device, _heartRateService, _batteryService);
-      _dataSubscription = _sensorService.dataStream.listen((data) {
-        setState(() {
-          latestData = data;
-        });
-      });
+      
+      try {
+        await _sensorService.start(device, _heartRateService, _batteryService);
+      } catch (e) {
+        if (!_sensorService.isAccelerometerWorking) {
+          showError('Critical error: Accelerometer not working');
+          await disconnectDevice();
+          return;
+        } else {
+          showWarning('Some sensors may not work properly. Accelerometer is still functional.');
+        }
+      }
+
+      _dataSubscription = _sensorService.dataStream.listen(
+        (data) {
+          setState(() {
+            latestData = data;
+          });
+        },
+        onError: (error) {
+          debugPrint('Sensor data stream error: $error');
+          showWarning('Some sensor data may be temporarily unavailable');
+        },
+      );
+
       if (mounted) {
         setState(() {
           connectedDevice = device;
@@ -125,13 +150,13 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         });
       }
     } catch (e) {
-      debugPrint('Error during connection: $e');
+      debugPrint('Connection error: $e');
       if (mounted) {
         setState(() {
           isConnecting = false;
         });
       }
-      showError('Error during connection: $e');
+      showError('Failed to connect to device');
     }
   }
 
@@ -153,6 +178,27 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     }
   }
 
+  @override
+  void dispose() {
+    _dataSubscription.cancel();
+    _sensorService.dispose();
+    _heartRateService.dispose();
+    _batteryService.dispose();
+    disconnectDevice();
+    super.dispose();
+  }
+
+  void showWarning(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.orange,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
   void showError(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -162,16 +208,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         duration: const Duration(seconds: 3),
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _dataSubscription.cancel();
-    _sensorService.dispose();
-    _heartRateService.dispose();
-    _batteryService.dispose();
-    disconnectDevice();
-    super.dispose();
   }
 
   @override
@@ -199,7 +235,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.search),
                     label: Text(
-                      isScanning ? 'Scanning...' : isConnecting ? 'Connecting...' : 'Scan for Device',
+                      isScanning ? 'Scanning...' : 
+                      isConnecting ? 'Connecting...' : 
+                      'Scan for Device',
                     ),
                     onPressed: (isScanning || isConnecting) ? null : startScan,
                   ),
