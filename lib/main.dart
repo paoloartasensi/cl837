@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'accelerometer_service.dart';
+import 'battery.dart';
+import 'heartrate.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +38,8 @@ class SensorDisplayPage extends StatefulWidget {
 
 class _SensorDisplayPageState extends State<SensorDisplayPage> {
   final SensorService _sensorService = SensorService();
+  final HeartRateService _heartRateService = HeartRateService();
+  final BatteryService _batteryService = BatteryService();
   static const String targetDeviceName = 'CL837-0753644';
   BluetoothDevice? connectedDevice;
   SensorData? latestData;
@@ -127,7 +131,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       LinearProgressIndicator(
-                        value: (value + 8.0) / 16.0, // Normalize from -8g to +8g
+                        value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
                         backgroundColor: color.withOpacity(0.1),
                         valueColor: AlwaysStoppedAnimation<Color>(color),
                       ),
@@ -236,7 +240,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
           isScanning = false;
         });
       }
-
       showError('Error during scan: $e');
     }
   }
@@ -248,7 +251,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     });
     try {
       await device.connect(timeout: const Duration(seconds: 10));
-      await _sensorService.start(device);
+      await _sensorService.start(device, _heartRateService, _batteryService);
       _dataSubscription = _sensorService.dataStream.listen((data) {
         setState(() {
           latestData = data;
@@ -275,6 +278,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     try {
       await _dataSubscription.cancel();
       await _sensorService.stop();
+      await _heartRateService.stop();
+      await _batteryService.stop();
       await connectedDevice?.disconnect();
     } catch (e) {
       debugPrint('Error during disconnect: $e');
@@ -302,6 +307,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
   void dispose() {
     _dataSubscription.cancel();
     _sensorService.dispose();
+    _heartRateService.dispose();
+    _batteryService.dispose();
     disconnectDevice();
     super.dispose();
   }
@@ -331,9 +338,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                   child: ElevatedButton.icon(
                     icon: const Icon(Icons.search),
                     label: Text(
-                      isScanning ? 'Scanning...' :
-                      isConnecting ? 'Connecting...' :
-                      'Scan for Device'
+                      isScanning ? 'Scanning...' : isConnecting ? 'Connecting...' : 'Scan for Device',
                     ),
                     onPressed: (isScanning || isConnecting) ? null : startScan,
                   ),
@@ -341,12 +346,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
               ],
             ),
           ),
-          if (connectedDevice != null)
-            Expanded(
-              child: SingleChildScrollView(
-                child: _buildDataCard(),
-              ),
-            ),
+          Expanded(
+            child: _buildDataCard(),
+          ),
         ],
       ),
     );
