@@ -8,7 +8,7 @@ class HeartRateWidget extends StatelessWidget {
     Widget build(BuildContext context) {
         return _buildStatusRow(
             'Heart Rate',
-            latestData != null ? '${latestData} BPM' : 'N/A',
+            latestData != null ? '$latestData BPM' : 'N/A',
             Icons.favorite,
             color: Colors.red,
         );

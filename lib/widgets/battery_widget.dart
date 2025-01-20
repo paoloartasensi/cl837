@@ -8,7 +8,7 @@ class BatteryWidget extends StatelessWidget {
     Widget build(BuildContext context) {
         return _buildStatusRow(
             'Battery',
-            latestData != null ? '${latestData}%' : 'N/A',
+            latestData != null ? '$latestData%' : 'N/A',
             Icons.battery_full,
             color: _getBatteryColor(latestData),
         );

@@ -40,7 +40,6 @@ class SensorService {
         try {
             if (value[0] != 0xFF) return;
             if (value[2] == 0x0c) {
-                final now = DateTime.now();
                 for (var i = 3; i < value.length - 1; i += 6) {
                     if (i + 5 >= value.length) break;
                     final rawX = _convertToSigned16(value[i] | (value[i + 1] << 8));

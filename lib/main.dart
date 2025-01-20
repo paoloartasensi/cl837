@@ -83,7 +83,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
             FlutterBluePlus.scanResults.listen((results) {
                 for (ScanResult r in results) {
+                    // ignore: deprecated_member_use
                     debugPrint('Found device: ${r.device.name}');
+                    // ignore: deprecated_member_use
                     if (r.device.name == targetDeviceName) {
                         connectToDevice(r.device);
                         FlutterBluePlus.stopScan();

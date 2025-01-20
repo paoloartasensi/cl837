@@ -52,6 +52,7 @@ class AccelerometerWidget extends StatelessWidget {
                                     width: 24,
                                     height: 24,
                                     decoration: BoxDecoration(
+                                        // ignore: deprecated_member_use
                                         color: color.withOpacity(0.2),
                                         borderRadius: BorderRadius.circular(4),
                                     ),
@@ -72,6 +73,7 @@ class AccelerometerWidget extends StatelessWidget {
                                         children: [
                                             LinearProgressIndicator(
                                                 value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
+                                                // ignore: deprecated_member_use
                                                 backgroundColor: color.withOpacity(0.1),
                                                 valueColor: AlwaysStoppedAnimation<Color>(color),
                                             ),
