@@ -2,10 +2,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:intl/intl.dart';
 import 'accelerometer_service.dart';
 
-void main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
   FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
   runApp(const MyApp());
@@ -18,33 +17,31 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'CL837 Accelerometer',
+      title: 'CL837 Sensor Display',
       theme: ThemeData(
         primarySwatch: Colors.blue,
         visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const BluetoothAccelerometerPage(),
+      home: const SensorDisplayPage(),
     );
   }
 }
 
-class BluetoothAccelerometerPage extends StatefulWidget {
-  const BluetoothAccelerometerPage({Key? key}) : super(key: key);
+class SensorDisplayPage extends StatefulWidget {
+  const SensorDisplayPage({Key? key}) : super(key: key);
 
   @override
-  State<BluetoothAccelerometerPage> createState() => _BluetoothAccelerometerPageState();
+  State<SensorDisplayPage> createState() => _SensorDisplayPageState();
 }
 
-class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage> {
-  final AccelerometerService _accelerometerService = AccelerometerService();
+class _SensorDisplayPageState extends State<SensorDisplayPage> {
+  final SensorService _sensorService = SensorService();
   static const String targetDeviceName = 'CL837-0753644';
   BluetoothDevice? connectedDevice;
-  AccelerometerData? latestData;
+  SensorData? latestData;
   bool isScanning = false;
   bool isConnecting = false;
-  late StreamSubscription<AccelerometerData> _dataSubscription;
-  FrequencyControlMode _controlMode = FrequencyControlMode.hardware;
-  TargetRate _selectedRate = TargetRate.hz100;
+  late StreamSubscription<SensorData> _dataSubscription;
 
   @override
   void initState() {
@@ -66,81 +63,86 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
     ]);
   }
 
-  Widget _buildControlsCard() {
+  Widget _buildStatusRow(String label, dynamic value, IconData icon, {Color? color}) {
     return Card(
-      elevation: 4,
-      margin: const EdgeInsets.all(16.0),
+      elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(12.0),
+        child: Row(
+          children: [
+            Icon(icon, size: 24, color: color),
+            const SizedBox(width: 12),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              value?.toString() ?? 'N/A',
+              style: TextStyle(
+                fontSize: 16,
+                color: color,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAxisRow(String axis, double value, Color color) {
+    return Card(
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(12.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Control Mode',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            DropdownButton<FrequencyControlMode>(
-              value: _controlMode,
-              isExpanded: true,
-              items: FrequencyControlMode.values.map((mode) {
-                return DropdownMenuItem<FrequencyControlMode>(
-                  value: mode,
-                  child: Text(mode.label),
-                );
-              }).toList(),
-              onChanged: (mode) {
-                if (mode != null) {
-                  setState(() {
-                    _controlMode = mode;
-                    _accelerometerService.setControlMode(mode);
-                  });
-                }
-              },
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Target Rate',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            DropdownButton<TargetRate>(
-              value: _selectedRate,
-              isExpanded: true,
-              items: TargetRate.values.map((rate) {
-                return DropdownMenuItem<TargetRate>(
-                  value: rate,
-                  child: Text(rate.label),
-                );
-              }).toList(),
-              onChanged: (rate) async {
-                if (rate != null) {
-                  try {
-                    setState(() {
-                      _selectedRate = rate;
-                    });
-                    _accelerometerService.setTargetRate(rate);
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Target rate set to ${rate.label}'),
-                          duration: const Duration(seconds: 2),
+            Row(
+              children: [
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Center(
+                    child: Text(
+                      axis,
+                      style: TextStyle(
+                        color: color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      LinearProgressIndicator(
+                        value: (value + 8.0) / 16.0, // Normalize from -8g to +8g
+                        backgroundColor: color.withOpacity(0.1),
+                        valueColor: AlwaysStoppedAnimation<Color>(color),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${value.toStringAsFixed(3)} g',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w500,
                         ),
-                      );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text('Error setting rate: $e'),
-                          backgroundColor: Colors.red,
-                          duration: const Duration(seconds: 3),
-                        ),
-                      );
-                    }
-                  }
-                }
-              },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -149,114 +151,62 @@ class _BluetoothAccelerometerPageState extends State<BluetoothAccelerometerPage>
   }
 
   Widget _buildDataCard() {
-    return Card(
-      elevation: 4,
-      margin: const EdgeInsets.all(16.0),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'Accelerometer Data',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                if (latestData != null)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Text(
-                        DateFormat('HH:mm:ss.SSS').format(latestData!.timestamp),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        'Rate: ${latestData!.frequency.toStringAsFixed(1)} Hz',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      Text(
-                        'Interval: ${latestData!.interval.toStringAsFixed(1)} ms',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                    ],
-                  ),
-              ],
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (latestData != null) ...[
+            _buildStatusRow(
+              'Heart Rate',
+              latestData!.heartRate != null ? '${latestData!.heartRate} BPM' : 'N/A',
+              Icons.favorite,
+              color: Colors.red,
+            ),
+            const SizedBox(height: 8),
+            _buildStatusRow(
+              'Battery',
+              latestData!.batteryLevel != null ? '${latestData!.batteryLevel}%' : 'N/A',
+              Icons.battery_full,
+              color: _getBatteryColor(latestData!.batteryLevel),
             ),
             const SizedBox(height: 16),
-            if (latestData != null) ...[
-              _buildAxisRow('X', latestData!.x, Colors.red),
-              const SizedBox(height: 8),
-              _buildAxisRow('Y', latestData!.y, Colors.green),
-              const SizedBox(height: 8),
-              _buildAxisRow('Z', latestData!.z, Colors.blue),
-            ] else
-              const Center(
-                child: Text(
-                  'Waiting for data...',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.grey,
-                  ),
+            const Text(
+              'Accelerometer',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _buildAxisRow('X', latestData!.x, Colors.red),
+            const SizedBox(height: 8),
+            _buildAxisRow('Y', latestData!.y, Colors.green),
+            const SizedBox(height: 8),
+            _buildAxisRow('Z', latestData!.z, Colors.blue),
+          ] else
+            const Center(
+              child: Text(
+                'Waiting for data...',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey,
                 ),
               ),
-          ],
-        ),
+            ),
+        ],
       ),
     );
   }
 
-  Widget _buildAxisRow(String axis, double value, Color color) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 30,
-          child: Text(
-            axis,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
-            ),
-          ),
-        ),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LinearProgressIndicator(
-                value: (value + 8.0) / 16.0, // Normalize from -8g to +8g
-                backgroundColor: color.withOpacity(0.1),
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${value.toStringAsFixed(3)} g',
-                style: const TextStyle(
-                  fontFamily: 'Monospace',
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
+  Color _getBatteryColor(int? level) {
+    if (level == null) return Colors.grey;
+    if (level > 60) return Colors.green;
+    if (level > 30) return Colors.orange;
+    return Colors.red;
   }
-Future<void> startScan() async {
+
+  Future<void> startScan() async {
     if (isScanning) return;
     setState(() {
       isScanning = true;
@@ -286,6 +236,7 @@ Future<void> startScan() async {
           isScanning = false;
         });
       }
+
       showError('Error during scan: $e');
     }
   }
@@ -297,8 +248,8 @@ Future<void> startScan() async {
     });
     try {
       await device.connect(timeout: const Duration(seconds: 10));
-      await _accelerometerService.start(device);
-      _dataSubscription = _accelerometerService.dataStream.listen((data) {
+      await _sensorService.start(device);
+      _dataSubscription = _sensorService.dataStream.listen((data) {
         setState(() {
           latestData = data;
         });
@@ -323,7 +274,7 @@ Future<void> startScan() async {
   Future<void> disconnectDevice() async {
     try {
       await _dataSubscription.cancel();
-      await _accelerometerService.stop();
+      await _sensorService.stop();
       await connectedDevice?.disconnect();
     } catch (e) {
       debugPrint('Error during disconnect: $e');
@@ -350,7 +301,7 @@ Future<void> startScan() async {
   @override
   void dispose() {
     _dataSubscription.cancel();
-    _accelerometerService.dispose();
+    _sensorService.dispose();
     disconnectDevice();
     super.dispose();
   }
@@ -359,7 +310,7 @@ Future<void> startScan() async {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('CL837 Accelerometer'),
+        title: const Text('CL837 Sensor Display'),
         actions: [
           if (connectedDevice != null)
             IconButton(
@@ -390,17 +341,14 @@ Future<void> startScan() async {
               ],
             ),
           ),
-          if (connectedDevice != null) ...[
-            _buildControlsCard(),
+          if (connectedDevice != null)
             Expanded(
               child: SingleChildScrollView(
                 child: _buildDataCard(),
               ),
             ),
-          ],
         ],
       ),
     );
   }
 }
-
