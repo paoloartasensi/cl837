@@ -60,15 +60,17 @@ class HeartRateService {
       );
       debugPrint('Found Heart Rate characteristic: ${hrChar.uuid}');
       debugPrint('Heart Rate Properties: read=${hrChar.properties.read}, notify=${hrChar.properties.notify}');
-
-      // Try initial read
-      if (hrChar.properties.read) {
-        try {
-          final value = await hrChar.read();
-          debugPrint('Initial heart rate read: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-          _processHeartRate(value);
-        } catch (e) {
-          debugPrint('Error reading initial heart rate: $e');
+      
+      
+      if (hrChar.properties.notify) {
+        final success = await hrChar.setNotifyValue(true);
+        if (success) {
+          _heartRateSubscription = hrChar.lastValueStream.listen(
+            (value) {
+              _processHeartRate(value);
+            },
+            onError: (e) => debugPrint('Heart rate notification error: $e'),
+          );
         }
       }
 

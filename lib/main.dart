@@ -5,6 +5,9 @@ import 'package:permission_handler/permission_handler.dart';
 import 'accelerometer_service.dart';
 import 'battery.dart';
 import 'heartrate.dart';
+import 'widgets/accelerometer_widget.dart';
+import 'widgets/battery_widget.dart';
+import 'widgets/heart_rate_widget.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,149 +70,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     ]);
   }
 
-  Widget _buildStatusRow(String label, dynamic value, IconData icon, {Color? color}) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Row(
-          children: [
-            Icon(icon, size: 24, color: color),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const Spacer(),
-            Text(
-              value?.toString() ?? 'N/A',
-              style: TextStyle(
-                fontSize: 16,
-                color: color,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAxisRow(String axis, double value, Color color) {
-    return Card(
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 24,
-                  height: 24,
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(4),
-                  ),
-                  child: Center(
-                    child: Text(
-                      axis,
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      LinearProgressIndicator(
-                        value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
-                        backgroundColor: color.withOpacity(0.1),
-                        valueColor: AlwaysStoppedAnimation<Color>(color),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        '${value.toStringAsFixed(3)} g',
-                        style: TextStyle(
-                          color: color,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDataCard() {
-    return Padding(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (latestData != null) ...[
-            _buildStatusRow(
-              'Heart Rate',
-              latestData!.heartRate != null ? '${latestData!.heartRate} BPM' : 'N/A',
-              Icons.favorite,
-              color: Colors.red,
-            ),
-            const SizedBox(height: 8),
-            _buildStatusRow(
-              'Battery',
-              latestData!.batteryLevel != null ? '${latestData!.batteryLevel}%' : 'N/A',
-              Icons.battery_full,
-              color: _getBatteryColor(latestData!.batteryLevel),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Accelerometer',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 8),
-            _buildAxisRow('X', latestData!.x, Colors.red),
-            const SizedBox(height: 8),
-            _buildAxisRow('Y', latestData!.y, Colors.green),
-            const SizedBox(height: 8),
-            _buildAxisRow('Z', latestData!.z, Colors.blue),
-          ] else
-            const Center(
-              child: Text(
-                'Waiting for data...',
-                style: TextStyle(
-                  fontSize: 16,
-                  color: Colors.grey,
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Color _getBatteryColor(int? level) {
-    if (level == null) return Colors.grey;
-    if (level > 60) return Colors.green;
-    if (level > 30) return Colors.orange;
-    return Colors.red;
-  }
-
   Future<void> startScan() async {
     if (isScanning) return;
     setState(() {
@@ -228,6 +88,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         }
       });
       await Future.delayed(const Duration(seconds: 5));
+
       if (mounted) {
         setState(() {
           isScanning = false;
@@ -347,7 +208,19 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             ),
           ),
           Expanded(
-            child: _buildDataCard(),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  HeartRateWidget(latestData: latestData),
+                  const SizedBox(height: 8),
+                  BatteryWidget(latestData: latestData),
+                  const SizedBox(height: 16),
+                  AccelerometerWidget(latestData: latestData),
+                ],
+              ),
+            ),
           ),
         ],
       ),
