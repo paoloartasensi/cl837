@@ -26,6 +26,11 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Aggiungi questa configurazione per specificare la versione NDK
+ext {
+    ndkVersion = "25.2.9519653" // Usa una versione stabile dell'NDK
+}
+
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }
