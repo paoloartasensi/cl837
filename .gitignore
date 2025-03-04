@@ -43,5 +43,17 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Android Studio build artifacts and CMake related
+/android/app/.cxx/
+/android/**/.cxx/
+android/app/.cxx/RelWithDebInfo/
+**/CMakeFiles/
+**/CMakeCCompilerId.c
+**/CMakeCXXCompilerId.cpp
+
+# Project specific directories to ignore
 /REVERSE/
+
+# Lock files that can cause merge conflicts
 pubspec.lock
