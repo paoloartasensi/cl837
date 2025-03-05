@@ -43,13 +43,18 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     final SensorService _sensorService = SensorService();
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
-    static const String targetDeviceName = 'CL837-0753644';
+    
     BluetoothDevice? connectedDevice;
+    List<BluetoothDevice> foundDevices = [];
+    BluetoothDevice? selectedDevice;
+    
     AccelerometerData? latestAccelData;
     int? latestHeartRate;
     int? latestBatteryLevel;
+    
     bool isScanning = false;
     bool isConnecting = false;
+    
     late StreamSubscription<AccelerometerData> _accelDataSubscription;
     late StreamSubscription<int?> _heartRateSubscription;
     late StreamSubscription<int?> _batteryLevelSubscription;
@@ -78,22 +83,22 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         if (isScanning) return;
         setState(() {
             isScanning = true;
+            foundDevices.clear();
         });
         try {
-            await FlutterBluePlus.startScan(timeout: const Duration(seconds: 5));
+            await FlutterBluePlus.startScan(timeout: const Duration(seconds: 10));
             FlutterBluePlus.scanResults.listen((results) {
-                for (ScanResult r in results) {
-                    // ignore: deprecated_member_use
-                    debugPrint('Found device: ${r.device.name}');
-                    // ignore: deprecated_member_use
-                    if (r.device.name == targetDeviceName) {
-                        connectToDevice(r.device);
-                        FlutterBluePlus.stopScan();
-                        break;
-                    }
-                }
+                setState(() {
+                    // Filter out duplicate devices and devices without names
+                    foundDevices = results
+                        .where((r) => r.device.name.isNotEmpty)
+                        .map((r) => r.device)
+                        .toSet()
+                        .toList();
+                });
             });
-            await Future.delayed(const Duration(seconds: 5));
+            await Future.delayed(const Duration(seconds: 10));
+            await FlutterBluePlus.stopScan();
             if (mounted) {
                 setState(() {
                     isScanning = false;
@@ -128,42 +133,13 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     showWarning('Some sensors may not work properly. Accelerometer is still functional.');
                 }
             }
-            _accelDataSubscription = _sensorService.accelDataStream.listen(
-                (data) {
-                    setState(() {
-                        latestAccelData = data;
-                    });
-                },
-                onError: (error) {
-                    debugPrint('Sensor data stream error: $error');
-                    showWarning('Some sensor data may be temporarily unavailable');
-                },
-            );
-            _heartRateSubscription = _heartRateService.dataStream.listen(
-                (heartRate) {
-                    setState(() {
-                        latestHeartRate = heartRate;
-                    });
-                },
-                onError: (error) {
-                    debugPrint('Heart rate stream error: $error');
-                    showWarning('Heart rate data may be temporarily unavailable');
-                },
-            );
-            _batteryLevelSubscription = _batteryService.dataStream.listen(
-                (batteryLevel) {
-                    setState(() {
-                        latestBatteryLevel = batteryLevel;
-                    });
-                },
-                onError: (error) {
-                    debugPrint('Battery stream error: $error');
-                    showWarning('Battery data may be temporarily unavailable');
-                },
-            );
+            
+            _setupStreamSubscriptions(device);
+            
             if (mounted) {
                 setState(() {
                     connectedDevice = device;
+                    selectedDevice = device;
                     isConnecting = false;
                 });
             }
@@ -178,6 +154,44 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         }
     }
 
+    void _setupStreamSubscriptions(BluetoothDevice device) {
+        _accelDataSubscription = _sensorService.accelDataStream.listen(
+            (data) {
+                setState(() {
+                    latestAccelData = data;
+                });
+            },
+            onError: (error) {
+                debugPrint('Sensor data stream error: $error');
+                showWarning('Some sensor data may be temporarily unavailable');
+            },
+        );
+        
+        _heartRateSubscription = _heartRateService.dataStream.listen(
+            (heartRate) {
+                setState(() {
+                    latestHeartRate = heartRate;
+                });
+            },
+            onError: (error) {
+                debugPrint('Heart rate stream error: $error');
+                showWarning('Heart rate data may be temporarily unavailable');
+            },
+        );
+        
+        _batteryLevelSubscription = _batteryService.dataStream.listen(
+            (batteryLevel) {
+                setState(() {
+                    latestBatteryLevel = batteryLevel;
+                });
+            },
+            onError: (error) {
+                debugPrint('Battery stream error: $error');
+                showWarning('Battery data may be temporarily unavailable');
+            },
+        );
+    }
+
     Future<void> disconnectDevice() async {
         try {
             await _accelDataSubscription.cancel();
@@ -190,9 +204,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         } catch (e) {
             debugPrint('Error during disconnect: $e');
         }
+        
         if (mounted) {
             setState(() {
                 connectedDevice = null;
+                selectedDevice = null;
                 latestAccelData = null;
                 latestHeartRate = null;
                 latestBatteryLevel = null;
@@ -259,16 +275,51 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                                     child: ElevatedButton.icon(
                                         icon: const Icon(Icons.search),
                                         label: Text(
-                                            isScanning ? 'Scanning...' :
-                                            isConnecting ? 'Connecting...' :
-                                            'Scan for Device',
+                                            isScanning ? 'Scanning...' : 'Scan for Devices',
                                         ),
-                                        onPressed: (isScanning || isConnecting) ? null : startScan,
+                                        onPressed: isScanning ? null : startScan,
                                     ),
                                 ),
                             ],
                         ),
                     ),
+                    if (foundDevices.isNotEmpty)
+                        Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: DropdownButtonFormField<BluetoothDevice>(
+                                decoration: InputDecoration(
+                                    labelText: 'Select Device',
+                                    border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(10),
+                                    ),
+                                ),
+                                value: selectedDevice,
+                                hint: const Text('Choose a Bluetooth Device'),
+                                items: foundDevices.map((device) {
+                                    return DropdownMenuItem<BluetoothDevice>(
+                                        value: device,
+                                        child: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
+                                    );
+                                }).toList(),
+                                onChanged: (device) {
+                                    if (device != null) {
+                                        setState(() {
+                                            selectedDevice = device;
+                                        });
+                                    }
+                                },
+                            ),
+                        ),
+                    if (selectedDevice != null && connectedDevice == null)
+                        Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                            child: ElevatedButton(
+                                onPressed: isConnecting ? null : () => connectToDevice(selectedDevice!),
+                                child: Text(
+                                    isConnecting ? 'Connecting...' : 'Connect to ${selectedDevice!.name}',
+                                ),
+                            ),
+                        ),
                     Expanded(
                         child: Padding(
                             padding: const EdgeInsets.all(16.0),
