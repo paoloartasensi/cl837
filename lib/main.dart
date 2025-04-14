@@ -2,12 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'accelerometer_service.dart';
+import 'accelerometer_service_optimized.dart';
 import 'battery.dart';
 import 'heartrate.dart';
 import 'widgets/accelerometer_widget.dart';
 import 'widgets/battery_widget.dart';
 import 'widgets/heart_rate_widget.dart';
+import 'models/sensor_data.dart';
 
 void main() {
     WidgetsFlutterBinding.ensureInitialized();
@@ -40,7 +41,7 @@ class SensorDisplayPage extends StatefulWidget {
 }
 
 class _SensorDisplayPageState extends State<SensorDisplayPage> {
-    final SensorService _sensorService = SensorService();
+    final AccelerometerServiceOptimized _sensorService = AccelerometerServiceOptimized();
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
     
@@ -91,7 +92,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 setState(() {
                     // Filter out duplicate devices and devices without names
                     foundDevices = results
-                        .where((r) => r.device.name.isNotEmpty)
+                        .where((r) => r.device.platformName.isNotEmpty)
                         .map((r) => r.device)
                         .toSet()
                         .toList();
@@ -122,10 +123,33 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         });
         try {
             await device.connect(timeout: const Duration(seconds: 10));
+            
+            // Richiedi un MTU più grande
             try {
-                await _sensorService.start(device, _heartRateService, _batteryService);
+                await device.requestMtu(512);
+                debugPrint('MTU size increased to 512');
             } catch (e) {
-                if (!_sensorService.isAccelerometerWorking) {
+                debugPrint('Failed to increase MTU: $e');
+            }
+            
+            // Imposta priorità di connessione elevata - corretto l'uso dell'API
+            try {
+                // Parametro obbligatorio connectionPriorityRequest aggiunto
+                await device.requestConnectionPriority(
+                    connectionPriorityRequest: ConnectionPriority.high
+                );
+                debugPrint('Connection priority set to high');
+            } catch (e) {
+                debugPrint('Failed to set connection priority: $e');
+            }
+            
+            try {
+                // Avvia i servizi separatamente per gestire meglio gli errori
+                await _sensorService.start(device);
+                try { await _heartRateService.start(device); } catch (e) { debugPrint('Heart rate service error: $e'); }
+                try { await _batteryService.start(device); } catch (e) { debugPrint('Battery service error: $e'); }
+            } catch (e) {
+                if (!_sensorService.isRunning) {
                     showError('Critical error: Accelerometer not working');
                     await disconnectDevice();
                     return;
@@ -134,7 +158,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 }
             }
             
-            _setupStreamSubscriptions(device);
+            _setupStreamSubscriptions();
             
             if (mounted) {
                 setState(() {
@@ -154,8 +178,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         }
     }
 
-    void _setupStreamSubscriptions(BluetoothDevice device) {
-        _accelDataSubscription = _sensorService.accelDataStream.listen(
+    void _setupStreamSubscriptions() {
+        _accelDataSubscription = _sensorService.dataStream.listen(
             (data) {
                 setState(() {
                     latestAccelData = data;
@@ -298,7 +322,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                                 items: foundDevices.map((device) {
                                     return DropdownMenuItem<BluetoothDevice>(
                                         value: device,
-                                        child: Text(device.name.isNotEmpty ? device.name : 'Unknown Device'),
+                                        child: Text(device.platformName.isNotEmpty ? device.platformName : 'Unknown Device'),
                                     );
                                 }).toList(),
                                 onChanged: (device) {
@@ -316,7 +340,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                             child: ElevatedButton(
                                 onPressed: isConnecting ? null : () => connectToDevice(selectedDevice!),
                                 child: Text(
-                                    isConnecting ? 'Connecting...' : 'Connect to ${selectedDevice!.name}',
+                                    isConnecting ? 'Connecting...' : 'Connect to ${selectedDevice!.platformName}',
                                 ),
                             ),
                         ),

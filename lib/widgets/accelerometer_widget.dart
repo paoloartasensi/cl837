@@ -1,5 +1,7 @@
+// ignore_for_file: deprecated_member_use
+
 import 'package:flutter/material.dart';
-import '../accelerometer_service.dart';
+import '../models/sensor_data.dart';
 
 class AccelerometerWidget extends StatelessWidget {
     final AccelerometerData? latestData;
@@ -52,8 +54,13 @@ class AccelerometerWidget extends StatelessWidget {
                                     width: 24,
                                     height: 24,
                                     decoration: BoxDecoration(
-                                        // ignore: deprecated_member_use
-                                        color: color.withOpacity(0.2),
+                                        // Usa il costruttore Color con opacità 0.2
+                                        color: Color.fromRGBO(
+                                            color.value >> 16 & 0xFF, // red
+                                            color.value >> 8 & 0xFF,  // green
+                                            color.value & 0xFF,       // blue
+                                            0.2,                      // alpha
+                                        ),
                                         borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Center(
@@ -73,8 +80,13 @@ class AccelerometerWidget extends StatelessWidget {
                                         children: [
                                             LinearProgressIndicator(
                                                 value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
-                                                // ignore: deprecated_member_use
-                                                backgroundColor: color.withOpacity(0.1),
+                                                // Usa il costruttore Color con opacità 0.1
+                                                backgroundColor: Color.fromRGBO(
+                                                    color.value >> 16 & 0xFF, // red
+                                                    color.value >> 8 & 0xFF,  // green
+                                                    color.value & 0xFF,       // blue
+                                                    0.1,                      // alpha
+                                                ),
                                                 valueColor: AlwaysStoppedAnimation<Color>(color),
                                             ),
                                             const SizedBox(height: 4),
