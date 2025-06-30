@@ -7,9 +7,9 @@ plugins {
 
 android {
     namespace = "com.example.cl837"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 34
     
-    // Imposta esplicitamente la versione NDK invece di usare quella di Flutter
+    // Usa la versione NDK funzionante
     ndkVersion = "29.0.13113456"
 
     compileOptions {
@@ -24,12 +24,11 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "com.example.cl837"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        // Valori fissi per evitare dipendenze da Flutter
+        minSdk = 21
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0"
     }
 
     buildTypes {
@@ -37,6 +36,8 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.debug
+            minifyEnabled = false
+            shrinkResources = false
         }
     }
 }
