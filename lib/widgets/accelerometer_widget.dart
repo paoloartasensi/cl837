@@ -4,8 +4,12 @@ import 'package:flutter/material.dart';
 import '../models/sensor_data.dart';
 
 class AccelerometerWidget extends StatelessWidget {
-    final AccelerometerData? latestData;
-    const AccelerometerWidget({Key? key, required this.latestData}) : super(key: key);
+  final AccelerometerData? latestData;
+
+  const AccelerometerWidget({
+    super.key,
+    required this.latestData,
+  });
 
     @override
     Widget build(BuildContext context) {
@@ -53,14 +57,10 @@ class AccelerometerWidget extends StatelessWidget {
                                 Container(
                                     width: 24,
                                     height: 24,
-                                    decoration: BoxDecoration(
-                                        // Usa il costruttore Color con opacità 0.2
-                                        color: Color.fromRGBO(
-                                            color.value >> 16 & 0xFF, // red
-                                            color.value >> 8 & 0xFF,  // green
-                                            color.value & 0xFF,       // blue
-                                            0.2,                      // alpha
-                                        ),
+                                    decoration: BoxDecoration(                                // Usa withOpacity invece di .value (deprecato)
+                                // ignore: duplicate_ignore
+                                // ignore: deprecated_member_use
+                                color: color.withOpacity(0.2),
                                         borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Center(
@@ -80,13 +80,8 @@ class AccelerometerWidget extends StatelessWidget {
                                         children: [
                                             LinearProgressIndicator(
                                                 value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
-                                                // Usa il costruttore Color con opacità 0.1
-                                                backgroundColor: Color.fromRGBO(
-                                                    color.value >> 16 & 0xFF, // red
-                                                    color.value >> 8 & 0xFF,  // green
-                                                    color.value & 0xFF,       // blue
-                                                    0.1,                      // alpha
-                                                ),
+                                                // Usa withOpacity invece di .value (deprecato)
+                                                backgroundColor: color.withOpacity(0.1),
                                                 valueColor: AlwaysStoppedAnimation<Color>(color),
                                             ),
                                             const SizedBox(height: 4),

@@ -3,17 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'battery.dart';
 import 'heartrate.dart';
-
-class AccelerometerData {
-    final double x;
-    final double y;
-    final double z;
-    const AccelerometerData({
-        required this.x,
-        required this.y,
-        required this.z,
-    });
-}
+import 'models/sensor_data.dart';
 
 class SensorService {
     // Accelerometer Service & Characteristics

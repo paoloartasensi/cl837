@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'accelerometer_service_optimized.dart';
+import 'accelerometer_service.dart';
 import 'battery.dart';
 import 'heartrate.dart';
 import 'widgets/accelerometer_widget.dart';
@@ -41,7 +41,7 @@ class SensorDisplayPage extends StatefulWidget {
 }
 
 class _SensorDisplayPageState extends State<SensorDisplayPage> {
-    final AccelerometerServiceOptimized _sensorService = AccelerometerServiceOptimized();
+    final SensorService _sensorService = SensorService();
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
     
@@ -145,11 +145,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             
             try {
                 // Avvia i servizi separatamente per gestire meglio gli errori
-                await _sensorService.start(device);
+                await _sensorService.start(device, _heartRateService, _batteryService);
                 try { await _heartRateService.start(device); } catch (e) { debugPrint('Heart rate service error: $e'); }
                 try { await _batteryService.start(device); } catch (e) { debugPrint('Battery service error: $e'); }
             } catch (e) {
-                if (!_sensorService.isRunning) {
+                if (!_sensorService.isAccelerometerWorking) {
                     showError('Critical error: Accelerometer not working');
                     await disconnectDevice();
                     return;
@@ -179,7 +179,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     }
 
     void _setupStreamSubscriptions() {
-        _accelDataSubscription = _sensorService.dataStream.listen(
+        _accelDataSubscription = _sensorService.accelDataStream.listen(
             (data) {
                 setState(() {
                     latestAccelData = data;
