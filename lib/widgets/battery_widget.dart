@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 
 class BatteryWidget extends StatelessWidget {
     final int? latestData;
@@ -6,6 +7,9 @@ class BatteryWidget extends StatelessWidget {
 
     @override
     Widget build(BuildContext context) {
+        // Debug: Print battery data received
+        debugPrint('🔋 BatteryWidget: Rendering with data: $latestData');
+        
         return _buildStatusRow(
             'Battery',
             latestData != null ? '$latestData%' : 'N/A',

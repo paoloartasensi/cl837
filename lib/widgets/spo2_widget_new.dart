@@ -60,6 +60,8 @@ class SpO2Widget extends StatelessWidget {
   }
 
   Widget _buildSpO2Content(BuildContext context) {
+    final isReadingValid = _isValidReading();
+    
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -69,17 +71,17 @@ class SpO2Widget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${spo2Data!.spo2Value}%',
+                isReadingValid ? '${spo2Data!.spo2Value}%' : '--',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
-                  color: _getSpO2Color(),
+                  color: isReadingValid ? _getSpO2Color() : Colors.grey,
                   fontSize: 22,
                 ),
               ),
               Text(
-                _getSpO2Status(),
+                isReadingValid ? _getSpO2Status() : _getImprovementTip(),
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                  color: _getSpO2Color(),
+                  color: isReadingValid ? _getSpO2Color() : Colors.orange,
                   fontWeight: FontWeight.w500,
                   fontSize: 10,
                 ),
@@ -91,21 +93,48 @@ class SpO2Widget extends StatelessWidget {
         const SizedBox(height: 8),
         
         // Status indicators
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        Wrap(
+          spacing: 4,
+          runSpacing: 4,
+          alignment: WrapAlignment.center,
           children: [
             _buildStatusChip(
-              spo2Data!.correctWristPosture ? 'Correct' : 'Incorrect',
+              spo2Data!.correctWristPosture ? 'Correct Position' : 'Turn Face Up',
               spo2Data!.correctWristPosture ? Colors.green : Colors.orange,
             ),
             _buildStatusChip(
               spo2Data!.isWearing ? 'Wearing' : 'Not Wearing',
               spo2Data!.isWearing ? Colors.green : Colors.red,
             ),
+            _buildStatusChip(
+              spo2Data!.signalQualityDescription,
+              spo2Data!.signalQuality >= 8 ? Colors.green : Colors.orange,
+            ),
           ],
         ),
         
         const SizedBox(height: 6),
+        
+        // Instructions for better readings when conditions are not optimal
+        if (!_isValidReading() && spo2Data != null) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(8.0),
+            decoration: BoxDecoration(
+              color: Colors.orange.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              _getDetailedInstructions(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Colors.orange[700],
+                fontSize: 10,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
         
         // Timestamp
         Text(
@@ -182,6 +211,56 @@ class SpO2Widget extends StatelessWidget {
     if (value >= 95) return 'Normal';
     if (value >= 90) return 'Low';
     return 'Very Low';
+  }
+
+  bool _isValidReading() {
+    if (spo2Data == null) return false;
+    
+    return spo2Data!.isWearing && 
+           spo2Data!.correctWristPosture && 
+           spo2Data!.signalQuality >= 8 && 
+           spo2Data!.spo2Value >= 70 && 
+           spo2Data!.spo2Value <= 100;
+  }
+
+  String _getImprovementTip() {
+    if (spo2Data == null) return 'No data';
+    
+    if (!spo2Data!.isWearing) return 'Wear device properly';
+    if (!spo2Data!.correctWristPosture) return 'Turn wrist face up';
+    if (spo2Data!.signalQuality < 8) return 'Stay still, stabilizing...';
+    if (spo2Data!.spo2Value < 70 || spo2Data!.spo2Value > 100) return 'Stabilizing reading...';
+    
+    return 'Adjusting...';
+  }
+
+  String _getDetailedInstructions() {
+    if (spo2Data == null) return 'No data available';
+    
+    List<String> instructions = [];
+    
+    if (!spo2Data!.isWearing) {
+      instructions.add('• Wear device snugly on your wrist');
+    }
+    
+    if (!spo2Data!.correctWristPosture) {
+      instructions.add('• Keep wrist face up and still');
+    }
+    
+    if (spo2Data!.signalQuality < 8) {
+      instructions.add('• Stay completely still for 30 seconds');
+      instructions.add('• Ensure device is clean and tight');
+    }
+    
+    if (spo2Data!.spo2Value < 70 || spo2Data!.spo2Value > 100) {
+      instructions.add('• Allow time for reading to stabilize');
+    }
+    
+    if (instructions.isEmpty) {
+      return 'Reading stabilizing, please wait...';
+    }
+    
+    return instructions.join('\n');
   }
 
   String _formatTime(DateTime time) {
