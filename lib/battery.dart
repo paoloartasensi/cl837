@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -30,6 +31,25 @@ class BatteryService {
 
   Stream<int?> get dataStream => _dataStreamController.stream;
   int? get lastBatteryLevel => _lastBatteryLevel;
+  
+  BatteryService() {
+    // Try to load the last known battery level on init
+    _loadLastKnownBatteryLevel();
+  }
+  
+  void _loadLastKnownBatteryLevel() {
+    try {
+      final fileContent = File('_lastBatteryLevel').readAsStringSync();
+      final savedLevel = int.tryParse(fileContent);
+      if (savedLevel != null && savedLevel >= 0 && savedLevel <= 100) {
+        _lastBatteryLevel = savedLevel;
+        _dataStreamController.add(_lastBatteryLevel);
+        debugPrint('🔋 Loaded battery from saved value: $_lastBatteryLevel%');
+      }
+    } catch (e) {
+      debugPrint('🔋 No saved battery level found: $e');
+    }
+  }
 
   void _processBattery(List<int> value) {
     try {
@@ -38,8 +58,57 @@ class BatteryService {
       _lastBatteryLevel = value[0];
       _dataStreamController.add(_lastBatteryLevel);
       debugPrint('🔋 Battery level updated: $_lastBatteryLevel%');
+      
+      // Save to file for persistence
+      try {
+        File('_lastBatteryLevel').writeAsStringSync('$_lastBatteryLevel');
+        debugPrint('🔋 Saved battery level to file: $_lastBatteryLevel%');
+      } catch (e) {
+        debugPrint('🔋 Could not save battery level to file: $e');
+      }
     } catch (e) {
       debugPrint('Error processing battery data: $e');
+    }
+  }
+
+  // Process battery from manufacturer data (Chileaf specific)
+  void processBatteryFromManufacturerData(List<int> manufacturerData) {
+    try {
+      // Debug the raw manufacturer data
+      debugPrint('🔋 Raw manufacturer data: ${manufacturerData.toString()}');
+      
+      // From SDK: Manufacturer data format
+      // Byte 0: Manufacturer ID (0xFF)
+      // Byte 1: Battery level (0~100%)
+      // Byte 2: Reserve
+      // Byte 3: Heart rate data
+      
+      if (manufacturerData.length >= 4 && manufacturerData[0] == 0xFF) {
+        final batteryLevel = manufacturerData[1];
+        debugPrint('🔋 Found valid manufacturer format - Battery byte: $batteryLevel');
+        if (batteryLevel >= 0 && batteryLevel <= 100) {
+          _lastBatteryLevel = batteryLevel;
+          _dataStreamController.add(_lastBatteryLevel);
+          debugPrint('🔋 Battery from manufacturer data: $batteryLevel%');
+          
+          // Write to file for debug purposes
+          try {
+            File('_lastBatteryLevel').writeAsStringSync('$batteryLevel');
+          } catch (_) {}
+        }
+      } else if (manufacturerData.isNotEmpty) {
+        // Try alternative format, some devices might have different structure
+        debugPrint('🔋 Non-standard manufacturer data format, trying alternatives');
+        // Try to find battery data at common positions
+        for (int i = 0; i < manufacturerData.length; i++) {
+          final value = manufacturerData[i];
+          if (value >= 0 && value <= 100) {
+            debugPrint('🔋 Possible battery at index $i: $value%');
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error processing battery from manufacturer data: $e');
     }
   }
 

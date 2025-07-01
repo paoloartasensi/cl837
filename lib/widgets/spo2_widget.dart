@@ -5,6 +5,7 @@ class SpO2Widget extends StatelessWidget {
   final SpO2Data? spo2Data;
   final bool isConnected;
   final VoidCallback? onMeasureSpO2;
+  final VoidCallback? onForceExit;  // Bottone emergenza
   final bool isMeasuring;
 
   const SpO2Widget({
@@ -12,6 +13,7 @@ class SpO2Widget extends StatelessWidget {
     this.spo2Data,
     required this.isConnected,
     this.onMeasureSpO2,
+    this.onForceExit,
     this.isMeasuring = false,
   });
 
@@ -73,6 +75,27 @@ class SpO2Widget extends StatelessWidget {
                   ),
                 ),
               ),
+              const SizedBox(height: 4),
+              
+              // Emergency exit button (se connesso)
+              if (onForceExit != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: onForceExit,
+                    icon: const Icon(Icons.power_settings_new, size: 14),
+                    label: const Text(
+                      'Force Exit SpO₂ Mode',
+                      style: TextStyle(fontSize: 10),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      side: BorderSide(color: Colors.red[300]!),
+                      foregroundColor: Colors.red[700],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 8),
             ],
             

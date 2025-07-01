@@ -399,16 +399,48 @@ class ChileafExtendedService {
 
   Future<void> _sendCommand(List<int> command) async {
     if (_rxCharacteristic == null) {
-      debugPrint('RX characteristic not available');
-      return;
+      const error = 'RX characteristic not available, command not sent';
+      debugPrint('❌ $error');
+      throw Exception(error);
+    }
+
+    // Check if the characteristic is writable
+    if (!_rxCharacteristic!.properties.write && !_rxCharacteristic!.properties.writeWithoutResponse) {
+      final error = 'RX characteristic not writable: ${_rxCharacteristic!.properties}';
+      debugPrint('❌ $error');
+      throw Exception(error);
     }
 
     try {
       final frame = _buildProtocolFrame(command);
-      debugPrint('Sending command: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
-      await _rxCharacteristic!.write(frame, withoutResponse: true);
+      debugPrint('📡 Sending command frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('📡 RX Characteristic UUID: ${_rxCharacteristic!.uuid}');
+      debugPrint('📡 RX Characteristic Properties: ${_rxCharacteristic!.properties}');
+      
+      // Try to write with proper error handling and timeout
+      bool success = false;
+      try {
+        if (_rxCharacteristic!.properties.writeWithoutResponse) {
+          await _rxCharacteristic!.write(frame, withoutResponse: true);
+          debugPrint('📡 Sent with writeWithoutResponse');
+        } else {
+          await _rxCharacteristic!.write(frame, withoutResponse: false);
+          debugPrint('📡 Sent with write (with response)');
+        }
+        success = true;
+      } catch (writeError) {
+        debugPrint('❌ BLE Write error: $writeError');
+        throw Exception('BLE write failed: $writeError');
+      }
+      
+      if (success) {
+        debugPrint('✅ Command sent successfully');
+        // Add a small delay to let the device process the command
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
     } catch (e) {
-      debugPrint('Error sending command: $e');
+      debugPrint('❌ Error sending command: $e');
+      throw Exception('Command sending failed: $e');
     }
   }
 
@@ -424,17 +456,56 @@ class ChileafExtendedService {
 
   Future<void> _enableSPO2Mode() async {
     // Command 0x37 with parameter 1 to enter SPO2 mode
-    await _sendCommand([_commandSpo2, 0x01]);
+    debugPrint('🔍 Sending SPO2 mode ENABLE command: [0x${_commandSpo2.toRadixString(16)}, 0x01]');
+    try {
+      await _sendCommand([_commandSpo2, 0x01]);
+      debugPrint('✅ SPO2 mode ENABLE command sent successfully');
+    } catch (e) {
+      debugPrint('❌ SPO2 mode ENABLE command FAILED: $e');
+      rethrow;
+    }
   }
 
   Future<void> exitSPO2Mode() async {
     // Command 0x37 with parameter 0 to exit SPO2 mode
-    await _sendCommand([_commandSpo2, 0x00]);
+    debugPrint('🔍 Sending SPO2 mode EXIT command: [0x${_commandSpo2.toRadixString(16)}, 0x00]');
+    try {
+      await _sendCommand([_commandSpo2, 0x00]);
+      debugPrint('✅ SPO2 mode EXIT command sent successfully');
+    } catch (e) {
+      debugPrint('❌ SPO2 mode EXIT command FAILED: $e');
+      rethrow;
+    }
+  }
+
+  // Emergency method to force exit SpO2 mode if device gets stuck
+  Future<void> forceExitSpO2Mode() async {
+    try {
+      debugPrint('🚨 Force exiting SpO2 mode...');
+      
+      // Try multiple times to ensure exit
+      for (int i = 0; i < 3; i++) {
+        await exitSPO2Mode();
+        await Future.delayed(const Duration(milliseconds: 500));
+        debugPrint('🚨 Exit attempt ${i + 1}/3');
+      }
+      
+      debugPrint('🚨 Force exit completed - LED should be OFF');
+    } catch (e) {
+      debugPrint('🚨 Force exit error: $e');
+    }
   }
 
   Future<void> inquireSPO2Status() async {
     // Command 0x37 with parameter 2 to inquire status
-    await _sendCommand([_commandSpo2, 0x02]);
+    debugPrint('🔍 Sending SPO2 status INQUIRY command: [0x${_commandSpo2.toRadixString(16)}, 0x02]');
+    try {
+      await _sendCommand([_commandSpo2, 0x02]);
+      debugPrint('✅ SPO2 status INQUIRY command sent successfully');
+    } catch (e) {
+      debugPrint('❌ SPO2 status INQUIRY command FAILED: $e');
+      rethrow;
+    }
   }
 
   // Public method for on-demand SpO2 measurement
@@ -442,9 +513,9 @@ class ChileafExtendedService {
     try {
       debugPrint('🫁 Starting on-demand SpO2 measurement...');
       
-      // Step 1: Enter SpO2 mode
+      // Step 1: Enter SpO2 mode (LED rosso si accende)
       await _enableSPO2Mode();
-      debugPrint('🫁 SpO2 mode enabled, stabilizing...');
+      debugPrint('🫁 SpO2 mode enabled, LED should be RED, stabilizing...');
       
       // Step 2: Wait for stabilization (important for accurate reading)
       await Future.delayed(const Duration(milliseconds: 3000));
@@ -457,8 +528,21 @@ class ChileafExtendedService {
       await inquireSPO2Status(); // Final reading
       
       debugPrint('🫁 SpO2 measurement requests sent');
+      
+      // Step 4: IMPORTANTE - Exit SpO2 mode per spegnere LED
+      await Future.delayed(const Duration(milliseconds: 2000)); // Wait for final data
+      await exitSPO2Mode();
+      debugPrint('🫁 SpO2 mode exited, LED should turn OFF');
+      
     } catch (e) {
       debugPrint('🫁 Error in SpO2 measurement: $e');
+      // In caso di errore, assicuriamoci comunque di uscire dalla modalità SpO2
+      try {
+        await exitSPO2Mode();
+        debugPrint('🫁 Emergency SpO2 mode exit completed');
+      } catch (exitError) {
+        debugPrint('🫁 Failed to exit SpO2 mode: $exitError');
+      }
       rethrow;
     }
   }

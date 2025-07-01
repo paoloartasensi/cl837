@@ -237,6 +237,67 @@ Extended service data: 0xff 0x0a 0x0c 0xc0 0x01 0x80 0xfa 0x80 0x0e 0x18
 
 ---
 
+## 🎯 **AGGIORNAMENTO HRV - Conformità Standard Elite HRV**
+
+### Nuove Features Implementate:
+- ✅ **Calcolo HR Stimata**: Formula `60.000 / Mean RR` per BPM
+- ✅ **Classificazione HRV Realistica**: Basata su standard Elite HRV (59.3ms medio)
+- ✅ **Validazione Dati**: Controllo range fisiologico (300-2000ms, 30-200 BPM)
+- ✅ **Categorie HR**: Athletic, Normal, Elevated, Bradycardia, Tachycardia
+- ✅ **Qualità Dati**: Warning per dati sospetti (variazioni >50% media)
+
+### Scala HRV Aggiornata (RMSSD):
+- **Very Poor** (<15ms): Stress severo/malattia
+- **Poor** (15-30ms): Sotto media, stress
+- **Fair** (30-50ms): Leggermente sotto media  
+- **Good** (50-70ms): Sopra media Elite HRV
+- **Excellent** (>70ms): Ottima forma fisica
+
+### Esempi Pratici:
+```
+Mean RR: 857ms → HR stimata: 70 BPM (Normal)
+Mean RR: 1000ms → HR stimata: 60 BPM (Athletic)
+Mean RR: 667ms → HR stimata: 90 BPM (Elevated)
+```
+
+### Validazione Dati:
+- Range RR: 300-2000ms (fisiologico)
+- Controllo coerenza: Variazione <50% della media
+- Warning automatico per dati sospetti
+
+Ora l'HRV nell'app è conforme agli standard medici e Elite HRV! 🏆
+
+---
+
+## 🚨 **RISOLTO: LED Rosso Bloccato**
+
+### Problema Critico Identificato:
+- **Sintomi**: Device bloccato con LED rosso lampeggiante
+- **Causa**: Mancato exit da modalità SpO2 → Consumo batteria estremo  
+- **Impatto**: Device inutilizzabile, batteria scarica in poche ore
+
+### Soluzioni Implementate:
+- ✅ **Auto-Exit**: Ora `measureSpO2()` esce automaticamente dalla modalità
+- ✅ **Gestione Errori**: Exit forzato anche in caso di crash/errore
+- ✅ **Bottone Emergenza**: "Force Exit SpO₂ Mode" per sbloccare device
+- ✅ **Exit su Disconnessione**: Sempre exit quando app si disconnette
+- ✅ **Triple Exit**: 3 comandi consecutivi per assicurare spegnimento
+
+### Come Funzionano i LED:
+- **🔴 LED Rosso**: SpO2 mode (alto consumo) - deve spegnersi dopo misurazione
+- **🟢 LED Verde**: Heart Rate mode (consumo normale) - sempre attivo
+- **⚫ LED OFF**: Idle mode (basso consumo)
+
+### Procedura Emergenza LED Bloccato:
+1. Riapri app → Riconnetti device
+2. Premi "Force Exit SpO₂ Mode"  
+3. Verifica LED spento
+4. Se persiste: reset fisico device
+
+**⚠️ IMPORTANTE**: LED rosso consuma 10x normale - mai lasciare acceso!
+
+---
+
 **Sviluppatore**: AI Assistant  
 **Data**: 1 Luglio 2025  
 **Versione App**: CL837 Flutter BLE v1.2  

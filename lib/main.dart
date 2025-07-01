@@ -121,6 +121,16 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         .toSet()
                         .toList();
                 });
+                
+                // Process manufacturer data for battery level
+                for (var result in results) {
+                    final manufacturerData = result.advertisementData.manufacturerData;
+                    if (manufacturerData.isNotEmpty) {
+                        final data = manufacturerData.values.first;
+                        debugPrint('Found manufacturer data: ${data.toString()}');
+                        _batteryService.processBatteryFromManufacturerData(data);
+                    }
+                }
             });
             await Future.delayed(const Duration(seconds: 10));
             await FlutterBluePlus.stopScan();
@@ -401,6 +411,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
                             onMeasureSpO2: measureSpO2,
+                            onForceExit: forceExitSpO2,
                             isMeasuring: isMeasuringSpO2,
                         ),
                         TemperatureWidget(
@@ -442,6 +453,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
                         onMeasureSpO2: measureSpO2,
+                        onForceExit: forceExitSpO2,
                         isMeasuring: isMeasuringSpO2,
                     ),
                 ]),
@@ -548,6 +560,22 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     isMeasuringSpO2 = false;
                 });
             }
+        }
+    }
+
+    Future<void> forceExitSpO2() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            showSuccess('Force exiting SpO₂ mode...');
+            await _extendedService.forceExitSpO2Mode();
+            showSuccess('SpO₂ mode exited - LED should be OFF');
+        } catch (e) {
+            debugPrint('Failed to force exit SpO2: $e');
+            showError('Failed to exit SpO₂ mode');
         }
     }
 
