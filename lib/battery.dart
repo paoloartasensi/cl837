@@ -49,13 +49,7 @@ class BatteryService {
       await Future.delayed(const Duration(milliseconds: 1000));
       
       final services = await device.discoverServices();
-      debugPrint('🔋 Total services found: ${services.length}');
       
-      // Log all service UUIDs for debugging
-      for (final service in services) {
-        debugPrint('🔋 Service UUID: ${service.uuid}');
-      }
-
       // Try to find battery service using standard or alternative UUIDs
       BluetoothService? batteryService;
       for (final serviceUuid in _alternativeBatteryServiceUuids) {
@@ -72,13 +66,12 @@ class BatteryService {
 
       if (batteryService == null) {
         // Fallback: try to find any service that might contain battery data
-        debugPrint('🔋 Trying fallback: looking for services with battery-related characteristics');
         for (final service in services) {
           for (final char in service.characteristics) {
             for (final charUuid in _alternativeBatteryCharUuids) {
               if (char.uuid.toString().toLowerCase().contains(charUuid.toLowerCase())) {
                 batteryService = service;
-                debugPrint('🔋 Found potential battery service via characteristic: ${service.uuid}');
+                debugPrint('🔋 Found battery service via characteristic: ${service.uuid}');
                 break;
               }
             }
@@ -142,7 +135,7 @@ class BatteryService {
           _batterySubscription = batteryChar.lastValueStream.listen(
             (value) {
               try {
-                debugPrint('🔋 Battery notification received: $value');
+                // Processa solo notifiche con cambiamenti significativi
                 _processBattery(value);
               } catch (e) {
                 debugPrint('🔋 Battery notification processing error: $e');

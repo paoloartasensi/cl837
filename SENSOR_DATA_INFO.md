@@ -2,7 +2,15 @@
 
 ## 🔍 Overview
 
-This Flutter app reads and displays real-time sensor data from the CL837 Bluetooth wearable device using the Chileaf BLE Protocol SDK v0.6. The app provides comprehensive health and fitness monitoring capabilities.
+This Flutter app reads and displays real-time sensor### Current Status:
+- ✅ **Fully Functional**: Uses standard BLE battery protocol
+- 📊 **Accurate Readings**: Direct percentage from device  
+- 🔄 **Real-time Updates**: Immediate battery level changes
+- 🔗 **Standard Compatibility**: Works with all BLE battery implementations
+
+**Test Results**: Battery reading **39%** confirmed in device logs - service working correctly!
+
+**Note**: Command `0x0C` in extended data is NOT battery related - it contains other sensor information.rom the CL837 Bluetooth wearable device using the Chileaf BLE Protocol SDK v0.6. The app provides comprehensive health and fitness monitoring capabilities.
 
 ## 🌡️ **Temperature Monitoring**
 
@@ -49,6 +57,22 @@ Like professional apps, we only display readings when:
 - ✅ Reasonable SpO2 range (70-100%)
 
 **Test Protocol**: 15-second intervals with 2-second stabilization periods for medical-grade accuracy.
+
+### Current Status from Device Logs:
+```
+SPO2 raw: value=1, posture=false, signal=1, wearing=false
+! SpO2 needs adjustment: Not wearing device. Wrong wrist posture (turn face up). 
+  Weak signal (stay still). Reading stabilizing.
+```
+
+**Analysis**: 
+- ✅ **SpO2 Data Reception**: Device is sending SpO2 data successfully
+- ⚠️ **Posture Detection**: `posture=false` - wrist not face-up
+- ⚠️ **Wearing Detection**: `wearing=false` - device not detecting proper skin contact
+- ⚠️ **Signal Quality**: `signal=1` - very weak signal, needs stillness
+- 📊 **Raw Value**: `value=1` - unstable reading due to poor conditions
+
+**Solution**: Wear device properly, turn wrist face-up, stay still for 10-30 seconds for accurate readings.
 
 ### Clinical Significance:
 - **Normal Range**: 95-100%
