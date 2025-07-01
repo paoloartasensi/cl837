@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'models/heart_rate_data.dart';
 
 class HeartRateServiceException implements Exception {
   final String message;
@@ -15,34 +16,112 @@ class HeartRateService {
   static const String _heartRateServiceUuid = '180d';
   static const String _heartRateCharUuid = '2a37';
 
-  int? _lastHeartRate;
-  final _dataStreamController = StreamController<int?>.broadcast();
+  HeartRateData? _lastHeartRateData;
+  final _dataStreamController = StreamController<HeartRateData?>.broadcast();
   StreamSubscription? _heartRateSubscription;
+  int _heartRatePacketCount = 0;
 
-  Stream<int?> get dataStream => _dataStreamController.stream;
-  int? get lastHeartRate => _lastHeartRate;
+  Stream<HeartRateData?> get dataStream => _dataStreamController.stream;
+  HeartRateData? get lastHeartRateData => _lastHeartRateData;
+
+  /// Parses Heart Rate Measurement data according to BLE specification
+  /// Based on reverse-engineered Java code from HeartRateMeasurementParser
+  HeartRateData? _parseHeartRateData(List<int> data) {
+    try {
+      if (data.isEmpty) return null;
+
+      // Only log detailed parsing info every 10th packet to reduce spam
+      final shouldLog = (_heartRatePacketCount++ % 10 == 0);
+      
+      if (shouldLog) {
+        debugPrint('Parsing heart rate data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+      }
+
+      // First byte contains flags (based on BLE Heart Rate Measurement spec)
+      final flags = data[0];
+      int index = 1;
+
+      // Bit 0: Heart Rate Value Format (0 = UINT8, 1 = UINT16)
+      final isFormat16Bit = (flags & 0x01) != 0;
+      
+      // Bit 1: Sensor Contact Status (0 = not supported, 1 = supported)
+      final contactSupported = (flags & 0x02) != 0;
+      
+      // Bit 2: Sensor Contact Status (if bit 1 is 1, then 0 = not detected, 1 = detected)
+      bool? contactDetected;
+      if (contactSupported) {
+        contactDetected = (flags & 0x04) != 0;
+      }
+      
+      // Bit 3: Energy Expended Status (0 = not present, 1 = present)
+      final energyExpendedPresent = (flags & 0x08) != 0;
+      
+      // Bit 4: RR-Interval (0 = not present, 1 = present)
+      final rrIntervalsPresent = (flags & 0x10) != 0;
+
+      if (shouldLog) {
+        debugPrint('Heart Rate flags: 0x${flags.toRadixString(16)} - 16bit: $isFormat16Bit, Contact: $contactSupported${contactDetected != null ? '/$contactDetected' : ''}, Energy: $energyExpendedPresent, RR: $rrIntervalsPresent');
+      }
+
+      // Parse heart rate value
+      int heartRate;
+      if (isFormat16Bit) {
+        if (data.length < index + 2) return null;
+        heartRate = data[index] | (data[index + 1] << 8);  // Little endian
+        index += 2;
+      } else {
+        if (data.length < index + 1) return null;
+        heartRate = data[index];
+        index += 1;
+      }
+
+      // Parse Energy Expended (if present)
+      int? energyExpanded;
+      if (energyExpendedPresent) {
+        if (data.length < index + 2) return null;
+        energyExpanded = data[index] | (data[index + 1] << 8);  // Little endian, kJ
+        index += 2;
+      }
+
+      // Parse RR-Intervals (if present)
+      List<double>? rrIntervals;
+      if (rrIntervalsPresent) {
+        rrIntervals = [];
+        // RR-Intervals are in units of 1/1024 seconds, stored as UINT16 little endian
+        while (index + 1 < data.length) {
+          final rrRaw = data[index] | (data[index + 1] << 8);
+          final rrMs = (rrRaw / 1024.0) * 1000.0;  // Convert to milliseconds
+          rrIntervals.add(rrMs);
+          index += 2;
+        }
+      }
+
+      final heartRateData = HeartRateData(
+        heartRate: heartRate,
+        contactDetected: contactDetected,
+        contactSupported: contactSupported,
+        energyExpanded: energyExpanded,
+        rrIntervals: rrIntervals,
+        timestamp: DateTime.now(),
+      );
+
+      if (shouldLog) {
+        debugPrint('Parsed Heart Rate Data: $heartRateData');
+      }
+      return heartRateData;
+
+    } catch (e) {
+      debugPrint('Error parsing heart rate data: $e');
+      return null;
+    }
+  }
 
   void _processHeartRate(List<int> value) {
     try {
-      debugPrint('Raw heart rate data: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-      if (value.isEmpty) return;
-
-      // First byte contains flags
-      final flags = value[0];
-      final isFormat16Bit = (flags & 0x01) != 0;  // Check first bit
-      debugPrint('Heart Rate flags: 0x${flags.toRadixString(16)} (16-bit format: $isFormat16Bit)');
-
-      // Heart rate measurement value format
-      if (value.length >= 2) {
-        if (isFormat16Bit && value.length >= 3) {
-          // 16-bit format
-          _lastHeartRate = value[1] | (value[2] << 8);
-        } else {
-          // 8-bit format
-          _lastHeartRate = value[1];
-        }
-        debugPrint('Processed Heart Rate: $_lastHeartRate BPM');
-        _dataStreamController.add(_lastHeartRate);
+      final heartRateData = _parseHeartRateData(value);
+      if (heartRateData != null) {
+        _lastHeartRateData = heartRateData;
+        _dataStreamController.add(heartRateData);
       }
     } catch (e) {
       debugPrint('Error processing heart rate data: $e');
@@ -55,14 +134,7 @@ class HeartRateService {
       await Future.delayed(const Duration(milliseconds: 1000));
       
       final services = await device.discoverServices();
-      debugPrint('Found ${services.length} services:');
-      for (var service in services) {
-        debugPrint('Service: ${service.uuid}');
-        for (var char in service.characteristics) {
-          debugPrint('  Char: ${char.uuid}');
-          debugPrint('    Properties: Read=${char.properties.read}, Notify=${char.properties.notify}');
-        }
-      }
+      debugPrint('Heart Rate: Found ${services.length} services - looking for $_heartRateServiceUuid');
 
       final heartRateService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase().contains(_heartRateServiceUuid.toLowerCase()),
@@ -91,7 +163,10 @@ class HeartRateService {
           _heartRateSubscription = heartRateChar.lastValueStream.listen(
             (value) {
               try {
-                debugPrint('Heart Rate notification received');
+                // Reduced logging - only log every 10th heart rate packet
+                if (_heartRatePacketCount % 10 == 0) {
+                  debugPrint('Heart Rate notification received (packet #$_heartRatePacketCount)');
+                }
                 _processHeartRate(value);
               } catch (e) {
                 debugPrint('Heart Rate notification processing error: $e');
@@ -114,7 +189,7 @@ class HeartRateService {
       debugPrint('Heart Rate service setup complete');
     } catch (e) {
       debugPrint('Heart Rate service start failed: $e');
-      _lastHeartRate = null;
+      _lastHeartRateData = null;
       rethrow;
     }
   }
@@ -123,7 +198,7 @@ class HeartRateService {
     debugPrint('Stopping Heart Rate service...');
     await _heartRateSubscription?.cancel();
     _heartRateSubscription = null;
-    _lastHeartRate = null;
+    _lastHeartRateData = null;
     debugPrint('Heart Rate service stopped');
   }
 

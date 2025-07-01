@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'battery.dart';
 import 'heartrate.dart';
+import 'chileaf_extended_service.dart';
 import 'models/sensor_data.dart';
 
 class SensorService {
@@ -18,6 +19,7 @@ class SensorService {
 
     StreamSubscription? _accelSubscription;
     bool _isAccelerometerWorking = false;
+    int _accelPacketCount = 0;
 
     Stream<AccelerometerData> get accelDataStream => _accelDataStreamController.stream;
     Stream<int?> get heartRateStream => _heartRateStreamController.stream;
@@ -75,7 +77,10 @@ class SensorService {
             }
             _accelSubscription = accelChar.lastValueStream.listen(
                 (value) {
-                    debugPrint('Accelerometer data received: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+                    // Reduced logging for performance - only log every 50th packet
+                    if (_accelPacketCount++ % 50 == 0) {
+                        debugPrint('Accelerometer data sample: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+                    }
                     _processAccelData(value, null, null); // Initial values without HR and battery
                 },
                 onError: (error) {
@@ -110,7 +115,7 @@ class SensorService {
         }
     }
 
-    Future<void> start(BluetoothDevice device, HeartRateService heartRateService, BatteryService batteryService) async {
+    Future<void> start(BluetoothDevice device, HeartRateService heartRateService, BatteryService batteryService, ChileafExtendedService extendedService) async {
         try {
             // Start accelerometer service first - this is critical
             await _startAccelerometer(device);
@@ -131,7 +136,7 @@ class SensorService {
             heartRateService.dataStream.listen((heartRate) {
                 if (_accelSubscription != null && _isAccelerometerWorking) {
                     // Update the sensor data with the new heart rate
-                    _heartRateStreamController.add(heartRate);
+                    _heartRateStreamController.add(heartRate?.heartRate);
                 }
             }, onError: (e) => debugPrint('Heart rate stream error: $e'));
             batteryService.dataStream.listen((battery) {

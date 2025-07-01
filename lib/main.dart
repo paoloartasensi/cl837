@@ -5,10 +5,20 @@ import 'package:permission_handler/permission_handler.dart';
 import 'accelerometer_service.dart';
 import 'battery.dart';
 import 'heartrate.dart';
+import 'chileaf_extended_service.dart';
 import 'widgets/accelerometer_widget.dart';
 import 'widgets/battery_widget.dart';
 import 'widgets/heart_rate_widget.dart';
+import 'widgets/hrv_widget.dart';
+import 'widgets/spo2_widget.dart';
+import 'widgets/temperature_widget.dart';
+import 'widgets/sports_widget.dart';
 import 'models/sensor_data.dart';
+import 'models/heart_rate_data.dart';
+import 'models/hrv_data.dart';
+import 'models/spo2_data.dart';
+import 'models/temperature_data.dart';
+import 'models/sports_data.dart';
 
 void main() {
     WidgetsFlutterBinding.ensureInitialized();
@@ -44,21 +54,30 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     final SensorService _sensorService = SensorService();
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
+    final ChileafExtendedService _extendedService = ChileafExtendedService();
     
     BluetoothDevice? connectedDevice;
     List<BluetoothDevice> foundDevices = [];
     BluetoothDevice? selectedDevice;
     
     AccelerometerData? latestAccelData;
-    int? latestHeartRate;
+    HeartRateData? latestHeartRate;
     int? latestBatteryLevel;
+    HRVData? latestHRVData;
+    SpO2Data? latestSpO2Data;  
+    TemperatureData? latestTemperatureData;
+    SportsData? latestSportsData;
     
     bool isScanning = false;
     bool isConnecting = false;
     
     late StreamSubscription<AccelerometerData> _accelDataSubscription;
-    late StreamSubscription<int?> _heartRateSubscription;
+    late StreamSubscription<HeartRateData?> _heartRateSubscription;
     late StreamSubscription<int?> _batteryLevelSubscription;
+    StreamSubscription<HRVData?>? _hrvDataSubscription;
+    StreamSubscription<SpO2Data?>? _spo2DataSubscription;
+    StreamSubscription<TemperatureData?>? _temperatureDataSubscription;
+    StreamSubscription<SportsData?>? _sportsDataSubscription;
 
     @override
     void initState() {
@@ -145,7 +164,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             
             try {
                 // Avvia i servizi separatamente per gestire meglio gli errori
-                await _sensorService.start(device, _heartRateService, _batteryService);
+                await _sensorService.start(device, _heartRateService, _batteryService, _extendedService);
                 try { await _heartRateService.start(device); } catch (e) { debugPrint('Heart rate service error: $e'); }
                 try { await _batteryService.start(device); } catch (e) { debugPrint('Battery service error: $e'); }
             } catch (e) {
@@ -214,6 +233,51 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 showWarning('Battery data may be temporarily unavailable');
             },
         );
+        
+        // Subscribe to extended service streams
+        _hrvDataSubscription = _extendedService.hrvDataStream.listen(
+            (hrvData) {
+                setState(() {
+                    latestHRVData = hrvData;
+                });
+            },
+            onError: (error) {
+                debugPrint('HRV stream error: $error');
+            },
+        );
+        
+        _spo2DataSubscription = _extendedService.spo2DataStream.listen(
+            (spo2Data) {
+                setState(() {
+                    latestSpO2Data = spo2Data;
+                });
+            },
+            onError: (error) {
+                debugPrint('SpO2 stream error: $error');
+            },
+        );
+        
+        _temperatureDataSubscription = _extendedService.temperatureDataStream.listen(
+            (temperatureData) {
+                setState(() {
+                    latestTemperatureData = temperatureData;
+                });
+            },
+            onError: (error) {
+                debugPrint('Temperature stream error: $error');
+            },
+        );
+        
+        _sportsDataSubscription = _extendedService.sportsDataStream.listen(
+            (sportsData) {
+                setState(() {
+                    latestSportsData = sportsData;
+                });
+            },
+            onError: (error) {
+                debugPrint('Sports stream error: $error');
+            },
+        );
     }
 
     Future<void> disconnectDevice() async {
@@ -221,9 +285,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             await _accelDataSubscription.cancel();
             await _heartRateSubscription.cancel();
             await _batteryLevelSubscription.cancel();
+            await _hrvDataSubscription?.cancel();
+            await _spo2DataSubscription?.cancel();
+            await _temperatureDataSubscription?.cancel();
+            await _sportsDataSubscription?.cancel();
             await _sensorService.stop();
             await _heartRateService.stop();
             await _batteryService.stop();
+            await _extendedService.stop();
             await connectedDevice?.disconnect();
         } catch (e) {
             debugPrint('Error during disconnect: $e');
@@ -236,6 +305,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 latestAccelData = null;
                 latestHeartRate = null;
                 latestBatteryLevel = null;
+                latestHRVData = null;
+                latestSpO2Data = null;
+                latestTemperatureData = null;
+                latestSportsData = null;
             });
         }
     }
@@ -245,9 +318,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         _accelDataSubscription.cancel();
         _heartRateSubscription.cancel();
         _batteryLevelSubscription.cancel();
+        _hrvDataSubscription?.cancel();
+        _spo2DataSubscription?.cancel();
+        _temperatureDataSubscription?.cancel();
+        _sportsDataSubscription?.cancel();
         _sensorService.dispose();
         _heartRateService.dispose();
         _batteryService.dispose();
+        _extendedService.dispose();
         disconnectDevice();
         super.dispose();
     }
@@ -271,6 +349,116 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 backgroundColor: Colors.red,
                 duration: const Duration(seconds: 3),
             ),
+        );
+    }
+
+    // Responsive layout methods
+    Widget _buildGridLayout() {
+        return Column(
+            children: [
+                // Grid di 2x3 per i widget principali
+                GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: 3,
+                    childAspectRatio: 1.2,
+                    mainAxisSpacing: 8,
+                    crossAxisSpacing: 8,
+                    children: [
+                        HeartRateWidget(latestData: latestHeartRate),
+                        BatteryWidget(latestData: latestBatteryLevel),
+                        HRVWidget(
+                            hrvData: latestHRVData,
+                            isConnected: connectedDevice != null,
+                        ),
+                        SpO2Widget(
+                            spo2Data: latestSpO2Data,
+                            isConnected: connectedDevice != null,
+                        ),
+                        TemperatureWidget(
+                            temperatureData: latestTemperatureData,
+                            isConnected: connectedDevice != null,
+                        ),
+                        SportsWidget(
+                            sportsData: latestSportsData,
+                            isConnected: connectedDevice != null,
+                        ),
+                    ],
+                ),
+                const SizedBox(height: 16),
+                // Accelerometer a larghezza piena
+                AccelerometerWidget(latestData: latestAccelData),
+            ],
+        );
+    }
+
+    Widget _buildColumnLayout() {
+        return Column(
+            children: [
+                // Riga superiore - Vitali principali
+                _buildResponsiveRow([
+                    HeartRateWidget(latestData: latestHeartRate),
+                    BatteryWidget(latestData: latestBatteryLevel),
+                ]),
+                
+                const SizedBox(height: 8),
+                
+                // Riga centrale - Salute avanzata 
+                _buildResponsiveRow([
+                    HRVWidget(
+                        hrvData: latestHRVData,
+                        isConnected: connectedDevice != null,
+                    ),
+                    SpO2Widget(
+                        spo2Data: latestSpO2Data,
+                        isConnected: connectedDevice != null,
+                    ),
+                ]),
+                
+                const SizedBox(height: 8),
+                
+                // Riga inferiore - Temperatura e attività
+                _buildResponsiveRow([
+                    TemperatureWidget(
+                        temperatureData: latestTemperatureData,
+                        isConnected: connectedDevice != null,
+                    ),
+                    SportsWidget(
+                        sportsData: latestSportsData,
+                        isConnected: connectedDevice != null,
+                    ),
+                ]),
+                
+                const SizedBox(height: 16),
+                
+                // Accelerometer a larghezza piena
+                AccelerometerWidget(latestData: latestAccelData),
+            ],
+        );
+    }
+
+    Widget _buildResponsiveRow(List<Widget> children) {
+        return LayoutBuilder(
+            builder: (context, constraints) {
+                if (constraints.maxWidth < 500) {
+                    // Su schermi molto stretti, impila verticalmente
+                    return Column(
+                        children: children
+                            .map((child) => Padding(
+                                padding: const EdgeInsets.only(bottom: 8.0),
+                                child: child,
+                            ))
+                            .toList(),
+                    );
+                } else {
+                    // Su schermi normali, usa Row
+                    return Row(
+                        children: children
+                            .map((child) => Expanded(child: child))
+                            .toList(),
+                    );
+                }
+            },
         );
     }
 
@@ -345,17 +533,21 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                             ),
                         ),
                     Expanded(
-                        child: Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                    HeartRateWidget(latestData: latestHeartRate),
-                                    const SizedBox(height: 8),
-                                    BatteryWidget(latestData: latestBatteryLevel),
-                                    const SizedBox(height: 16),
-                                    AccelerometerWidget(latestData: latestAccelData),
-                                ],
+                        child: SingleChildScrollView(
+                            padding: const EdgeInsets.all(8.0),
+                            child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                    // Determina se usiamo layout a colonne o griglia
+                                    final isWideScreen = constraints.maxWidth > 600;
+                                    
+                                    if (isWideScreen) {
+                                        // Layout a griglia per schermi larghi
+                                        return _buildGridLayout();
+                                    } else {
+                                        // Layout a colonna per schermi stretti
+                                        return _buildColumnLayout();
+                                    }
+                                },
                             ),
                         ),
                     ),
