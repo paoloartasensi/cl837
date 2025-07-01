@@ -6,11 +6,15 @@ import '../models/spo2_data.dart';
 class SpO2Widget extends StatelessWidget {
   final SpO2Data? spo2Data;
   final bool isConnected;
+  final VoidCallback? onMeasureSpO2;
+  final bool isMeasuring;
 
   const SpO2Widget({
     super.key,
     this.spo2Data,
     required this.isConnected,
+    this.onMeasureSpO2,
+    this.isMeasuring = false,
   });
 
   @override
@@ -46,6 +50,33 @@ class SpO2Widget extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
+            
+            // Measure button
+            if (isConnected && onMeasureSpO2 != null) ...[
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: isMeasuring ? null : onMeasureSpO2,
+                  icon: isMeasuring 
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.air, size: 16),
+                  label: Text(
+                    isMeasuring ? 'Measuring...' : 'Measure SpO₂',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    backgroundColor: isMeasuring ? Colors.grey : Colors.blue,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
             
             // Content
             if (spo2Data != null) ...[

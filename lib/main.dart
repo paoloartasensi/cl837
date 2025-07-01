@@ -74,6 +74,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     
     bool isScanning = false;
     bool isConnecting = false;
+    bool isMeasuringSpO2 = false;
     
     late StreamSubscription<AccelerometerData> _accelDataSubscription;
     late StreamSubscription<HeartRateData?> _heartRateSubscription;
@@ -399,6 +400,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         SpO2Widget(
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
+                            onMeasureSpO2: measureSpO2,
+                            isMeasuring: isMeasuringSpO2,
                         ),
                         TemperatureWidget(
                             temperatureData: latestTemperatureData,
@@ -438,6 +441,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     SpO2Widget(
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
+                        onMeasureSpO2: measureSpO2,
+                        isMeasuring: isMeasuringSpO2,
                     ),
                 ]),
                 
@@ -510,6 +515,39 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         } catch (e) {
             debugPrint('Failed to start HRV session: $e');
             showError('Failed to start HRV session');
+        }
+    }
+
+    Future<void> measureSpO2() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        if (isMeasuringSpO2) {
+            return; // Already measuring
+        }
+        
+        setState(() {
+            isMeasuringSpO2 = true;
+        });
+        
+        try {
+            showSuccess('SpO₂ measurement started. Stay still with wrist face up...');
+            await _extendedService.measureSpO2();
+            
+            // Wait a bit more for the response to arrive
+            await Future.delayed(const Duration(milliseconds: 1000));
+            
+        } catch (e) {
+            debugPrint('Failed to measure SpO2: $e');
+            showError('Failed to measure SpO₂');
+        } finally {
+            if (mounted) {
+                setState(() {
+                    isMeasuringSpO2 = false;
+                });
+            }
         }
     }
 

@@ -113,19 +113,8 @@ class ChileafExtendedService {
         }
       });
 
-      // Set up separate SpO2 timer - longer intervals like Elite HRV approach
-      _spo2Timer = Timer.periodic(const Duration(seconds: 15), (timer) async {
-        try {
-          debugPrint('🫁 Starting SpO2 measurement cycle...');
-          await _enableSPO2Mode(); // Enter SpO2 mode (needs time to stabilize)
-          await Future.delayed(const Duration(milliseconds: 2000)); // Long delay for SpO2 stabilization
-          await inquireSPO2Status(); // Check SPO2 status
-          await Future.delayed(const Duration(milliseconds: 1000)); 
-          await inquireSPO2Status(); // Check again for better accuracy
-        } catch (e) {
-          debugPrint('Error in SpO2 measurement: $e');
-        }
-      });
+      // SpO2 misurazione ora è on-demand tramite measureSpO2() method
+      // Rimuovo il timer automatico per una migliore UX
 
       debugPrint('Chileaf Extended Service started successfully');
     } catch (e) {
@@ -446,6 +435,32 @@ class ChileafExtendedService {
   Future<void> inquireSPO2Status() async {
     // Command 0x37 with parameter 2 to inquire status
     await _sendCommand([_commandSpo2, 0x02]);
+  }
+
+  // Public method for on-demand SpO2 measurement
+  Future<void> measureSpO2() async {
+    try {
+      debugPrint('🫁 Starting on-demand SpO2 measurement...');
+      
+      // Step 1: Enter SpO2 mode
+      await _enableSPO2Mode();
+      debugPrint('🫁 SpO2 mode enabled, stabilizing...');
+      
+      // Step 2: Wait for stabilization (important for accurate reading)
+      await Future.delayed(const Duration(milliseconds: 3000));
+      
+      // Step 3: Request SpO2 status multiple times for better accuracy
+      await inquireSPO2Status();
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await inquireSPO2Status();
+      await Future.delayed(const Duration(milliseconds: 1000));
+      await inquireSPO2Status(); // Final reading
+      
+      debugPrint('🫁 SpO2 measurement requests sent');
+    } catch (e) {
+      debugPrint('🫁 Error in SpO2 measurement: $e');
+      rethrow;
+    }
   }
 
   Future<void> stop() async {
