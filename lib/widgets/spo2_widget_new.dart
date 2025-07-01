@@ -230,6 +230,7 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return Colors.grey;
     
     final value = spo2Data!.spo2Value;
+    if (value == null) return Colors.grey;
     if (value >= 95) return Colors.green;
     if (value >= 90) return Colors.orange;
     return Colors.red;
@@ -239,6 +240,7 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return 'No data';
     
     final value = spo2Data!.spo2Value;
+    if (value == null) return 'Waiting...';
     if (value >= 95) return 'Normal';
     if (value >= 90) return 'Low';
     return 'Very Low';
@@ -247,11 +249,13 @@ class SpO2Widget extends StatelessWidget {
   bool _isValidReading() {
     if (spo2Data == null) return false;
     
+    final value = spo2Data!.spo2Value;
     return spo2Data!.isWearing && 
            spo2Data!.correctWristPosture && 
            spo2Data!.signalQuality >= 8 && 
-           spo2Data!.spo2Value >= 70 && 
-           spo2Data!.spo2Value <= 100;
+           value != null &&
+           value >= 70 && 
+           value <= 100;
   }
 
   String _getImprovementTip() {
@@ -260,7 +264,9 @@ class SpO2Widget extends StatelessWidget {
     if (!spo2Data!.isWearing) return 'Wear device properly';
     if (!spo2Data!.correctWristPosture) return 'Turn wrist face up';
     if (spo2Data!.signalQuality < 8) return 'Stay still, stabilizing...';
-    if (spo2Data!.spo2Value < 70 || spo2Data!.spo2Value > 100) return 'Stabilizing reading...';
+    
+    final value = spo2Data!.spo2Value;
+    if (value == null || value < 70 || value > 100) return 'Stabilizing reading...';
     
     return 'Adjusting...';
   }
@@ -283,7 +289,8 @@ class SpO2Widget extends StatelessWidget {
       instructions.add('• Ensure device is clean and tight');
     }
     
-    if (spo2Data!.spo2Value < 70 || spo2Data!.spo2Value > 100) {
+    final value = spo2Data!.spo2Value;
+    if (value == null || value < 70 || value > 100) {
       instructions.add('• Allow time for reading to stabilize');
     }
     

@@ -102,6 +102,7 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return Colors.grey;
     
     final value = spo2Data!.spo2Value;
+    if (value == null) return Colors.grey;
     if (value >= 95) return Colors.green;
     if (value >= 90) return Colors.orange;
     return Colors.red;
@@ -111,6 +112,7 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return 'No data';
     
     final value = spo2Data!.spo2Value;
+    if (value == null) return 'Waiting...';
     if (value >= 95) return 'Normal';
     if (value >= 90) return 'Low';
     return 'Very Low';

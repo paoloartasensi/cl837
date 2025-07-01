@@ -216,7 +216,7 @@ class ChileafExtendedService {
       
       // SpO2 values are typically 80-100%
       if (spo2Candidate >= 80 && spo2Candidate <= 100) {
-        debugPrint('🎯 PRIMARY SpO2 DETECTION: Found ${spo2Candidate}% at index 1 (second byte)');
+        debugPrint('🎯 PRIMARY SpO2 DETECTION: Found $spo2Candidate% at index 1 (second byte)');
         debugPrint('🎯 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
         
         // This is very likely real SpO2 data!
@@ -228,7 +228,7 @@ class ChileafExtendedService {
         );
         
         _spo2DataController.add(spo2Data);
-        debugPrint('🎯 REAL SpO2 DATA from index 1: ${spo2Candidate}% pushed to UI');
+        debugPrint('🎯 REAL SpO2 DATA from index 1: $spo2Candidate% pushed to UI');
         return; // Found primary SpO2, no need to search further
       }
     }
@@ -239,7 +239,7 @@ class ChileafExtendedService {
       
       // Look for any reasonable SpO2 values (80-100%)
       if (byte >= 80 && byte <= 100) {
-        debugPrint('🚨 FALLBACK SpO2 SEARCH: Found ${byte}% at position $i');
+        debugPrint('🚨 FALLBACK SpO2 SEARCH: Found $byte% at position $i');
         debugPrint('🚨 Context: ${i > 0 ? '0x${data[i-1].toRadixString(16)}' : 'start'} -> 0x${byte.toRadixString(16)} -> ${i < data.length-1 ? '0x${data[i+1].toRadixString(16)}' : 'end'}');
         
         // Only use fallback if we didn't find primary SpO2 at index 1
@@ -252,7 +252,7 @@ class ChileafExtendedService {
           );
           
           _spo2DataController.add(spo2Data);
-          debugPrint('🚨 FALLBACK SpO2 DATA: ${byte}% from position $i');
+          debugPrint('🚨 FALLBACK SpO2 DATA: $byte% from position $i');
           return; // Only process first match
         }
       }
@@ -1075,7 +1075,7 @@ class ChileafExtendedService {
             orElse: () => candidateValues.first
           );
           
-          debugPrint('🔬   🎯 SELECTING ${preferredValue}% as likely SpO2 from health data');
+          debugPrint('🔬   🎯 SELECTING $preferredValue% as likely SpO2 from health data');
           
           // Push this as a real SpO2 reading
           final spo2Data = SpO2Data(
@@ -1086,7 +1086,7 @@ class ChileafExtendedService {
           );
           
           _spo2DataController.add(spo2Data);
-          debugPrint('🔬   📤 REAL SpO2 DATA from 0x75 pushed to UI: ${preferredValue}%');
+          debugPrint('🔬   📤 REAL SpO2 DATA from 0x75 pushed to UI: $preferredValue%');
         }
         break;
         
