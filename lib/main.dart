@@ -234,8 +234,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         
         _batteryLevelSubscription = _batteryService.dataStream.listen(
             (batteryLevel) {
+                debugPrint('🔋🎨 Main.dart received battery level: $batteryLevel, calling setState...');
                 setState(() {
                     latestBatteryLevel = batteryLevel;
+                    debugPrint('🔋🎨 setState completed, latestBatteryLevel = $latestBatteryLevel');
                 });
             },
             onError: (error) {
@@ -243,6 +245,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 showWarning('Battery data may be temporarily unavailable');
             },
         );
+        
+        // Force refresh battery data in case it was already loaded before subscription
+        _batteryService.forceRefreshBatteryData();
         
         // Subscribe to extended service streams
         _hrvDataSubscription = _extendedService.hrvDataStream.listen(

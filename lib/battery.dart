@@ -71,6 +71,14 @@ class BatteryService {
     }
   }
 
+  // Force refresh the battery data stream
+  void forceRefreshBatteryData() {
+    if (_lastBatteryLevel != null) {
+      debugPrint('🔋🔄 Force refreshing battery data: $_lastBatteryLevel%');
+      _dataStreamController.add(_lastBatteryLevel);
+    }
+  }
+
   // Process battery from manufacturer data (Chileaf specific)
   void processBatteryFromManufacturerData(List<int> manufacturerData) {
     try {

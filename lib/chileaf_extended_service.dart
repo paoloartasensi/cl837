@@ -206,31 +206,44 @@ class ChileafExtendedService {
 
   // Aggressively check for SpO2 responses in any incoming data
   void _checkForSpO2Response(List<int> data) {
-    // Scan all bytes in the data for possible SpO2 values
-    for (int i = 0; i < data.length; i++) {
-      final possibleSpO2 = data[i];
-      
-      // SpO2 values are typically between 70-100%
-      if (possibleSpO2 >= 70 && possibleSpO2 <= 100) {
-        debugPrint('🔍 POSSIBLE SpO2 value detected at position $i: $possibleSpO2%');
+    // Only scan for SpO2 responses if we're in a proper protocol frame
+    // to avoid false positives from accelerometer data
+    if (data.length >= 7 && data[0] == 0xFF) {
+      final command = data[2];
+      if (command == _commandSpo2) {
+        // This is a proper SpO2 response, process it normally
+        return; // Let the normal processing handle it
+      }
+    }
+    
+    // More conservative SpO2 detection to avoid false positives
+    // Only check if we have a complete frame and reasonable context
+    if (data.length >= 7 && data[0] == 0xFF) {
+      for (int i = 3; i < data.length - 3; i++) {
+        final possibleSpO2 = data[i];
         
-        // Try to extract additional context if available
-        bool hasPosture = (i + 1 < data.length);
-        bool hasSignal = (i + 2 < data.length);
-        bool hasWearing = (i + 3 < data.length);
-        
-        final spo2Data = SpO2Data(
-          spo2Value: possibleSpO2,
-          correctWristPosture: hasPosture ? data[i + 1] == 1 : true,
-          signalQuality: hasSignal ? data[i + 2] : 50,
-          isWearing: hasWearing ? data[i + 3] == 1 : true,
-        );
-        
-        _spo2DataController.add(spo2Data);
-        debugPrint('🫁 Pushed possible SpO2 data to UI: $possibleSpO2%');
-        
-        // Don't check further to avoid false positives
-        break;
+        // SpO2 values are typically between 85-100% in normal conditions
+        if (possibleSpO2 >= 85 && possibleSpO2 <= 100) {
+          // Check if this looks like a SpO2 response pattern
+          final hasReasonablePosture = (i + 1 < data.length) && (data[i + 1] == 0 || data[i + 1] == 1);
+          final hasReasonableSignal = (i + 2 < data.length) && (data[i + 2] >= 0 && data[i + 2] <= 100);
+          final hasReasonableWearing = (i + 3 < data.length) && (data[i + 3] == 0 || data[i + 3] == 1);
+          
+          if (hasReasonablePosture && hasReasonableSignal && hasReasonableWearing) {
+            debugPrint('🔍 CONSERVATIVE SpO2 detection at position $i: $possibleSpO2%');
+            
+            final spo2Data = SpO2Data(
+              spo2Value: possibleSpO2,
+              correctWristPosture: data[i + 1] == 1,
+              signalQuality: data[i + 2],
+              isWearing: data[i + 3] == 1,
+            );
+            
+            _spo2DataController.add(spo2Data);
+            debugPrint('🫁 Conservative SpO2 data pushed: $possibleSpO2%');
+            return; // Only process the first reasonable match
+          }
+        }
       }
     }
   }
@@ -448,17 +461,19 @@ class ChileafExtendedService {
 
   // Protocol frame helpers
   List<int> _buildProtocolFrame(List<int> data) {
-    // Chileaf protocol: [0xFF, Length, Data..., Checksum]
-    final frame = [0xFF, data.length + 1, ...data];
-    final checksum = _calculateChecksum(data);
+    // Chileaf protocol: [0xFF, Length, Command/Data..., Checksum]
+    // Length = N + 4 (where N is data length, +4 for Head+Length+Checksum+padding)
+    final length = data.length + 4;
+    final frame = [0xFF, length, ...data];
+    final checksum = _calculateChecksum(frame.sublist(0, frame.length)); // Calculate from Head to Data
     frame.add(checksum);
     return frame;
   }
 
-  int _calculateChecksum(List<int> data) {
-    // Calculate checksum according to SDK
+  int _calculateChecksum(List<int> frameData) {
+    // Calculate checksum according to SDK: XOR(0x3A, -sum(Head to Data))
     int sum = 0;
-    for (int byte in data) {
+    for (int byte in frameData) {
       sum += byte;
     }
     int temp = sum & 0xFF;
@@ -629,33 +644,103 @@ class ChileafExtendedService {
     }
   }
 
+  // Test SpO2 commands with different protocol formats
+  Future<void> testSpO2CommandFormats() async {
+    debugPrint('🧪 Testing different SpO2 command formats...');
+    
+    try {
+      // Test 1: Corrected protocol frame
+      debugPrint('🧪 Test 1: Corrected protocol frame for SpO2 ENABLE');
+      await _sendCommand([_commandSpo2, 0x01]);
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      debugPrint('🧪 Test 1b: Corrected protocol frame for SpO2 INQUIRY');
+      await _sendCommand([_commandSpo2, 0x02]);
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      debugPrint('🧪 Test 1c: Corrected protocol frame for SpO2 EXIT');
+      await _sendCommand([_commandSpo2, 0x00]);
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Test 2: Manual frame construction
+      debugPrint('🧪 Test 2: Manual frame construction');
+      // For command 0x37, 0x01: [0xFF, 0x06, 0x37, 0x01, checksum]
+      final manualFrame = [0xFF, 0x06, 0x37, 0x01];
+      int sum = manualFrame.reduce((a, b) => a + b);
+      int checksum = ((0 - sum) & 0xFF) ^ 0x3A;
+      manualFrame.add(checksum);
+      
+      debugPrint('🧪 Manual frame: ${manualFrame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      
+      if (_rxCharacteristic != null) {
+        try {
+          await _rxCharacteristic!.write(manualFrame, withoutResponse: true);
+          debugPrint('🧪 Manual frame sent successfully');
+          await Future.delayed(const Duration(milliseconds: 2000));
+          
+          // Send inquiry
+          final inquiryFrame = [0xFF, 0x06, 0x37, 0x02];
+          int inquirySum = inquiryFrame.reduce((a, b) => a + b);
+          int inquiryChecksum = ((0 - inquirySum) & 0xFF) ^ 0x3A;
+          inquiryFrame.add(inquiryChecksum);
+          
+          await _rxCharacteristic!.write(inquiryFrame, withoutResponse: true);
+          debugPrint('🧪 Manual inquiry sent');
+          await Future.delayed(const Duration(milliseconds: 2000));
+          
+          // Exit SpO2 mode
+          final exitFrame = [0xFF, 0x06, 0x37, 0x00];
+          int exitSum = exitFrame.reduce((a, b) => a + b);
+          int exitChecksum = ((0 - exitSum) & 0xFF) ^ 0x3A;
+          exitFrame.add(exitChecksum);
+          
+          await _rxCharacteristic!.write(exitFrame, withoutResponse: true);
+          debugPrint('🧪 Manual exit sent');
+          
+        } catch (e) {
+          debugPrint('🧪 Manual frame write failed: $e');
+        }
+      }
+      
+      debugPrint('🧪 SpO2 command format testing completed');
+      
+    } catch (e) {
+      debugPrint('🧪 SpO2 command format testing error: $e');
+    }
+  }
+
   // Alternative SpO2 command method (try different formats)
   Future<void> measureSpO2Alternative() async {
     try {
-      debugPrint('🧪 Trying alternative SpO2 command formats...');
+      debugPrint('🧪 Starting comprehensive SpO2 alternative testing...');
+      
+      // First, test the corrected protocol formats
+      await testSpO2CommandFormats();
+      
+      await Future.delayed(const Duration(milliseconds: 1000));
       
       // Method 1: Try simple 0x37 command without parameters
       debugPrint('🧪 Method 1: Simple 0x37 command');
       await _sendCommand([_commandSpo2]);
       await Future.delayed(const Duration(milliseconds: 2000));
       
-      // Method 2: Try different parameter values
-      debugPrint('🧪 Method 2: 0x37 with different parameters');
+      // Method 2: Try different parameter values with corrected protocol
+      debugPrint('🧪 Method 2: 0x37 with different parameters (corrected protocol)');
       for (int param in [0x01, 0x02, 0x03, 0xFF]) {
         debugPrint('🧪 Trying parameter: 0x${param.toRadixString(16)}');
         await _sendCommand([_commandSpo2, param]);
         await Future.delayed(const Duration(milliseconds: 1500));
       }
       
-      // Method 3: Try raw command without protocol frame
-      debugPrint('🧪 Method 3: Raw command without frame');
-      if (_rxCharacteristic != null) {
+      // Method 3: Try other possible SpO2 command codes
+      debugPrint('🧪 Method 3: Alternative command codes');
+      for (int cmd in [0x36, 0x38, 0x39, 0x3A]) {
+        debugPrint('🧪 Trying command: 0x${cmd.toRadixString(16)}');
         try {
-          await _rxCharacteristic!.write([0x37, 0x01]);
-          debugPrint('🧪 Raw command sent');
-          await Future.delayed(const Duration(milliseconds: 2000));
+          await _sendCommand([cmd, 0x01]);
+          await Future.delayed(const Duration(milliseconds: 1500));
         } catch (e) {
-          debugPrint('🧪 Raw command failed: $e');
+          debugPrint('🧪 Command 0x${cmd.toRadixString(16)} failed: $e');
         }
       }
       
