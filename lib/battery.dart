@@ -163,16 +163,21 @@ class BatteryService {
     }
 
     void _setupPeriodicBatteryRead(BluetoothCharacteristic batteryChar) {
+      debugPrint('🔋 Setting up periodic battery reads every 30 seconds');
       Timer.periodic(const Duration(seconds: 30), (timer) async {
         if (_batterySubscription == null) {
+          debugPrint('🔋 Periodic timer cancelled - subscription is null');
           timer.cancel();
           return;
         }
         try {
           if (batteryChar.properties.read) {
+            debugPrint('🔋 Attempting periodic battery read...');
             final value = await batteryChar.read();
             debugPrint('🔋 Periodic battery read: $value');
             _processBattery(value);
+          } else {
+            debugPrint('🔋 Battery characteristic does not support read operation');
           }
         } catch (e) {
           debugPrint('🔋 Periodic battery read error: $e');
@@ -186,6 +191,12 @@ class BatteryService {
     _batterySubscription = null;
     _lastBatteryLevel = null;
     debugPrint('Battery service stopped');
+  }
+
+  // Public method to force battery read for testing
+  Future<void> forceBatteryRead() async {
+    debugPrint('🔋 Force battery read requested...');
+    // This will be implemented if we find the characteristic
   }
 
   void dispose() {
