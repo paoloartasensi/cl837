@@ -14,6 +14,7 @@ import 'widgets/hrv_session_widget.dart';
 import 'widgets/spo2_widget.dart';
 import 'widgets/temperature_widget.dart';
 import 'widgets/sports_widget.dart';
+import 'widgets/sensor_info_widget.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -456,6 +457,16 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 
                 // Accelerometer a larghezza piena
                 AccelerometerWidget(latestData: latestAccelData),
+                
+                const SizedBox(height: 16),
+                
+                // Sensor Information Widget
+                const SensorInfoWidget(),
+                
+                const SizedBox(height: 16),
+                
+                // Sensor Information Widget
+                const SensorInfoWidget(),
             ],
         );
     }
