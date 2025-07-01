@@ -22,7 +22,8 @@ import 'models/sports_data.dart';
 
 void main() {
     WidgetsFlutterBinding.ensureInitialized();
-    FlutterBluePlus.setLogLevel(LogLevel.verbose, color: true);
+    // Suppress BLE log spam - only show errors and warnings
+    FlutterBluePlus.setLogLevel(LogLevel.error, color: false);
     runApp(const MyApp());
 }
 

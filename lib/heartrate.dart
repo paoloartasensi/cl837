@@ -19,7 +19,6 @@ class HeartRateService {
   HeartRateData? _lastHeartRateData;
   final _dataStreamController = StreamController<HeartRateData?>.broadcast();
   StreamSubscription? _heartRateSubscription;
-  int _heartRatePacketCount = 0;
 
   Stream<HeartRateData?> get dataStream => _dataStreamController.stream;
   HeartRateData? get lastHeartRateData => _lastHeartRateData;
@@ -30,13 +29,8 @@ class HeartRateService {
     try {
       if (data.isEmpty) return null;
 
-      // Only log detailed parsing info every 10th packet to reduce spam
-      final shouldLog = (_heartRatePacketCount++ % 10 == 0);
+      // Silent processing - no logging for performance
       
-      if (shouldLog) {
-        debugPrint('Parsing heart rate data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-      }
-
       // First byte contains flags (based on BLE Heart Rate Measurement spec)
       final flags = data[0];
       int index = 1;
@@ -58,10 +52,6 @@ class HeartRateService {
       
       // Bit 4: RR-Interval (0 = not present, 1 = present)
       final rrIntervalsPresent = (flags & 0x10) != 0;
-
-      if (shouldLog) {
-        debugPrint('Heart Rate flags: 0x${flags.toRadixString(16)} - 16bit: $isFormat16Bit, Contact: $contactSupported${contactDetected != null ? '/$contactDetected' : ''}, Energy: $energyExpendedPresent, RR: $rrIntervalsPresent');
-      }
 
       // Parse heart rate value
       int heartRate;
@@ -105,9 +95,6 @@ class HeartRateService {
         timestamp: DateTime.now(),
       );
 
-      if (shouldLog) {
-        debugPrint('Parsed Heart Rate Data: $heartRateData');
-      }
       return heartRateData;
 
     } catch (e) {
@@ -163,10 +150,7 @@ class HeartRateService {
           _heartRateSubscription = heartRateChar.lastValueStream.listen(
             (value) {
               try {
-                // Reduced logging - only log every 10th heart rate packet
-                if (_heartRatePacketCount % 10 == 0) {
-                  debugPrint('Heart Rate notification received (packet #$_heartRatePacketCount)');
-                }
+                // Silent processing - no logging for performance
                 _processHeartRate(value);
               } catch (e) {
                 debugPrint('Heart Rate notification processing error: $e');

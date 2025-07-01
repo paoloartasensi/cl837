@@ -24,11 +24,10 @@ class BatteryService {
 
   void _processBattery(List<int> value) {
     try {
-      debugPrint('Raw battery data: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
+      // Silent processing - no logging for performance
       if (value.isEmpty) return;
 
       _lastBatteryLevel = value[0];
-      debugPrint('Processed Battery Level: $_lastBatteryLevel%');
       _dataStreamController.add(_lastBatteryLevel);
     } catch (e) {
       debugPrint('Error processing battery data: $e');
@@ -41,14 +40,7 @@ class BatteryService {
       await Future.delayed(const Duration(milliseconds: 1000));
       
       final services = await device.discoverServices();
-      debugPrint('Found ${services.length} services:');
-      for (var service in services) {
-        debugPrint('Service: ${service.uuid}');
-        for (var char in service.characteristics) {
-          debugPrint('  Char: ${char.uuid}');
-          debugPrint('    Properties: Read=${char.properties.read}, Notify=${char.properties.notify}');
-        }
-      }
+      // Silent service discovery - no logging for performance
 
       final batteryService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase().contains(_batteryServiceUuid.toLowerCase()),
@@ -91,7 +83,7 @@ class BatteryService {
           _batterySubscription = batteryChar.lastValueStream.listen(
             (value) {
               try {
-                debugPrint('Battery notification received');
+                // Silent processing - no logging for performance
                 _processBattery(value);
               } catch (e) {
                 debugPrint('Battery notification processing error: $e');

@@ -19,7 +19,6 @@ class SensorService {
 
     StreamSubscription? _accelSubscription;
     bool _isAccelerometerWorking = false;
-    int _accelPacketCount = 0;
 
     Stream<AccelerometerData> get accelDataStream => _accelDataStreamController.stream;
     Stream<int?> get heartRateStream => _heartRateStreamController.stream;
@@ -77,10 +76,7 @@ class SensorService {
             }
             _accelSubscription = accelChar.lastValueStream.listen(
                 (value) {
-                    // Reduced logging for performance - only log every 50th packet
-                    if (_accelPacketCount++ % 50 == 0) {
-                        debugPrint('Accelerometer data sample: ${value.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}');
-                    }
+                    // Silent processing - no logging for performance
                     _processAccelData(value, null, null); // Initial values without HR and battery
                 },
                 onError: (error) {
