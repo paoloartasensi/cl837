@@ -6,6 +6,8 @@ class SpO2Widget extends StatelessWidget {
   final bool isConnected;
   final VoidCallback? onMeasureSpO2;
   final VoidCallback? onForceExit;  // Bottone emergenza
+  final VoidCallback? onTestLED;    // Test LED
+  final VoidCallback? onDiagnoseBLE; // Diagnostica BLE
   final bool isMeasuring;
 
   const SpO2Widget({
@@ -14,6 +16,8 @@ class SpO2Widget extends StatelessWidget {
     required this.isConnected,
     this.onMeasureSpO2,
     this.onForceExit,
+    this.onTestLED,
+    this.onDiagnoseBLE,
     this.isMeasuring = false,
   });
 
@@ -94,6 +98,51 @@ class SpO2Widget extends StatelessWidget {
                       foregroundColor: Colors.red[700],
                     ),
                   ),
+                ),
+              ],
+              
+              // Debug buttons (only in debug mode)
+              if (isConnected && (onTestLED != null || onDiagnoseBLE != null)) ...[
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    if (onTestLED != null) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onTestLED,
+                          icon: const Icon(Icons.lightbulb_outline, size: 12),
+                          label: const Text(
+                            'Test LED',
+                            style: TextStyle(fontSize: 9),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            side: BorderSide(color: Colors.orange[300]!),
+                            foregroundColor: Colors.orange[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (onTestLED != null && onDiagnoseBLE != null) 
+                      const SizedBox(width: 4),
+                    if (onDiagnoseBLE != null) ...[
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: onDiagnoseBLE,
+                          icon: const Icon(Icons.bug_report, size: 12),
+                          label: const Text(
+                            'Debug BLE',
+                            style: TextStyle(fontSize: 9),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 2),
+                            side: BorderSide(color: Colors.purple[300]!),
+                            foregroundColor: Colors.purple[700],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ],
               const SizedBox(height: 8),

@@ -74,7 +74,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     
     bool isScanning = false;
     bool isConnecting = false;
-    bool isMeasuringSpO2 = false;
     
     late StreamSubscription<AccelerometerData> _accelDataSubscription;
     late StreamSubscription<HeartRateData?> _heartRateSubscription;
@@ -121,16 +120,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         .toSet()
                         .toList();
                 });
-                
-                // Process manufacturer data for battery level
-                for (var result in results) {
-                    final manufacturerData = result.advertisementData.manufacturerData;
-                    if (manufacturerData.isNotEmpty) {
-                        final data = manufacturerData.values.first;
-                        debugPrint('Found manufacturer data: ${data.toString()}');
-                        _batteryService.processBatteryFromManufacturerData(data);
-                    }
-                }
             });
             await Future.delayed(const Duration(seconds: 10));
             await FlutterBluePlus.stopScan();
@@ -245,11 +234,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         
         _batteryLevelSubscription = _batteryService.dataStream.listen(
             (batteryLevel) {
-                debugPrint('📱 UI Battery update received: $batteryLevel%');
                 setState(() {
                     latestBatteryLevel = batteryLevel;
                 });
-                debugPrint('📱 UI Battery state updated: $latestBatteryLevel%');
             },
             onError: (error) {
                 debugPrint('Battery stream error: $error');
@@ -410,9 +397,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         SpO2Widget(
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
-                            onMeasureSpO2: measureSpO2,
-                            onForceExit: forceExitSpO2,
-                            isMeasuring: isMeasuringSpO2,
                         ),
                         TemperatureWidget(
                             temperatureData: latestTemperatureData,
@@ -452,9 +436,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     SpO2Widget(
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
-                        onMeasureSpO2: measureSpO2,
-                        onForceExit: forceExitSpO2,
-                        isMeasuring: isMeasuringSpO2,
                     ),
                 ]),
                 
@@ -527,55 +508,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         } catch (e) {
             debugPrint('Failed to start HRV session: $e');
             showError('Failed to start HRV session');
-        }
-    }
-
-    Future<void> measureSpO2() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        if (isMeasuringSpO2) {
-            return; // Already measuring
-        }
-        
-        setState(() {
-            isMeasuringSpO2 = true;
-        });
-        
-        try {
-            showSuccess('SpO₂ measurement started. Stay still with wrist face up...');
-            await _extendedService.measureSpO2();
-            
-            // Wait a bit more for the response to arrive
-            await Future.delayed(const Duration(milliseconds: 1000));
-            
-        } catch (e) {
-            debugPrint('Failed to measure SpO2: $e');
-            showError('Failed to measure SpO₂');
-        } finally {
-            if (mounted) {
-                setState(() {
-                    isMeasuringSpO2 = false;
-                });
-            }
-        }
-    }
-
-    Future<void> forceExitSpO2() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            showSuccess('Force exiting SpO₂ mode...');
-            await _extendedService.forceExitSpO2Mode();
-            showSuccess('SpO₂ mode exited - LED should be OFF');
-        } catch (e) {
-            debugPrint('Failed to force exit SpO2: $e');
-            showError('Failed to exit SpO₂ mode');
         }
     }
 

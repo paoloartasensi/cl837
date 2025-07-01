@@ -96,7 +96,8 @@ class ChileafExtendedService {
 
       // Initial commands to start data flow
       await Future.delayed(const Duration(milliseconds: 500));
-      await _enableSPO2Mode();
+      // Non attiviamo SpO2 all'avvio, ma solo on-demand per evitare che il LED rimanga acceso
+      // await _enableSPO2Mode();
       await Future.delayed(const Duration(milliseconds: 500));
       await _requestTemperatureData();
       await Future.delayed(const Duration(milliseconds: 500));
@@ -621,6 +622,114 @@ class ChileafExtendedService {
       
     } catch (e) {
       debugPrint('Error parsing accelerometer data: $e');
+    }
+  }
+
+  // Metodo diagnostico per testare il LED SpO2
+  Future<void> testLEDFunctionality() async {
+    debugPrint('🚨 Iniziando test funzionalità LED...');
+    
+    try {
+      // Step 1: Assicuriamoci che siamo in modalità normale (LED spento)
+      await exitSPO2Mode();
+      debugPrint('🚨 LED dovrebbe essere SPENTO, attendere 2 secondi...');
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 2: Accendiamo il LED
+      await _enableSPO2Mode();
+      debugPrint('🚨 LED dovrebbe essere ACCESO (ROSSO), attendere 3 secondi...');
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // Step 3: Spegniamo il LED
+      await exitSPO2Mode();
+      debugPrint('🚨 LED dovrebbe essere di nuovo SPENTO');
+      
+      debugPrint('✅ Test LED completato con successo');
+    } catch (e) {
+      debugPrint('❌ Test LED fallito: $e');
+      
+      // Tenta di recuperare lo stato
+      try {
+        await exitSPO2Mode();
+      } catch (_) {}
+    }
+  }
+
+  // Metodo per verificare lo stato della connessione BLE
+  Future<bool> checkBLEConnection() async {
+    try {
+      if (_rxCharacteristic == null || _txCharacteristic == null) {
+        debugPrint('❌ Caratteristiche BLE non inizializzate');
+        return false;
+      }
+
+      final device = _rxCharacteristic!.device;
+      final connectionState = await device.connectionState.first;
+      
+      debugPrint('🔍 Stato connessione dispositivo: $connectionState');
+      
+      if (connectionState != BluetoothConnectionState.connected) {
+        debugPrint('❌ Dispositivo non connesso');
+        return false;
+      }
+      
+      debugPrint('✅ Dispositivo connesso correttamente');
+      return true;
+    } catch (e) {
+      debugPrint('❌ Errore controllo connessione BLE: $e');
+      return false;
+    }
+  }
+
+  // Metodo per diagnosticare i problemi di comunicazione BLE
+  Future<void> diagnoseBLEIssues() async {
+    debugPrint('🔧 Avvio diagnostica BLE...');
+    
+    try {
+      // Check 1: Connessione
+      final isConnected = await checkBLEConnection();
+      if (!isConnected) {
+        debugPrint('❌ PROBLEMA: Dispositivo non connesso');
+        return;
+      }
+      
+      // Check 2: Caratteristiche
+      if (_rxCharacteristic == null || _txCharacteristic == null) {
+        debugPrint('❌ PROBLEMA: Caratteristiche BLE non trovate');
+        return;
+      }
+      
+      // Check 3: Proprietà delle caratteristiche
+      debugPrint('📊 RX Char Properties: ${_rxCharacteristic!.properties}');
+      debugPrint('📊 TX Char Properties: ${_txCharacteristic!.properties}');
+      
+      // Check 4: Notifiche abilitate
+      final isNotifying = _txCharacteristic!.isNotifying;
+      debugPrint('📊 TX Notifications enabled: $isNotifying');
+      
+      if (!isNotifying) {
+        debugPrint('⚠️ Tentativo di riabilitare notifiche...');
+        try {
+          await _txCharacteristic!.setNotifyValue(true);
+          debugPrint('✅ Notifiche riabilitate');
+        } catch (e) {
+          debugPrint('❌ Impossibile riabilitare notifiche: $e');
+        }
+      }
+      
+      // Check 5: Test invio comando semplice
+      debugPrint('🧪 Test invio comando base...');
+      try {
+        await _requestTemperatureData();
+        debugPrint('✅ Comando base inviato con successo');
+      } catch (e) {
+        debugPrint('❌ Errore invio comando base: $e');
+      }
+      
+      debugPrint('🔧 Diagnostica BLE completata');
+      
+    } catch (e) {
+      debugPrint('❌ Errore durante diagnostica BLE: $e');
     }
   }
 }

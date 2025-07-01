@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
 
 class BatteryWidget extends StatelessWidget {
@@ -7,18 +6,6 @@ class BatteryWidget extends StatelessWidget {
 
     @override
     Widget build(BuildContext context) {
-        // Debug: Print battery data received
-        debugPrint('🔋 BatteryWidget: Rendering with data: $latestData');
-        
-        // Try to read from file for debug purposes
-        String fileValue = 'Not found';
-        try {
-            fileValue = 'File: ${File('_lastBatteryLevel').readAsStringSync()}';
-            debugPrint('🔋 Battery from file: $fileValue');
-        } catch (e) {
-            debugPrint('🔋 Could not read battery from file: $e');
-        }
-        
         return _buildStatusRow(
             'Battery',
             latestData != null ? '$latestData%' : 'N/A',
