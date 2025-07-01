@@ -126,7 +126,7 @@ class TemperatureWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
@@ -144,7 +144,7 @@ class TemperatureWidget extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 10,
-              color: color.withOpacity(0.8),
+              color: color.withValues(alpha: 0.8),
             ),
           ),
         ],

@@ -111,7 +111,7 @@ class SportsWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
@@ -137,7 +137,7 @@ class SportsWidget extends StatelessWidget {
                   label,
                   style: TextStyle(
                     fontSize: 10,
-                    color: color.withOpacity(0.8),
+                    color: color.withValues(alpha: 0.8),
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),

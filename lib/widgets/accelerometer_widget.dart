@@ -60,7 +60,7 @@ class AccelerometerWidget extends StatelessWidget {
                                     decoration: BoxDecoration(                                // Usa withOpacity invece di .value (deprecato)
                                 // ignore: duplicate_ignore
                                 // ignore: deprecated_member_use
-                                color: color.withOpacity(0.2),
+                                color: color.withValues(alpha: 0.2),
                                         borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Center(
@@ -81,7 +81,7 @@ class AccelerometerWidget extends StatelessWidget {
                                             LinearProgressIndicator(
                                                 value: (value + 8.0) / 16.0, // Normalize from -8g to 8g
                                                 // Usa withOpacity invece di .value (deprecato)
-                                                backgroundColor: color.withOpacity(0.1),
+                                                backgroundColor: color.withValues(alpha: 0.1),
                                                 valueColor: AlwaysStoppedAnimation<Color>(color),
                                             ),
                                             const SizedBox(height: 4),

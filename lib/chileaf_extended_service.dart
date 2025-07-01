@@ -23,6 +23,7 @@ class ChileafExtendedService {
   BluetoothCharacteristic? _txCharacteristic;
   BluetoothCharacteristic? _rxCharacteristic;
   StreamSubscription? _dataSubscription;
+  Timer? _dataRequestTimer;
 
   // RR intervals buffer for HRV calculation
   List<double> _rrIntervalsBuffer = [];
@@ -38,13 +39,30 @@ class ChileafExtendedService {
     try {
       debugPrint('Starting Chileaf Extended Service...');
       
+      // Add delay to ensure services are discovered
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
       final services = await device.discoverServices();
+      debugPrint('Extended Service: Found ${services.length} services');
+      
+      // Print all available services for debugging
+      for (final service in services) {
+        debugPrint('Available service: ${service.uuid}');
+      }
+      
       final customService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
         orElse: () => throw Exception('Chileaf custom service not found'),
       );
 
+      debugPrint('Found custom service: ${customService.uuid}');
+
       // Find TX (notify) and RX (write) characteristics
+      debugPrint('Looking for characteristics...');
+      for (final char in customService.characteristics) {
+        debugPrint('Available characteristic: ${char.uuid} - properties: read=${char.properties.read}, write=${char.properties.write}, notify=${char.properties.notify}');
+      }
+
       _txCharacteristic = customService.characteristics.firstWhere(
         (c) => c.uuid.toString().toLowerCase() == _txCharUuid.toLowerCase(),
         orElse: () => throw Exception('TX characteristic not found'),
@@ -55,50 +73,119 @@ class ChileafExtendedService {
         orElse: () => throw Exception('RX characteristic not found'),
       );
 
+      debugPrint('Found TX characteristic: ${_txCharacteristic!.uuid}');
+      debugPrint('Found RX characteristic: ${_rxCharacteristic!.uuid}');
+
       // Enable notifications on TX characteristic
       await _txCharacteristic!.setNotifyValue(true);
+      debugPrint('TX notifications enabled');
       
       _dataSubscription = _txCharacteristic!.lastValueStream.listen(
         _processIncomingData,
         onError: (error) => debugPrint('Chileaf data stream error: $error'),
       );
 
-      // Request initial data
+      // Request initial data with delays between commands
+      debugPrint('Requesting initial data...');
       await _requestSportsData();
+      await Future.delayed(const Duration(milliseconds: 500));
       await _requestTemperatureData();
+      await Future.delayed(const Duration(milliseconds: 500));
       await _enableSPO2Mode();
+
+      // Start periodic data requests every 10 seconds
+      _dataRequestTimer = Timer.periodic(const Duration(seconds: 10), (timer) async {
+        try {
+          await _requestTemperatureData();
+          await Future.delayed(const Duration(milliseconds: 200));
+          await _requestSportsData();
+          await Future.delayed(const Duration(milliseconds: 200));
+          await inquireSPO2Status();
+        } catch (e) {
+          debugPrint('Error in periodic data request: $e');
+        }
+      });
 
       debugPrint('Chileaf Extended Service started successfully');
     } catch (e) {
       debugPrint('Failed to start Chileaf Extended Service: $e');
-      rethrow;
+      // Don't rethrow - let the app continue without extended features
     }
   }
 
   void _processIncomingData(List<int> data) {
-    if (data.isEmpty || data[0] != 0xFF) return;
+    if (data.isEmpty) return;
 
     try {
-      final command = data.length > 2 ? data[2] : 0;
-      
-      switch (command) {
-        case 0x15: // Real-time sports data
-          _processSportsData(data);
-          break;
-        case 0x37: // SPO2 data
-          _processSPO2Data(data);
-          break;
-        case 0x38: // Temperature data
-          _processTemperatureData(data);
-          break;
-        default:
-          // Log unhandled commands occasionally
-          if (DateTime.now().millisecondsSinceEpoch % 1000 < 50) {
-            debugPrint('Unhandled Chileaf command: 0x${command.toRadixString(16)}');
-          }
+      // Debug: log raw data occasionally
+      if (DateTime.now().millisecondsSinceEpoch % 5000 < 100) {
+        debugPrint('Raw extended data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      }
+
+      // Handle different data formats
+      if (data[0] == 0xFF && data.length >= 3) {
+        // Standard Chileaf protocol
+        final command = data[2];
+        switch (command) {
+          case 0x15: // Real-time sports data
+            _processSportsData(data);
+            break;
+          case 0x37: // SPO2 data
+            _processSPO2Data(data);
+            break;
+          case 0x38: // Temperature data
+            _processTemperatureData(data);
+            break;
+          default:
+            // Log unhandled commands occasionally
+            if (DateTime.now().millisecondsSinceEpoch % 3000 < 50) {
+              debugPrint('Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
+            }
+        }
+      } else if (data.length >= 4) {
+        // Try to detect data patterns without strict protocol
+        _tryDetectDataPatterns(data);
       }
     } catch (e) {
       debugPrint('Error processing Chileaf data: $e');
+    }
+  }
+
+  void _tryDetectDataPatterns(List<int> data) {
+    // Try to detect temperature data patterns (typically higher values)
+    if (data.length >= 6) {
+      final possibleTemp1 = ((data[0] << 8) | data[1]) / 10.0;
+      final possibleTemp2 = ((data[2] << 8) | data[3]) / 10.0;
+      final possibleTemp3 = ((data[4] << 8) | data[5]) / 10.0;
+      
+      if (possibleTemp1 > 10 && possibleTemp1 < 50 && 
+          possibleTemp2 > 10 && possibleTemp2 < 50 && 
+          possibleTemp3 > 10 && possibleTemp3 < 50) {
+        final temperatureData = TemperatureData(
+          ambientTempC: possibleTemp1,
+          wristTempC: possibleTemp2,
+          bodyTempC: possibleTemp3,
+        );
+        _temperatureDataController.add(temperatureData);
+        debugPrint('Detected temperature pattern: $temperatureData');
+        return;
+      }
+    }
+    
+    // Try to detect SpO2 data patterns (typically 70-100 range)
+    if (data.length >= 2) {
+      final possibleSpO2 = data[0];
+      if (possibleSpO2 >= 70 && possibleSpO2 <= 100) {
+        final spo2Data = SpO2Data(
+          spo2Value: possibleSpO2,
+          correctWristPosture: data.length > 1 ? data[1] == 1 : true,
+          signalQuality: data.length > 2 ? data[2] : 100,
+          isWearing: data.length > 3 ? data[3] == 1 : true,
+        );
+        _spo2DataController.add(spo2Data);
+        debugPrint('Detected SpO2 pattern: $spo2Data');
+        return;
+      }
     }
   }
 
@@ -244,6 +331,8 @@ class ChileafExtendedService {
 
   Future<void> stop() async {
     debugPrint('Stopping Chileaf Extended Service...');
+    _dataRequestTimer?.cancel();
+    _dataRequestTimer = null;
     await _dataSubscription?.cancel();
     _dataSubscription = null;
     _rrIntervalsBuffer.clear();

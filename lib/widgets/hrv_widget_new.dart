@@ -110,7 +110,7 @@ class HRVWidget extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
+        color: color.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Column(
@@ -129,7 +129,7 @@ class HRVWidget extends StatelessWidget {
             label,
             style: TextStyle(
               fontSize: 10,
-              color: color.withOpacity(0.8),
+              color: color.withValues(alpha: 0.8),
             ),
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,

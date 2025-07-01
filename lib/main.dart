@@ -6,10 +6,11 @@ import 'accelerometer_service.dart';
 import 'battery.dart';
 import 'heartrate.dart';
 import 'chileaf_extended_service.dart';
+import 'hrv_session_service.dart';
 import 'widgets/accelerometer_widget.dart';
 import 'widgets/battery_widget.dart';
 import 'widgets/heart_rate_widget.dart';
-import 'widgets/hrv_widget.dart';
+import 'widgets/hrv_session_widget.dart';
 import 'widgets/spo2_widget.dart';
 import 'widgets/temperature_widget.dart';
 import 'widgets/sports_widget.dart';
@@ -22,8 +23,8 @@ import 'models/sports_data.dart';
 
 void main() {
     WidgetsFlutterBinding.ensureInitialized();
-    // Suppress BLE log spam - only show errors and warnings
-    FlutterBluePlus.setLogLevel(LogLevel.error, color: false);
+    // Suppress BLE log spam - only show critical errors
+    FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
     runApp(const MyApp());
 }
 
@@ -56,6 +57,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
     final ChileafExtendedService _extendedService = ChileafExtendedService();
+    final HRVSessionService _hrvSessionService = HRVSessionService();
     
     BluetoothDevice? connectedDevice;
     List<BluetoothDevice> foundDevices = [];
@@ -168,6 +170,12 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 await _sensorService.start(device, _heartRateService, _batteryService, _extendedService);
                 try { await _heartRateService.start(device); } catch (e) { debugPrint('Heart rate service error: $e'); }
                 try { await _batteryService.start(device); } catch (e) { debugPrint('Battery service error: $e'); }
+                try { 
+                    await _extendedService.start(device); 
+                    debugPrint('Extended service started successfully');
+                } catch (e) { 
+                    debugPrint('Extended service error: $e'); 
+                }
             } catch (e) {
                 if (!_sensorService.isAccelerometerWorking) {
                     showError('Critical error: Accelerometer not working');
@@ -327,6 +335,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         _heartRateService.dispose();
         _batteryService.dispose();
         _extendedService.dispose();
+        _hrvSessionService.dispose();
         disconnectDevice();
         super.dispose();
     }
@@ -353,6 +362,17 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         );
     }
 
+    void showSuccess(String message) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(message),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+            ),
+        );
+    }
+
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -368,9 +388,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     children: [
                         HeartRateWidget(latestData: latestHeartRate),
                         BatteryWidget(latestData: latestBatteryLevel),
-                        HRVWidget(
-                            hrvData: latestHRVData,
+                        HRVSessionWidget(
+                            sessionService: _hrvSessionService,
                             isConnected: connectedDevice != null,
+                            onStartSession: startHRVSession,
                         ),
                         SpO2Widget(
                             spo2Data: latestSpO2Data,
@@ -406,9 +427,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 
                 // Riga centrale - Salute avanzata 
                 _buildResponsiveRow([
-                    HRVWidget(
-                        hrvData: latestHRVData,
+                    HRVSessionWidget(
+                        sessionService: _hrvSessionService,
                         isConnected: connectedDevice != null,
+                        onStartSession: startHRVSession,
                     ),
                     SpO2Widget(
                         spo2Data: latestSpO2Data,
@@ -461,6 +483,21 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 }
             },
         );
+    }
+
+    Future<void> startHRVSession() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _hrvSessionService.startSession(_heartRateService.dataStream);
+            showSuccess('HRV session started');
+        } catch (e) {
+            debugPrint('Failed to start HRV session: $e');
+            showError('Failed to start HRV session');
+        }
     }
 
     @override
