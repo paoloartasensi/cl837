@@ -88,47 +88,74 @@ class HeartRateWidget extends StatelessWidget {
                                 const SizedBox(height: 8),
                             ],
                             
-                            // RR Intervals
-                            if (latestData!.rrIntervals != null && latestData!.rrIntervals!.isNotEmpty) ...[
-                                Row(
-                                    children: [
-                                        const Icon(Icons.timeline, size: 16, color: Colors.blue),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                            'RR Intervals (${latestData!.rrIntervals!.length}):',
-                                            style: TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.grey[600],
-                                                fontWeight: FontWeight.bold,
-                                            ),
-                                        ),
-                                    ],
-                                ),
-                                const SizedBox(height: 4),
-                                Wrap(
-                                    spacing: 4,
-                                    children: latestData!.rrIntervals!.take(6).map((interval) =>
-                                        Chip(
-                                            label: Text(
-                                                '${interval.toStringAsFixed(0)}ms',
-                                                style: const TextStyle(fontSize: 10),
-                                            ),
-                                            backgroundColor: Colors.blue[50],
-                                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                            visualDensity: VisualDensity.compact,
-                                        ),
-                                    ).toList(),
-                                ),
-                                if (latestData!.rrIntervals!.length > 6)
+                            // RR Intervals - sempre la stessa altezza per evitare scroll
+                            const SizedBox(height: 8),
+                            Row(
+                                children: [
+                                    const Icon(Icons.timeline, size: 16, color: Colors.blue),
+                                    const SizedBox(width: 8),
                                     Text(
+                                        latestData!.rrIntervals != null && latestData!.rrIntervals!.isNotEmpty
+                                            ? 'RR Intervals (${latestData!.rrIntervals!.length}):'
+                                            : 'RR Intervals: None',
+                                        style: TextStyle(
+                                            fontSize: 14,
+                                            color: Colors.grey[600],
+                                            fontWeight: FontWeight.bold,
+                                        ),
+                                    ),
+                                ],
+                            ),
+                            const SizedBox(height: 4),
+                            // Container sempre presente con altezza fissa per evitare jump
+                            SizedBox(
+                                height: 35, // Altezza fissa sempre
+                                child: latestData!.rrIntervals != null && latestData!.rrIntervals!.isNotEmpty
+                                    ? SingleChildScrollView(
+                                        scrollDirection: Axis.horizontal,
+                                        child: Row(
+                                            children: latestData!.rrIntervals!.take(6).map((interval) =>
+                                                Padding(
+                                                    padding: const EdgeInsets.only(right: 4.0),
+                                                    child: Chip(
+                                                        label: Text(
+                                                            '${interval.toStringAsFixed(0)}ms',
+                                                            style: const TextStyle(fontSize: 10),
+                                                        ),
+                                                        backgroundColor: Colors.blue[50],
+                                                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                                        visualDensity: VisualDensity.compact,
+                                                    ),
+                                                ),
+                                            ).toList(),
+                                        ),
+                                    )
+                                    : Container(
+                                        alignment: Alignment.centerLeft,
+                                        child: Text(
+                                            'Waiting for RR data...',
+                                            style: TextStyle(
+                                                fontSize: 12,
+                                                color: Colors.grey[400],
+                                                fontStyle: FontStyle.italic,
+                                            ),
+                                        ),
+                                    ),
+                            ),
+                            // Informazioni aggiuntive sempre con altezza fissa
+                            SizedBox(
+                                height: 16, // Altezza fissa per il testo
+                                child: latestData!.rrIntervals != null && latestData!.rrIntervals!.length > 6
+                                    ? Text(
                                         '... and ${latestData!.rrIntervals!.length - 6} more',
                                         style: TextStyle(
                                             fontSize: 12,
                                             color: Colors.grey[500],
                                             fontStyle: FontStyle.italic,
                                         ),
-                                    ),
-                            ],
+                                    )
+                                    : const SizedBox.shrink(), // Mantiene lo spazio ma è invisibile
+                            ),
                             
                             // Timestamp
                             const SizedBox(height: 8),

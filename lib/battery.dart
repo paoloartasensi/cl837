@@ -14,6 +14,19 @@ class BatteryService {
   // Battery Service & Characteristic UUIDs - shortened version
   static const String _batteryServiceUuid = '180f';
   static const String _batteryCharUuid = '2a19';
+  
+  // Alternative UUIDs for custom battery services
+  static const List<String> _alternativeBatteryServiceUuids = [
+    '180f', // Standard Battery Service
+    'bf03', // Some custom battery service
+    'fee7', // Another common custom UUID
+  ];
+  
+  static const List<String> _alternativeBatteryCharUuids = [
+    '2a19', // Standard Battery Level characteristic
+    'bf04', // Custom battery char
+    'fee8', // Another custom battery char
+  ];
 
   int? _lastBatteryLevel;
   final _dataStreamController = StreamController<int?>.broadcast();
@@ -24,11 +37,11 @@ class BatteryService {
 
   void _processBattery(List<int> value) {
     try {
-      // Silent processing - no logging for performance
       if (value.isEmpty) return;
 
       _lastBatteryLevel = value[0];
       _dataStreamController.add(_lastBatteryLevel);
+      debugPrint('🔋 Battery level updated: $_lastBatteryLevel%');
     } catch (e) {
       debugPrint('Error processing battery data: $e');
     }
@@ -36,25 +49,30 @@ class BatteryService {
 
   Future<void> start(BluetoothDevice device) async {
     try {
-      debugPrint('Setting up Battery service...');
+      debugPrint('🔋 Setting up Battery service...');
       await Future.delayed(const Duration(milliseconds: 1000));
       
       final services = await device.discoverServices();
-      // Silent service discovery - no logging for performance
+      debugPrint('🔋 Total services found: ${services.length}');
+      
+      // Log all service UUIDs for debugging
+      for (final service in services) {
+        debugPrint('🔋 Service UUID: ${service.uuid}');
+      }
 
       final batteryService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase().contains(_batteryServiceUuid.toLowerCase()),
         orElse: () => throw BatteryServiceException('Battery service not found'),
       );
 
-      debugPrint('Found Battery service: ${batteryService.uuid}');
+      debugPrint('🔋 Found Battery service: ${batteryService.uuid}');
       final batteryChar = batteryService.characteristics.firstWhere(
         (c) => c.uuid.toString().toLowerCase().contains(_batteryCharUuid.toLowerCase()),
         orElse: () => throw BatteryServiceException('Battery characteristic not found'),
       );
 
-      debugPrint('Found Battery characteristic: ${batteryChar.uuid}');
-      debugPrint('Battery Properties: read=${batteryChar.properties.read}, notify=${batteryChar.properties.notify}');
+      debugPrint('🔋 Found Battery characteristic: ${batteryChar.uuid}');
+      debugPrint('🔋 Battery Properties: read=${batteryChar.properties.read}, notify=${batteryChar.properties.notify}');
 
       // Try initial read if supported
       if (batteryChar.properties.read) {
@@ -63,7 +81,7 @@ class BatteryService {
             const Duration(seconds: 2),
             onTimeout: () => throw TimeoutException('Battery read timeout')
           );
-          debugPrint('Initial battery read successful');
+          debugPrint('🔋 Initial battery read successful: $value');
           _processBattery(value);
         } catch (e) {
           debugPrint('Battery initial read failed: $e');
@@ -74,7 +92,7 @@ class BatteryService {
       if (batteryChar.properties.notify) {
         try {
           final success = await batteryChar.setNotifyValue(true);
-          debugPrint('Battery notifications enabled: $success');
+          debugPrint('🔋 Battery notifications enabled: $success');
 
           if (!success) {
             throw BatteryServiceException('Failed to enable battery notifications');
@@ -83,30 +101,49 @@ class BatteryService {
           _batterySubscription = batteryChar.lastValueStream.listen(
             (value) {
               try {
-                // Silent processing - no logging for performance
+                debugPrint('🔋 Battery notification received: $value');
                 _processBattery(value);
               } catch (e) {
-                debugPrint('Battery notification processing error: $e');
+                debugPrint('🔋 Battery notification processing error: $e');
               }
             },
             onError: (e) {
-              debugPrint('Battery notification stream error: $e');
+              debugPrint('🔋 Battery notification stream error: $e');
             },
           );
         } catch (e) {
           debugPrint('Error setting up battery notifications: $e');
+        }        } else {
+          debugPrint('🔋 Battery characteristic does not support notify - trying periodic reads');
+          // Se non supporta notify, proviamo una lettura periodica
+          _setupPeriodicBatteryRead(batteryChar);
         }
-      } else {
-        debugPrint('Battery characteristic does not support notify');
-      }
 
-      debugPrint('Battery service setup complete');
-    } catch (e) {
-      debugPrint('Battery service start failed: $e');
-      _lastBatteryLevel = null;
-      rethrow;
+        debugPrint('🔋 Battery service setup complete');
+      } catch (e) {
+        debugPrint('🔋 Battery service start failed: $e');
+        _lastBatteryLevel = null;
+        rethrow;
+      }
     }
-  }
+
+    void _setupPeriodicBatteryRead(BluetoothCharacteristic batteryChar) {
+      Timer.periodic(const Duration(seconds: 30), (timer) async {
+        if (_batterySubscription == null) {
+          timer.cancel();
+          return;
+        }
+        try {
+          if (batteryChar.properties.read) {
+            final value = await batteryChar.read();
+            debugPrint('🔋 Periodic battery read: $value');
+            _processBattery(value);
+          }
+        } catch (e) {
+          debugPrint('🔋 Periodic battery read error: $e');
+        }
+      });
+    }
 
   Future<void> stop() async {
     debugPrint('Stopping Battery service...');
