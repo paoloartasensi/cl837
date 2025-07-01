@@ -18,6 +18,7 @@ class ChileafExtendedService {
   static const int _commandTemperature = 0x38;
   static const int _commandSports = 0x15; // Real-time sports data notification
   static const int _commandHealthData = 0x75; // Extended health data (discovered from logs)
+  static const int _commandAccelerometer = 0x0C; // High-frequency accelerometer/motion data
 
   // Stream controllers for each data type
   final _sportsDataController = StreamController<SportsData>.broadcast();
@@ -35,6 +36,10 @@ class ChileafExtendedService {
   // RR intervals buffer for HRV calculation
   List<double> _rrIntervalsBuffer = [];
   static const int _maxRRIntervals = 30; // Store last 30 intervals for HRV
+  
+  // Accelerometer data analysis
+  int _accelerometerLogCounter = 0;
+  static const int _accelerometerLogInterval = 100; // Log every 100th packet
 
   // Public streams
   Stream<SportsData> get sportsDataStream => _sportsDataController.stream;
@@ -152,8 +157,8 @@ class ChileafExtendedService {
           case _commandTemperature: // 0x38 - Temperature data
             _processTemperatureData(data);
             break;
-          case 0x0C: // Unknown command - ignore to reduce log spam
-            // Possibly battery or other sensor data - not parsed yet
+          case _commandAccelerometer: // 0x0C - High-frequency accelerometer/motion data
+            _processAccelerometerData(data);
             break;
           case _commandHealthData: // 0x75 - Extended health data (discovered)
             _processHealthData(data);
@@ -468,5 +473,55 @@ class ChileafExtendedService {
     _spo2DataController.close();
     _temperatureDataController.close();
     _hrvDataController.close();
+  }
+
+  void _processAccelerometerData(List<int> data) {
+    // Command 0x0C - High-frequency accelerometer/motion data
+    // Format: 0xff 0x0a 0x0c [motion data bytes] 0x0e [checksum]
+    // Length: 10 bytes total
+    
+    _accelerometerLogCounter++;
+    
+    // Only log occasionally to reduce spam, but still analyze data patterns
+    if (_accelerometerLogCounter % _accelerometerLogInterval == 0) {
+      debugPrint('📊 Accelerometer 0x0C sample (packet #$_accelerometerLogCounter): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    }
+    
+    if (data.length < 10) {
+      return; // Invalid packet length
+    }
+    
+    try {
+      // Analyze data patterns:
+      // Bytes 3-7 seem to contain motion/accelerometer values
+      // Based on log patterns, these values change frequently
+      
+      final byte3 = data[3]; // Motion/acceleration X?
+      final byte4 = data[4]; // Motion/acceleration Y?
+      final byte5 = data[5]; // Motion/acceleration Z?
+      final byte6 = data[6]; // Additional motion data
+      final byte7 = data[7]; // Additional motion data
+      
+      // Log detailed analysis occasionally
+      if (_accelerometerLogCounter % (_accelerometerLogInterval * 10) == 0) {
+        debugPrint('📊 Accelerometer Pattern Analysis:');
+        debugPrint('   Byte 3 (X?): 0x${byte3.toRadixString(16)} ($byte3)');
+        debugPrint('   Byte 4 (Y?): 0x${byte4.toRadixString(16)} ($byte4)');  
+        debugPrint('   Byte 5 (Z?): 0x${byte5.toRadixString(16)} ($byte5)');
+        debugPrint('   Byte 6: 0x${byte6.toRadixString(16)} ($byte6)');
+        debugPrint('   Byte 7: 0x${byte7.toRadixString(16)} ($byte7)');
+        debugPrint('   Full packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      }
+      
+      // Note: This data is very high frequency (many packets per second)
+      // It's likely raw accelerometer data that could be used for:
+      // - Step counting refinement
+      // - Fall detection
+      // - Activity recognition
+      // - Motion artifact detection for other sensors
+      
+    } catch (e) {
+      debugPrint('Error parsing accelerometer data: $e');
+    }
   }
 }
