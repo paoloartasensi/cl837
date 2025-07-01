@@ -234,9 +234,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         
         _batteryLevelSubscription = _batteryService.dataStream.listen(
             (batteryLevel) {
+                debugPrint('📱 UI Battery update received: $batteryLevel%');
                 setState(() {
                     latestBatteryLevel = batteryLevel;
                 });
+                debugPrint('📱 UI Battery state updated: $latestBatteryLevel%');
             },
             onError: (error) {
                 debugPrint('Battery stream error: $error');

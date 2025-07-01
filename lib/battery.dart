@@ -147,11 +147,12 @@ class BatteryService {
           );
         } catch (e) {
           debugPrint('Error setting up battery notifications: $e');
-        }        } else {
-          debugPrint('🔋 Battery characteristic does not support notify - trying periodic reads');
-          // Se non supporta notify, proviamo una lettura periodica
-          _setupPeriodicBatteryRead(batteryChar);
         }
+      } else {
+        debugPrint('🔋 Battery characteristic does not support notify - trying periodic reads');
+        // Se non supporta notify, proviamo una lettura periodica
+        _setupPeriodicBatteryRead(batteryChar);
+      }
 
         debugPrint('🔋 Battery service setup complete');
       } catch (e) {
