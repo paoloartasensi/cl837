@@ -11,11 +11,7 @@ class BatteryServiceException implements Exception {
 }
 
 class BatteryService {
-  // Battery Service & Characteristic UUIDs - shortened version
-  static const String _batteryServiceUuid = '180f';
-  static const String _batteryCharUuid = '2a19';
-  
-  // Alternative UUIDs for custom battery services
+  // Alternative UUIDs for battery services (standard and custom)
   static const List<String> _alternativeBatteryServiceUuids = [
     '180f', // Standard Battery Service
     'bf03', // Some custom battery service
@@ -60,16 +56,61 @@ class BatteryService {
         debugPrint('🔋 Service UUID: ${service.uuid}');
       }
 
-      final batteryService = services.firstWhere(
-        (s) => s.uuid.toString().toLowerCase().contains(_batteryServiceUuid.toLowerCase()),
-        orElse: () => throw BatteryServiceException('Battery service not found'),
-      );
+      // Try to find battery service using standard or alternative UUIDs
+      BluetoothService? batteryService;
+      for (final serviceUuid in _alternativeBatteryServiceUuids) {
+        try {
+          batteryService = services.firstWhere(
+            (s) => s.uuid.toString().toLowerCase().contains(serviceUuid.toLowerCase()),
+          );
+          debugPrint('🔋 Found battery service with UUID: $serviceUuid');
+          break;
+        } catch (e) {
+          // Continue trying other UUIDs
+        }
+      }
+
+      if (batteryService == null) {
+        // Fallback: try to find any service that might contain battery data
+        debugPrint('🔋 Trying fallback: looking for services with battery-related characteristics');
+        for (final service in services) {
+          for (final char in service.characteristics) {
+            for (final charUuid in _alternativeBatteryCharUuids) {
+              if (char.uuid.toString().toLowerCase().contains(charUuid.toLowerCase())) {
+                batteryService = service;
+                debugPrint('🔋 Found potential battery service via characteristic: ${service.uuid}');
+                break;
+              }
+            }
+            if (batteryService != null) break;
+          }
+          if (batteryService != null) break;
+        }
+      }
+
+      if (batteryService == null) {
+        throw BatteryServiceException('Battery service not found with any known UUID');
+      }
 
       debugPrint('🔋 Found Battery service: ${batteryService.uuid}');
-      final batteryChar = batteryService.characteristics.firstWhere(
-        (c) => c.uuid.toString().toLowerCase().contains(_batteryCharUuid.toLowerCase()),
-        orElse: () => throw BatteryServiceException('Battery characteristic not found'),
-      );
+      
+      // Try to find battery characteristic using standard or alternative UUIDs
+      BluetoothCharacteristic? batteryChar;
+      for (final charUuid in _alternativeBatteryCharUuids) {
+        try {
+          batteryChar = batteryService.characteristics.firstWhere(
+            (c) => c.uuid.toString().toLowerCase().contains(charUuid.toLowerCase()),
+          );
+          debugPrint('🔋 Found battery characteristic with UUID: $charUuid');
+          break;
+        } catch (e) {
+          // Continue trying other UUIDs
+        }
+      }
+
+      if (batteryChar == null) {
+        throw BatteryServiceException('Battery characteristic not found with any known UUID');
+      }
 
       debugPrint('🔋 Found Battery characteristic: ${batteryChar.uuid}');
       debugPrint('🔋 Battery Properties: read=${batteryChar.properties.read}, notify=${batteryChar.properties.notify}');
