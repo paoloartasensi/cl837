@@ -189,6 +189,36 @@ Extended service data: 0xff 0x0a 0x0c 0xc0 0x01 0x80 0xfa 0x80 0x0e 0x18
 
 ---
 
+## 📊 **AGGIORNAMENTO 2024 - SpO2 e Batteria**
+
+### Problema SpO2 - MIGLIORATO
+- **Sintomi**: SpO2 sempre 1% nel UI, anche se i dati vengono ricevuti
+- **Cause**: Condizioni di misurazione non ottimali (postura, segnale, dispositivo)
+- **Correzioni applicate**:
+  - ✅ Widget SpO2 ora nasconde valori non validi mostrando "--"
+  - ✅ Aggiunto controllo `_isValidReading()` per verificare condizioni ottimali
+  - ✅ Implementato `_getImprovementTip()` per suggerimenti rapidi
+  - ✅ Aggiunta sezione istruzioni dettagliate con `_getDetailedInstructions()`
+  - ✅ Migliorati status chips con più informazioni (qualità segnale, posizione)
+  - ✅ Sostituito Row con Wrap per evitare overflow dei chips
+
+### Problema Batteria UI - IN CORSO
+- **Sintomi**: Widget batteria mostra "N/A" nonostante log corretti
+- **Diagnosi**: Servizio battery.dart funziona, possibile problema nel widget
+- **Correzioni applicate**:
+  - ✅ Aggiunto debug logging al BatteryWidget
+  - ✅ Verificato flusso dati da battery.dart a main.dart
+  - ✅ Aggiunto import necessario per debugPrint
+
+### Istruzioni SpO2 per Utente
+Il widget ora mostra istruzioni specifiche quando le condizioni non sono ottimali:
+- "Wear device snugly on your wrist" (se non indossato)
+- "Keep wrist face up and still" (se postura scorretta)  
+- "Stay completely still for 30 seconds" (se segnale debole)
+- "Allow time for reading to stabilize" (se valore fuori range)
+
+---
+
 **Sviluppatore**: AI Assistant  
 **Data**: 1 Luglio 2025  
 **Versione App**: CL837 Flutter BLE v1.2  
