@@ -374,6 +374,90 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         );
     }
 
+    // SpO2 measurement methods
+    Future<void> measureSpO2() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            setState(() {
+                // You can add an isMeasuring state variable if needed
+            });
+            
+            await _extendedService.measureSpO2();
+            showSuccess('SpO2 measurement started');
+        } catch (e) {
+            debugPrint('Failed to measure SpO2: $e');
+            showError('Failed to measure SpO2');
+        }
+    }
+
+    Future<void> measureSpO2Alternative() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            setState(() {
+                // You can add an isMeasuring state variable if needed
+            });
+            
+            await _extendedService.measureSpO2Alternative();
+            showSuccess('Alternative SpO2 measurement started');
+        } catch (e) {
+            debugPrint('Failed to measure SpO2 (alternative): $e');
+            showError('Failed to measure SpO2 (alternative)');
+        }
+    }
+
+    Future<void> forceExitSpO2Mode() async {
+        try {
+            await _extendedService.forceExitSpO2Mode();
+            showSuccess('Force exit SpO2 mode completed');
+        } catch (e) {
+            debugPrint('Failed to force exit SpO2 mode: $e');
+            showError('Failed to force exit SpO2 mode');
+        }
+    }
+
+    Future<void> testSpO2LED() async {
+        try {
+            await _extendedService.testLEDFunctionality();
+            showSuccess('LED test completed');
+        } catch (e) {
+            debugPrint('Failed to test LED: $e');
+            showError('Failed to test LED');
+        }
+    }
+
+    Future<void> diagnoseBLE() async {
+        try {
+            await _extendedService.diagnoseBLEIssues();
+            showSuccess('BLE diagnostics completed');
+        } catch (e) {
+            debugPrint('Failed to diagnose BLE: $e');
+            showError('Failed to diagnose BLE');
+        }
+    }
+
+    Future<void> startHRVSession() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _hrvSessionService.startSession(_heartRateService.dataStream);
+            showSuccess('HRV session started');
+        } catch (e) {
+            debugPrint('Failed to start HRV session: $e');
+            showError('Failed to start HRV session');
+        }
+    }
+
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -397,6 +481,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                         SpO2Widget(
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
+                            onMeasureSpO2: measureSpO2,
+                            onMeasureSpO2Alternative: measureSpO2Alternative,
+                            onForceExit: forceExitSpO2Mode,
+                            onTestLED: testSpO2LED,
+                            onDiagnoseBLE: diagnoseBLE,
                         ),
                         TemperatureWidget(
                             temperatureData: latestTemperatureData,
@@ -436,6 +525,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     SpO2Widget(
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
+                        onMeasureSpO2: measureSpO2,
+                        onMeasureSpO2Alternative: measureSpO2Alternative,
+                        onForceExit: forceExitSpO2Mode,
+                        onTestLED: testSpO2LED,
+                        onDiagnoseBLE: diagnoseBLE,
                     ),
                 ]),
                 
@@ -494,21 +588,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 }
             },
         );
-    }
-
-    Future<void> startHRVSession() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _hrvSessionService.startSession(_heartRateService.dataStream);
-            showSuccess('HRV session started');
-        } catch (e) {
-            debugPrint('Failed to start HRV session: $e');
-            showError('Failed to start HRV session');
-        }
     }
 
     @override

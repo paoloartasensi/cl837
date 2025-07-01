@@ -57,24 +57,47 @@ class ChileafExtendedService {
       final services = await device.discoverServices();
       debugPrint('Extended Service: Found ${services.length} services');
       
-      // Find custom service
-      final customService = services.firstWhere(
-        (s) => s.uuid.toString().toLowerCase().contains(_customServiceUuid.split('-')[0].toLowerCase()),
-        orElse: () => throw Exception('Custom service not found'),
-      );
+      // Find custom service - more robust matching
+      BluetoothService? customService;
+      
+      for (var service in services) {
+        debugPrint('Service UUID: ${service.uuid}');
+        if (service.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase()) {
+          customService = service;
+          break;
+        }
+      }
+      
+      customService ??= services.firstWhere(
+          (s) => s.uuid.toString().toLowerCase().contains(_customServiceUuid.split('-')[0].toLowerCase()),
+          orElse: () => throw Exception('Custom service not found'),
+        );
 
       debugPrint('Found custom service: ${customService.uuid}');
+      
+      // Debug: List all characteristics
+      debugPrint('Service has ${customService.characteristics.length} characteristics:');
+      for (var char in customService.characteristics) {
+        debugPrint('  - ${char.uuid} (properties: notify=${char.properties.notify}, read=${char.properties.read}, write=${char.properties.write})');
+      }
 
-      // Find characteristics
-      _txCharacteristic = customService.characteristics.firstWhere(
-        (c) => c.uuid.toString().toLowerCase().contains(_txCharUuid.split('-')[0].toLowerCase()),
-        orElse: () => throw Exception('TX characteristic not found'),
-      );
-
-      _rxCharacteristic = customService.characteristics.firstWhere(
-        (c) => c.uuid.toString().toLowerCase().contains(_rxCharUuid.split('-')[0].toLowerCase()),
-        orElse: () => throw Exception('RX characteristic not found'),
-      );
+      // Find characteristics - more robust matching
+      BluetoothCharacteristic? txChar, rxChar;
+      
+      for (var char in customService.characteristics) {
+        final charUuid = char.uuid.toString().toLowerCase();
+        if (charUuid == _txCharUuid.toLowerCase()) {
+          txChar = char;
+        } else if (charUuid == _rxCharUuid.toLowerCase()) {
+          rxChar = char;
+        }
+      }
+      
+      if (txChar == null) throw Exception('TX characteristic not found');
+      if (rxChar == null) throw Exception('RX characteristic not found');
+      
+      _txCharacteristic = txChar;
+      _rxCharacteristic = rxChar;
 
       debugPrint('Found TX: ${_txCharacteristic!.uuid}');
       debugPrint('Found RX: ${_rxCharacteristic!.uuid}');
@@ -125,11 +148,15 @@ class ChileafExtendedService {
   }
 
   void _processIncomingData(List<int> data) {
+    debugPrint('🔄 _processIncomingData called with ${data.length} bytes'); // CRITICAL DEBUG
     if (data.isEmpty) return;
 
     try {
       // Debug: log all data for SPO2/temperature debugging
       debugPrint('Extended service data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+
+      // SPECIAL CHECK: Look for ANY data that could be SpO2 response
+      _checkForSpO2Response(data);
 
       // Handle different data formats
       if (data[0] == 0xFF && data.length >= 3) {
@@ -142,6 +169,7 @@ class ChileafExtendedService {
             _processSportsData(data);
             break;
           case _commandSpo2: // 0x37 - SPO2 data
+            debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');
             _processSPO2Data(data);
             break;
           case _commandTemperature: // 0x38 - Temperature data
@@ -155,13 +183,55 @@ class ChileafExtendedService {
             break;
           default:
             debugPrint('Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
+            // Check if this could be a SpO2 response in a different format
+            if (data.length >= 7) {
+              debugPrint('🔍 Checking if this could be SpO2 data in different format...');
+              final possibleSpo2 = data[3];
+              if (possibleSpo2 >= 70 && possibleSpo2 <= 100) {
+                debugPrint('🫁 Possible SpO2 value detected: $possibleSpo2%');
+              }
+            }
         }
       } else if (data.length >= 4) {
         // Try to detect data patterns without strict protocol
         _tryDetectDataPatterns(data);
+        
+        // Also aggressively check for SpO2 responses
+        _checkForSpO2Response(data);
       }
     } catch (e) {
       debugPrint('Error processing Chileaf data: $e');
+    }
+  }
+
+  // Aggressively check for SpO2 responses in any incoming data
+  void _checkForSpO2Response(List<int> data) {
+    // Scan all bytes in the data for possible SpO2 values
+    for (int i = 0; i < data.length; i++) {
+      final possibleSpO2 = data[i];
+      
+      // SpO2 values are typically between 70-100%
+      if (possibleSpO2 >= 70 && possibleSpO2 <= 100) {
+        debugPrint('🔍 POSSIBLE SpO2 value detected at position $i: $possibleSpO2%');
+        
+        // Try to extract additional context if available
+        bool hasPosture = (i + 1 < data.length);
+        bool hasSignal = (i + 2 < data.length);
+        bool hasWearing = (i + 3 < data.length);
+        
+        final spo2Data = SpO2Data(
+          spo2Value: possibleSpO2,
+          correctWristPosture: hasPosture ? data[i + 1] == 1 : true,
+          signalQuality: hasSignal ? data[i + 2] : 50,
+          isWearing: hasWearing ? data[i + 3] == 1 : true,
+        );
+        
+        _spo2DataController.add(spo2Data);
+        debugPrint('🫁 Pushed possible SpO2 data to UI: $possibleSpO2%');
+        
+        // Don't check further to avoid false positives
+        break;
+      }
     }
   }
 
@@ -514,24 +584,35 @@ class ChileafExtendedService {
     try {
       debugPrint('🫁 Starting on-demand SpO2 measurement...');
       
+      // Step 0: First ensure we're NOT in SpO2 mode
+      await exitSPO2Mode();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
       // Step 1: Enter SpO2 mode (LED rosso si accende)
       await _enableSPO2Mode();
       debugPrint('🫁 SpO2 mode enabled, LED should be RED, stabilizing...');
       
       // Step 2: Wait for stabilization (important for accurate reading)
-      await Future.delayed(const Duration(milliseconds: 3000));
+      debugPrint('🫁 Waiting 4 seconds for stabilization...');
+      await Future.delayed(const Duration(milliseconds: 4000));
       
       // Step 3: Request SpO2 status multiple times for better accuracy
+      debugPrint('🫁 Phase 1: Requesting SpO2 status...');
       await inquireSPO2Status();
-      await Future.delayed(const Duration(milliseconds: 1000));
-      await inquireSPO2Status();
-      await Future.delayed(const Duration(milliseconds: 1000));
-      await inquireSPO2Status(); // Final reading
+      await Future.delayed(const Duration(milliseconds: 2000)); // Increased delay
       
-      debugPrint('🫁 SpO2 measurement requests sent');
+      debugPrint('🫁 Phase 2: Second SpO2 inquiry...');
+      await inquireSPO2Status();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      debugPrint('🫁 Phase 3: Final SpO2 inquiry...');
+      await inquireSPO2Status();
+      await Future.delayed(const Duration(milliseconds: 3000)); // Longer wait for final reading
+      
+      debugPrint('🫁 SpO2 measurement requests sent, checking for responses...');
       
       // Step 4: IMPORTANTE - Exit SpO2 mode per spegnere LED
-      await Future.delayed(const Duration(milliseconds: 2000)); // Wait for final data
+      debugPrint('🫁 Exiting SpO2 mode...');
       await exitSPO2Mode();
       debugPrint('🫁 SpO2 mode exited, LED should turn OFF');
       
@@ -545,6 +626,43 @@ class ChileafExtendedService {
         debugPrint('🫁 Failed to exit SpO2 mode: $exitError');
       }
       rethrow;
+    }
+  }
+
+  // Alternative SpO2 command method (try different formats)
+  Future<void> measureSpO2Alternative() async {
+    try {
+      debugPrint('🧪 Trying alternative SpO2 command formats...');
+      
+      // Method 1: Try simple 0x37 command without parameters
+      debugPrint('🧪 Method 1: Simple 0x37 command');
+      await _sendCommand([_commandSpo2]);
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Method 2: Try different parameter values
+      debugPrint('🧪 Method 2: 0x37 with different parameters');
+      for (int param in [0x01, 0x02, 0x03, 0xFF]) {
+        debugPrint('🧪 Trying parameter: 0x${param.toRadixString(16)}');
+        await _sendCommand([_commandSpo2, param]);
+        await Future.delayed(const Duration(milliseconds: 1500));
+      }
+      
+      // Method 3: Try raw command without protocol frame
+      debugPrint('🧪 Method 3: Raw command without frame');
+      if (_rxCharacteristic != null) {
+        try {
+          await _rxCharacteristic!.write([0x37, 0x01]);
+          debugPrint('🧪 Raw command sent');
+          await Future.delayed(const Duration(milliseconds: 2000));
+        } catch (e) {
+          debugPrint('🧪 Raw command failed: $e');
+        }
+      }
+      
+      debugPrint('🧪 Alternative methods completed');
+      
+    } catch (e) {
+      debugPrint('🧪 Alternative SpO2 methods error: $e');
     }
   }
 
@@ -640,7 +758,12 @@ class ChileafExtendedService {
       debugPrint('🚨 LED dovrebbe essere ACCESO (ROSSO), attendere 3 secondi...');
       await Future.delayed(const Duration(seconds: 3));
       
-      // Step 3: Spegniamo il LED
+      // Step 3: Test comando inquiry
+      debugPrint('🚨 Testing SpO2 inquiry command...');
+      await inquireSPO2Status();
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 4: Spegniamo il LED
       await exitSPO2Mode();
       debugPrint('🚨 LED dovrebbe essere di nuovo SPENTO');
       

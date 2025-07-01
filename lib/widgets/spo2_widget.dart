@@ -5,6 +5,7 @@ class SpO2Widget extends StatelessWidget {
   final SpO2Data? spo2Data;
   final bool isConnected;
   final VoidCallback? onMeasureSpO2;
+  final VoidCallback? onMeasureSpO2Alternative; // Alternative SpO2 command
   final VoidCallback? onForceExit;  // Bottone emergenza
   final VoidCallback? onTestLED;    // Test LED
   final VoidCallback? onDiagnoseBLE; // Diagnostica BLE
@@ -15,6 +16,7 @@ class SpO2Widget extends StatelessWidget {
     this.spo2Data,
     required this.isConnected,
     this.onMeasureSpO2,
+    this.onMeasureSpO2Alternative,
     this.onForceExit,
     this.onTestLED,
     this.onDiagnoseBLE,
@@ -80,6 +82,33 @@ class SpO2Widget extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 4),
+              
+              // Alternative SpO2 method button
+              if (onMeasureSpO2Alternative != null) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: isMeasuring ? null : onMeasureSpO2Alternative,
+                    icon: isMeasuring 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.science, size: 16),
+                    label: Text(
+                      isMeasuring ? 'Measuring...' : 'Try Alt Method',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 8),
+                      backgroundColor: isMeasuring ? Colors.grey : Colors.teal,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+              ],
               
               // Emergency exit button (se connesso)
               if (onForceExit != null) ...[
