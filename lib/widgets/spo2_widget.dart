@@ -190,16 +190,18 @@ class SpO2Widget extends StatelessWidget {
   }
 
   Widget _buildSpO2Content(BuildContext context) {
+    final hasValidMeasurement = spo2Data!.spo2Value != null;
+    
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Main SpO2 value
+        // Main SpO2 value or status
         Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                '${spo2Data!.spo2Value}%',
+                hasValidMeasurement ? '${spo2Data!.spo2Value}%' : 'Status',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: _getSpO2Color(),
@@ -213,6 +215,7 @@ class SpO2Widget extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                   fontSize: 10,
                 ),
+                textAlign: TextAlign.center,
               ),
             ],
           ),
@@ -236,6 +239,25 @@ class SpO2Widget extends StatelessWidget {
         ),
         
         const SizedBox(height: 6),
+        
+        // Additional info for status vs measurement
+        if (!hasValidMeasurement) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              spo2Data!.isDeviceReady 
+                ? 'Device ready - measuring...' 
+                : 'Adjust position and stay still',
+              style: const TextStyle(fontSize: 9, color: Colors.blue),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          const SizedBox(height: 4),
+        ],
         
         // Timestamp
         Text(
@@ -300,6 +322,7 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return Colors.grey;
     
     final value = spo2Data!.spo2Value;
+    if (value == null) return Colors.blue; // Status mode
     if (value >= 95) return Colors.green;
     if (value >= 90) return Colors.orange;
     return Colors.red;
@@ -309,6 +332,20 @@ class SpO2Widget extends StatelessWidget {
     if (spo2Data == null) return 'No data';
     
     final value = spo2Data!.spo2Value;
+    if (value == null) {
+      // This is a status response, not a measurement
+      if (spo2Data!.isDeviceReady) {
+        return 'Device ready - measuring...';
+      } else {
+        List<String> issues = [];
+        if (!spo2Data!.isWearing) issues.add('not wearing');
+        if (!spo2Data!.correctWristPosture) issues.add('wrong position');
+        if (spo2Data!.signalQuality < 8) issues.add('weak signal');
+        return 'Adjust: ${issues.join(', ')}';
+      }
+    }
+    
+    // This is an actual measurement
     if (value >= 95) return 'Normal';
     if (value >= 90) return 'Low';
     return 'Very Low';

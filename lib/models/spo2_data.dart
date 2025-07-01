@@ -1,12 +1,12 @@
 class SpO2Data {
-  final int spo2Value;
+  final int? spo2Value; // Now nullable to handle status vs measurement
   final bool correctWristPosture;
   final int signalQuality; // 0=no signal, <8=weak, >15=good
   final bool isWearing;
   final DateTime timestamp;
 
   SpO2Data({
-    required this.spo2Value,
+    this.spo2Value, // Made optional
     required this.correctWristPosture,
     required this.signalQuality,
     required this.isWearing,
@@ -19,8 +19,12 @@ class SpO2Data {
     return 'Good Signal';
   }
 
+  bool get isValidMeasurement => spo2Value != null && spo2Value! >= 70 && spo2Value! <= 100;
+  bool get isDeviceReady => isWearing && correctWristPosture && signalQuality >= 8;
+
   @override
   String toString() {
-    return 'SpO2: $spo2Value%, ${isWearing ? 'Wearing' : 'Not Wearing'}, $signalQualityDescription, ${correctWristPosture ? 'Correct' : 'Incorrect'} Position';
+    final valueStr = spo2Value?.toString() ?? 'N/A';
+    return 'SpO2: $valueStr%, ${isWearing ? 'Wearing' : 'Not Wearing'}, $signalQualityDescription, ${correctWristPosture ? 'Correct' : 'Incorrect'} Position';
   }
 }
