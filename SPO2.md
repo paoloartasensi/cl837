@@ -605,3 +605,374 @@ void stopSpO2Monitoring() {
 **Last Updated**: July 2025  
 **Device**: CL837 with Chileaf SDK v0.6  
 **Key Discovery**: SpO2 direct encoding at packet index 1
+
+## 🩸 **Come Vengono Letti i Dati per la Saturazione di Ossigeno nel Sangue**
+
+### **Principio di Funzionamento del Sensore SpO2**
+
+Il dispositivo CL837 utilizza un **sensore ottico** per misurare la saturazione di ossigeno nel sangue:
+
+1. **LED Rosso e Infrarosso**: Il dispositivo emette luce a due lunghezze d'onda
+   - **660 nm (rosso)**: Assorbita dall'emoglobina desossigenata
+   - **940 nm (infrarosso)**: Assorbita dall'emoglobina ossigenata
+
+2. **Fotodiodo**: Rileva la luce che attraversa il tessuto
+
+3. **Algoritmo di Calcolo**: Il microprocessore interno calcola il rapporto tra le due assorbanze
+
+### **Processo di Lettura dei Dati SpO2**
+
+#### **1. Attivazione del Sensore**
+```dart
+// Il LED rosso si accende per indicare la misurazione attiva
+await sendCommand([0x37, 0x01]); // Comando per attivare SpO2
+
+// Sequenza di attivazione:
+// 1. Microprocessore attiva i LED rosso/infrarosso
+// 2. Fotodiodo inizia a rilevare i segnali
+// 3. LED rosso visibile si accende come indicatore
+// 4. Algoritmo interno inizia il calcolo
+```
+
+#### **2. Acquisizione del Segnale Fotopletismografico (PPG)**
+```dart
+// Il dispositivo acquisisce il segnale PPG in tempo reale:
+// - Rileva le variazioni di assorbimento della luce
+// - Analizza le pulsazioni del flusso sanguigno
+// - Calcola il rapporto tra emoglobina ossigenata/desossigenata
+
+// Esempio di processo interno (non accessibile dall'esterno):
+class PPGSignalProcessor {
+  double redSignal;    // Segnale LED rosso (660nm)
+  double irSignal;     // Segnale LED infrarosso (940nm)
+  
+  double calculateSpO2() {
+    // Formula semplificata (algoritmo reale è più complesso)
+    double ratio = (redSignal / irSignal);
+    return 110 - (25 * ratio); // Approssimazione
+  }
+}
+```
+
+#### **3. Trasmissione dei Dati via BLE**
+
+Il dispositivo **NON trasmette** i dati grezzi PPG, ma invia direttamente il **valore SpO2 calcolato**:
+
+```dart
+// IMPORTANTE: Il valore SpO2 è già processato dal dispositivo
+class SpO2DataTransmission {
+  
+  /// Il dispositivo invia il valore SpO2 già calcolato
+  static void transmitSpO2Data(int calculatedSpO2) {
+    // Il microprocessore interno ha già:
+    // 1. Acquisito i segnali PPG
+    // 2. Filtrato il rumore
+    // 3. Applicato algoritmi di compensazione
+    // 4. Calcolato il valore SpO2 finale
+    
+    // Trasmissione BLE del valore finale
+    List<int> packet = [
+      0xFF,                    // Header
+      0x08,                    // Length
+      0x0C,                    // Command (es. accelerometer data)
+      calculatedSpO2,          // INDEX 1: SpO2 come percentuale diretta
+      0x12, 0x34, 0x56,       // Altri dati del pacchetto
+      0xAB                     // Checksum
+    ];
+    
+    // Il valore all'index 1 è il risultato finale del calcolo SpO2
+    print('SpO2 trasmesso: ${calculatedSpO2}%');
+  }
+}
+```
+
+### **4. Estrazione del Valore SpO2 dall'App**
+
+```dart
+// L'app Flutter riceve il pacchetto BLE e estrae il valore
+class SpO2DataReader {
+  
+  /// Legge il valore SpO2 già calcolato dal dispositivo
+  static int? readSpO2FromPacket(List<int> blePacket) {
+    // Esempio di pacchetto ricevuto:
+    // [0xFF, 0x08, 0x0C, 0x61, 0x12, 0x34, 0x56, 0xAB]
+    //                    ^^^^
+    //                    Index 1 = 0x61 = 97 decimale = 97% SpO2
+    
+    if (blePacket.length >= 2) {
+      final spo2Value = blePacket[1]; // Lettura diretta
+      
+      // Validazione del range fisiologico
+      if (spo2Value >= 70 && spo2Value <= 100) {
+        return spo2Value; // Valore valido
+      }
+    }
+    
+    return null; // Valore non valido
+  }
+}
+```
+
+### **Confronto: Dati Grezzi vs Dati Processati**
+
+#### **❌ Quello che NON facciamo (dati grezzi):**
+```dart
+// NON abbiamo accesso a questi dati dal CL837:
+class RawPPGData {
+  List<double> redLEDSamples;     // Campioni LED rosso
+  List<double> irLEDSamples;      // Campioni LED infrarosso
+  double heartRate;               // Frequenza cardiaca rilevata
+  double signalQuality;           // Qualità del segnale PPG
+  
+  // Questi calcoli sono fatti INTERNAMENTE dal dispositivo
+  double calculateSpO2() {
+    // Algoritmi complessi di elaborazione del segnale
+    // Filtri digitali, compensazione movimento, ecc.
+  }
+}
+```
+
+#### **✅ Quello che facciamo (dati processati):**
+```dart
+// Quello che riceviamo dal CL837:
+class ProcessedSpO2Data {
+  final int spo2Percentage;      // Valore finale già calcolato
+  final bool deviceWorn;         // Status sensore di contatto
+  final int signalQuality;       // Qualità del segnale (0-100)
+  final bool positionCorrect;    // Posizione polso corretta
+  
+  // Semplice estrazione del valore
+  static int extractSpO2(List<int> packet) {
+    return packet[1]; // Nessun calcolo necessario
+  }
+}
+```
+
+### **Flusso Completo di Lettura SpO2**
+
+```dart
+class CompleteSpO2ReadingFlow {
+  
+  /// Flusso completo dalla richiesta alla lettura
+  static Future<SpO2Reading> performCompleteReading() async {
+    
+    // FASE 1: Preparazione Hardware
+    print('🔧 Fase 1: Preparazione sensore...');
+    await sendCommand([0x37, 0x00]); // Assicura che sia spento
+    await Future.delayed(Duration(milliseconds: 500));
+    
+    // FASE 2: Attivazione Sensore SpO2
+    print('🔴 Fase 2: Attivazione LED e sensori...');
+    await sendCommand([0x37, 0x01]); // LED rosso ON
+    
+    /*
+    Processo interno del dispositivo (non visibile):
+    - Accensione LED rosso (660nm) e infrarosso (940nm)
+    - Attivazione fotodiodo
+    - Inizio acquisizione segnale PPG
+    - Rilevamento battito cardiaco
+    - Calcolo rapporto assorbimento luce
+    */
+    
+    // FASE 3: Stabilizzazione (4 secondi)
+    print('⏱️ Fase 3: Stabilizzazione sensore...');
+    await Future.delayed(Duration(seconds: 4));
+    
+    /*
+    Durante la stabilizzazione:
+    - Il sensore si adatta alla pelle
+    - Vengono filtrati i rumori iniziali
+    - Si stabilisce un baseline per il segnale
+    - Algoritmi di compensazione movimento si attivano
+    */
+    
+    // FASE 4: Richiesta Misurazioni
+    print('📊 Fase 4: Richiesta misurazioni...');
+    List<int> detectedValues = [];
+    
+    for (int i = 0; i < 5; i++) {
+      await sendCommand([0x37, 0x02]); // Richiesta status
+      
+      // Attesa per permettere al dispositivo di:
+      // - Completare il calcolo SpO2
+      // - Trasmettere il risultato via BLE
+      await Future.delayed(Duration(seconds: 2));
+    }
+    
+    // FASE 5: Monitoraggio Pacchetti BLE
+    print('📡 Fase 5: Lettura pacchetti BLE...');
+    
+    // Ascolto di TUTTI i pacchetti in arrivo
+    dataStream.listen((List<int> packet) {
+      
+      // Analisi del pacchetto ricevuto
+      debugPrint('Pacchetto: ${packet.map((b) => '0x${b.toRadixString(16)}').join(' ')}');
+      
+      // Estrazione SpO2 dall'index 1
+      if (packet.length >= 2) {
+        final potentialSpO2 = packet[1];
+        
+        if (potentialSpO2 >= 80 && potentialSpO2 <= 100) {
+          detectedValues.add(potentialSpO2);
+          print('✅ SpO2 rilevato: ${potentialSpO2}%');
+          
+          /*
+          Cosa significa questo valore:
+          - È il risultato di complessi calcoli PPG
+          - Include compensazione per movimento
+          - È filtrato per eliminare artefatti
+          - Rappresenta la saturazione media dell'ultimo ciclo
+          */
+        }
+      }
+    });
+    
+    // FASE 6: Spegnimento Sensore
+    print('⚫ Fase 6: Spegnimento LED...');
+    await sendCommand([0x37, 0x00]); // LED OFF
+    
+    // FASE 7: Analisi Risultati
+    return analyzeSpO2Results(detectedValues);
+  }
+}
+```
+
+### **Precisioni Tecniche sui Dati SpO2**
+
+#### **Caratteristiche del Sensore CL837:**
+```dart
+class CL837SpO2Specifications {
+  // Specifiche tecniche del sensore
+  static const double redLEDWavelength = 660.0;  // nm
+  static const double irLEDWavelength = 940.0;   // nm
+  static const int samplingRate = 25;            // Hz (stima)
+  static const int resolution = 1;               // 1% di risoluzione
+  static const List<int> accuracyRange = [70, 100]; // Range operativo
+  
+  // Tempo di risposta del sensore
+  static const Duration responseTime = Duration(seconds: 3);
+  static const Duration stabilizationTime = Duration(seconds: 4);
+  
+  // Algoritmi interni (non accessibili)
+  static const List<String> internalProcessing = [
+    'Filtro passa-basso per eliminare rumore',
+    'Algoritmo di rilevamento battito',
+    'Compensazione movimento',
+    'Calibrazione automatica',
+    'Validazione qualità segnale'
+  ];
+}
+```
+
+#### **Formato dei Dati Trasmessi:**
+```dart
+class SpO2DataFormat {
+  
+  /// Formato esatto dei dati SpO2 nel pacchetto BLE
+  static void analyzePacketFormat(List<int> packet) {
+    if (packet.length >= 8 && packet[0] == 0xFF) {
+      
+      print('📋 Analisi formato pacchetto SpO2:');
+      print('   Index 0: 0x${packet[0].toRadixString(16)} (Header fisso)');
+      print('   Index 1: 0x${packet[1].toRadixString(16)} = ${packet[1]}% SpO2');
+      print('   Index 2: 0x${packet[2].toRadixString(16)} (Comando)');
+      print('   Index 3+: Dati aggiuntivi o padding');
+      
+      // Il valore SpO2 è sempre all'index 1
+      final spo2 = packet[1];
+      
+      /*
+      Interpretazione del valore:
+      - Range 80-100: Valore SpO2 valido
+      - Range 70-79: SpO2 basso ma possibile
+      - Range 0-69: Codici di stato o errore
+      - > 100: Valore non valido
+      */
+      
+      if (spo2 >= 95) {
+        print('✅ SpO2 Normale: ${spo2}%');
+      } else if (spo2 >= 90) {
+        print('⚠️ SpO2 Accettabile: ${spo2}%');
+      } else if (spo2 >= 80) {
+        print('🚨 SpO2 Basso: ${spo2}%');
+      } else {
+        print('❌ Valore non valido o codice stato: ${spo2}');
+      }
+    }
+  }
+}
+```
+
+### **Risoluzione dei Problemi nella Lettura SpO2**
+
+```dart
+class SpO2ReadingTroubleshooting {
+  
+  /// Diagnostica problemi di lettura SpO2
+  static void diagnoseReadingIssues(List<int> receivedPackets) {
+    
+    print('🔍 Diagnostica lettura SpO2...');
+    
+    // Problema 1: Nessun dato ricevuto
+    if (receivedPackets.isEmpty) {
+      print('❌ PROBLEMA: Nessun pacchetto ricevuto');
+      print('   Soluzioni:');
+      print('   - Verificare connessione BLE');
+      print('   - Controllare che il LED sia acceso');
+      print('   - Assicurarsi che le notifiche siano abilitate');
+      return;
+    }
+    
+    // Problema 2: Valori sempre uguali (es. sempre 1%)
+    final uniqueValues = receivedPackets.toSet();
+    if (uniqueValues.length == 1 && uniqueValues.first <= 10) {
+      print('❌ PROBLEMA: Ricevuto solo codice stato (${uniqueValues.first})');
+      print('   Soluzioni:');
+      print('   - Il dispositivo non sta effettuando misurazioni reali');
+      print('   - Posizionare correttamente il dispositivo sul polso');
+      print('   - Assicurarsi che il sensore tocchi la pelle');
+      print('   - Rimanere fermi durante la misurazione');
+      return;
+    }
+    
+    // Problema 3: Valori troppo variabili
+    final variance = calculateVariance(receivedPackets);
+    if (variance > 25) {
+      print('⚠️ PROBLEMA: Valori troppo variabili (varianza: ${variance.toStringAsFixed(1)})');
+      print('   Soluzioni:');
+      print('   - Rimanere completamente fermi');
+      print('   - Stringere il dispositivo (non troppo)');
+      print('   - Pulire il sensore');
+      print('   - Evitare movimenti del braccio');
+    }
+    
+    // Problema 4: Range non fisiologico
+    final validValues = receivedPackets.where((v) => v >= 80 && v <= 100).toList();
+    if (validValues.length < receivedPackets.length * 0.5) {
+      print('❌ PROBLEMA: Troppi valori fuori range fisiologico');
+      print('   Valori ricevuti: ${receivedPackets}');
+      print('   Valori validi: ${validValues}');
+      print('   Soluzioni:');
+      print('   - Controllare posizionamento sensore');
+      print('   - Verificare che non ci siano interferenze luminose');
+      print('   - Assicurarsi che la pelle sia pulita e asciutta');
+    }
+    
+    // Successo
+    if (validValues.length >= receivedPackets.length * 0.7) {
+      final average = validValues.reduce((a, b) => a + b) / validValues.length;
+      print('✅ Lettura SpO2 riuscita!');
+      print('   Media: ${average.toStringAsFixed(1)}%');
+      print('   Valori validi: ${validValues.length}/${receivedPackets.length}');
+      print('   Stabilità: ${variance < 10 ? 'Buona' : 'Accettabile'}');
+    }
+  }
+  
+  static double calculateVariance(List<int> values) {
+    if (values.length < 2) return 0;
+    final mean = values.reduce((a, b) => a + b) / values.length;
+    final squaredDiffs = values.map((v) => (v - mean) * (v - mean));
+    return squaredDiffs.reduce((a, b) => a + b) / values.length;
+  }
+}
+```
