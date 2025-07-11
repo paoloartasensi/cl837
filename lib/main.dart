@@ -21,9 +21,16 @@ import 'models/hrv_data.dart';
 import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
 import 'models/sports_data.dart';
+import 'services/error_handler.dart';
+import 'services/performance_monitor.dart';
+import 'services/data_persistence_manager.dart';
 
-void main() {
+void main() async {
     WidgetsFlutterBinding.ensureInitialized();
+    
+    // Initialize data persistence
+    await dataPersistenceManager.initialize();
+    
     // Suppress BLE log spam - only show critical errors
     FlutterBluePlus.setLogLevel(LogLevel.none, color: false);
     runApp(const MyApp());
@@ -144,6 +151,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         setState(() {
             isConnecting = true;
         });
+        
+        // Start performance tracking
+        var perfTracker = performanceMonitor.startOperation('device_connection');
+        
         try {
             await device.connect(timeout: const Duration(seconds: 10));
             
@@ -181,6 +192,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 if (!_sensorService.isAccelerometerWorking) {
                     showError('Critical error: Accelerometer not working');
                     await disconnectDevice();
+                    perfTracker.error('Accelerometer not working: $e');
                     return;
                 } else {
                     showWarning('Some sensors may not work properly. Accelerometer is still functional.');
@@ -196,14 +208,22 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     isConnecting = false;
                 });
             }
+            
+            perfTracker.complete();
         } catch (e) {
             debugPrint('Connection error: $e');
+            
+            // Handle error with error handler
+            BleErrorInfo errorInfo = BleErrorHandler.handleBleError(e);
+            showError(errorInfo.message);
+            
             if (mounted) {
                 setState(() {
                     isConnecting = false;
                 });
             }
-            showError('Failed to connect to device');
+            
+            perfTracker.error('Connection failed: $e');
         }
     }
 
@@ -342,6 +362,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         _batteryService.dispose();
         _extendedService.dispose();
         _hrvSessionService.dispose();
+        performanceMonitor.dispose();
         disconnectDevice();
         super.dispose();
     }
@@ -476,8 +497,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                     mainAxisSpacing: 8,
                     crossAxisSpacing: 8,
                     children: [
-                        HeartRateWidget(latestData: latestHeartRate),
-                        BatteryWidget(latestData: latestBatteryLevel),
+                        HeartRateWidget(latestData: latestHeartRate, isConnected: connectedDevice != null),
+                        BatteryWidget(latestData: latestBatteryLevel, isConnected: connectedDevice != null),
                         HRVSessionWidget(
                             sessionService: _hrvSessionService,
                             isConnected: connectedDevice != null,
@@ -514,8 +535,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             children: [
                 // Riga superiore - Vitali principali
                 _buildResponsiveRow([
-                    HeartRateWidget(latestData: latestHeartRate),
-                    BatteryWidget(latestData: latestBatteryLevel),
+                    HeartRateWidget(latestData: latestHeartRate, isConnected: connectedDevice != null),
+                    BatteryWidget(latestData: latestBatteryLevel, isConnected: connectedDevice != null),
                 ]),
                 
                 const SizedBox(height: 8),

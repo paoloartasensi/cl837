@@ -7,18 +7,18 @@ plugins {
 
 android {
     namespace = "com.example.cl837"
-    compileSdk = 34
+    compileSdk = 35
     
     // Usa la versione NDK funzionante
     ndkVersion = "29.0.13113456"
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17
+        jvmTarget = JavaVersion.VERSION_11
     }
 
     defaultConfig {
@@ -26,7 +26,7 @@ android {
         applicationId = "com.example.cl837"
         // Valori fissi per evitare dipendenze da Flutter
         minSdk = 21
-        targetSdk = 34
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
     }
