@@ -155,17 +155,22 @@ class ChileafExtendedService {
       // Debug: log all data for SPO2/temperature debugging
       debugPrint('Extended service data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
 
-      // SPECIAL SpO2 DEBUG: Look for ANY data that could be SpO2
-      _aggressiveSpO2Search(data);
-
       // Handle different data formats
       if (data[0] == 0xFF && data.length >= 3) {
-        // Enhanced SpO2 analysis
-        _enhancedSpO2Analysis(data);
-        
         // Standard Chileaf protocol
         final command = data[2];
         debugPrint('Chileaf command: 0x${command.toRadixString(16).padLeft(2, '0')}');
+        
+        // 🎯 TARGETED SpO2 SEARCH: Only search in packets that actually contain SpO2 data
+        // This prevents false positives from accelerometer data (command 0x0C)
+        if (command == 0x75) { // Extended health data - contains REAL SpO2 data
+          debugPrint('🎯 Command 0x75: Searching for REAL SpO2 data');
+          _aggressiveSpO2Search(data);
+          _enhancedSpO2Analysis(data);
+        } else if (command == 0x37) { // Official SpO2 command (status responses)
+          debugPrint('🎯 Command 0x37: Official SpO2 command detected');
+          _enhancedSpO2Analysis(data);
+        }
         
         switch (command) {
           case _commandSports: // 0x15 - Real-time sports data
@@ -179,6 +184,7 @@ class ChileafExtendedService {
             _processTemperatureData(data);
             break;
           case _commandAccelerometer: // 0x0C - High-frequency accelerometer/motion data
+            debugPrint('📊 ACCELEROMETER DATA: Processing motion data (NOT SpO2)');
             _processAccelerometerData(data);
             break;
           case _commandHealthData: // 0x75 - Extended health data (discovered)
@@ -209,17 +215,33 @@ class ChileafExtendedService {
 
   // Ultra-aggressive SpO2 search for when LED is on
   void _aggressiveSpO2Search(List<int> data) {
-    // 🎯 NEW DISCOVERY: SpO2 value is at index 1 (second byte) in many packets!
+    // 🎯 FOCUSED SEARCH: Only search for SpO2 in command 0x75 (extended health data)
+    // This prevents false positives from accelerometer data (command 0x0C)
+    
+    if (data.length < 7 || data[0] != 0xFF) {
+      return; // Not a valid protocol frame
+    }
+    
+    final command = data[2];
+    if (command != 0x75) {
+      debugPrint('🚫 Skipping aggressive SpO2 search for command 0x${command.toRadixString(16)} (not 0x75)');
+      return; // Only search in extended health data
+    }
+    
+    debugPrint('🔍 FOCUSED SpO2 search in command 0x75 (extended health data)');
+    debugPrint('🔍 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    
+    // 🎯 NEW DISCOVERY: SpO2 value is at index 1 (second byte) in health data packets!
     // Check index 1 first as primary SpO2 location
     if (data.length >= 2) {
       final spo2Candidate = data[1];
       
-      // SpO2 values are typically 80-100%
-      if (spo2Candidate >= 80 && spo2Candidate <= 100) {
-        debugPrint('🎯 PRIMARY SpO2 DETECTION: Found $spo2Candidate% at index 1 (second byte)');
+      // SpO2 values are typically 85-100% (more restrictive range)
+      if (spo2Candidate >= 85 && spo2Candidate <= 100) {
+        debugPrint('🎯 PRIMARY SpO2 DETECTION: Found $spo2Candidate% at index 1 in health data');
         debugPrint('🎯 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
         
-        // This is very likely real SpO2 data!
+        // This is very likely real SpO2 data from health command!
         final spo2Data = SpO2Data(
           spo2Value: spo2Candidate,
           correctWristPosture: true, // Assume good conditions if we get valid data
@@ -228,31 +250,31 @@ class ChileafExtendedService {
         );
         
         _spo2DataController.add(spo2Data);
-        debugPrint('🎯 REAL SpO2 DATA from index 1: $spo2Candidate% pushed to UI');
+        debugPrint('🎯 REAL SpO2 DATA from health packet index 1: $spo2Candidate% pushed to UI');
         return; // Found primary SpO2, no need to search further
       }
     }
     
-    // Fallback: Check other positions for SpO2 data (original method)
-    for (int i = 0; i < data.length; i++) {
+    // Secondary search: Look for other reasonable SpO2 values in health data only
+    for (int i = 3; i < data.length - 3; i++) {
       final byte = data[i];
       
-      // Look for any reasonable SpO2 values (80-100%)
-      if (byte >= 80 && byte <= 100) {
-        debugPrint('🚨 FALLBACK SpO2 SEARCH: Found $byte% at position $i');
-        debugPrint('🚨 Context: ${i > 0 ? '0x${data[i-1].toRadixString(16)}' : 'start'} -> 0x${byte.toRadixString(16)} -> ${i < data.length-1 ? '0x${data[i+1].toRadixString(16)}' : 'end'}');
+      // Look for reasonable SpO2 values (85-100%)
+      if (byte >= 85 && byte <= 100) {
+        debugPrint('� SECONDARY SpO2 SEARCH in health data: Found $byte% at position $i');
+        debugPrint('� Context: ${i > 0 ? '0x${data[i-1].toRadixString(16)}' : 'start'} -> 0x${byte.toRadixString(16)} -> ${i < data.length-1 ? '0x${data[i+1].toRadixString(16)}' : 'end'}');
         
-        // Only use fallback if we didn't find primary SpO2 at index 1
+        // Only use secondary if we didn't find primary SpO2 at index 1
         if (i != 1) {
           final spo2Data = SpO2Data(
             spo2Value: byte,
             correctWristPosture: true,
-            signalQuality: 80, // Lower confidence for fallback detection
+            signalQuality: 80, // Lower confidence for secondary detection
             isWearing: true,
           );
           
           _spo2DataController.add(spo2Data);
-          debugPrint('🚨 FALLBACK SpO2 DATA: $byte% from position $i');
+          debugPrint('� SECONDARY SpO2 DATA from health data: $byte% from position $i');
           return; // Only process first match
         }
       }
@@ -261,46 +283,10 @@ class ChileafExtendedService {
 
   // Aggressively check for SpO2 responses in any incoming data
   void _checkForSpO2Response(List<int> data) {
-    // Only scan for SpO2 responses if we're in a proper protocol frame
-    // to avoid false positives from accelerometer data
-    if (data.length >= 7 && data[0] == 0xFF) {
-      final command = data[2];
-      if (command == _commandSpo2) {
-        // This is a proper SpO2 response, process it normally
-        return; // Let the normal processing handle it
-      }
-    }
-    
-    // More conservative SpO2 detection to avoid false positives
-    // Only check if we have a complete frame and reasonable context
-    if (data.length >= 7 && data[0] == 0xFF) {
-      for (int i = 3; i < data.length - 3; i++) {
-        final possibleSpO2 = data[i];
-        
-        // SpO2 values are typically between 85-100% in normal conditions
-        if (possibleSpO2 >= 85 && possibleSpO2 <= 100) {
-          // Check if this looks like a SpO2 response pattern
-          final hasReasonablePosture = (i + 1 < data.length) && (data[i + 1] == 0 || data[i + 1] == 1);
-          final hasReasonableSignal = (i + 2 < data.length) && (data[i + 2] >= 0 && data[i + 2] <= 100);
-          final hasReasonableWearing = (i + 3 < data.length) && (data[i + 3] == 0 || data[i + 3] == 1);
-          
-          if (hasReasonablePosture && hasReasonableSignal && hasReasonableWearing) {
-            debugPrint('🔍 CONSERVATIVE SpO2 detection at position $i: $possibleSpO2%');
-            
-            final spo2Data = SpO2Data(
-              spo2Value: possibleSpO2,
-              correctWristPosture: data[i + 1] == 1,
-              signalQuality: data[i + 2],
-              isWearing: data[i + 3] == 1,
-            );
-            
-            _spo2DataController.add(spo2Data);
-            debugPrint('🫁 Conservative SpO2 data pushed: $possibleSpO2%');
-            return; // Only process the first reasonable match
-          }
-        }
-      }
-    }
+    // ⚠️ DISABLED: This method was causing false positives from accelerometer data
+    // Only command 0x75 contains real SpO2 data, not accelerometer command 0x0C
+    debugPrint('🚫 _checkForSpO2Response disabled to prevent accelerometer false positives');
+    return;
   }
 
   void _processSportsData(List<int> data) {
@@ -1090,10 +1076,11 @@ class ChileafExtendedService {
         }
         break;
         
-      case 0x0C: // Accelerometer - but contains suspicious SpO2-like values
+      case 0x0C: // Accelerometer - NEVER contains SpO2 data!
         debugPrint('🔬 Command 0x0C (Accelerometer per SDK):');
         debugPrint('🔬   SDK says: "Acceleration 3D raw data, every 250ms"');
-        debugPrint('🔬   But aggressive search found SpO2-like values - likely coincidental');
+        debugPrint('🔬   ❌ IMPORTANT: This is MOTION DATA, not SpO2! Any 80-100 values are acceleration readings!');
+        debugPrint('🔬   ❌ Acceleration values that happen to be 80-100 should NOT be interpreted as SpO2');
         break;
         
       case 0x38: // Temperature - but aggressive search found SpO2-like values
