@@ -15,12 +15,14 @@ import 'widgets/spo2_widget.dart';
 import 'widgets/temperature_widget.dart';
 import 'widgets/sports_widget.dart';
 import 'widgets/sensor_info_widget.dart';
+import 'widgets/historical_data_widget.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
 import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
 import 'models/sports_data.dart';
+import 'models/historical_data.dart';
 import 'services/error_handler.dart';
 import 'services/performance_monitor.dart';
 import 'services/data_persistence_manager.dart';
@@ -79,6 +81,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     TemperatureData? latestTemperatureData;
     SportsData? latestSportsData;
     
+    // Historical data
+    List<ExerciseHistoryData>? latestExerciseHistory;
+    HeartRateHistoryList? latestHRHistoryList;
+    List<HeartRateHistoryData>? latestHRHistoryData;
+    
     bool isScanning = false;
     bool isConnecting = false;
     
@@ -89,6 +96,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     StreamSubscription<SpO2Data?>? _spo2DataSubscription;
     StreamSubscription<TemperatureData?>? _temperatureDataSubscription;
     StreamSubscription<SportsData?>? _sportsDataSubscription;
+    
+    // Historical data subscriptions
+    StreamSubscription<List<ExerciseHistoryData>>? _exerciseHistorySubscription;
+    StreamSubscription<HeartRateHistoryList>? _hrHistoryListSubscription;
+    StreamSubscription<HeartRateHistoryData>? _hrHistoryDataSubscription;
 
     @override
     void initState() {
@@ -313,6 +325,44 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 debugPrint('Sports stream error: $error');
             },
         );
+        
+        // Subscribe to historical data streams
+        _exerciseHistorySubscription = _extendedService.exerciseHistoryStream.listen(
+            (exerciseHistory) {
+                setState(() {
+                    latestExerciseHistory = exerciseHistory;
+                });
+                debugPrint('📊 Exercise History received: ${exerciseHistory.length} entries');
+            },
+            onError: (error) {
+                debugPrint('Exercise history stream error: $error');
+            },
+        );
+        
+        _hrHistoryListSubscription = _extendedService.hrHistoryListStream.listen(
+            (hrHistoryList) {
+                setState(() {
+                    latestHRHistoryList = hrHistoryList;
+                });
+                debugPrint('💓 HR History List received: ${hrHistoryList.timestamps.length} timestamps');
+            },
+            onError: (error) {
+                debugPrint('HR history list stream error: $error');
+            },
+        );
+        
+        _hrHistoryDataSubscription = _extendedService.hrHistoryDataStream.listen(
+            (hrHistoryData) {
+                setState(() {
+                    latestHRHistoryData ??= [];
+                    latestHRHistoryData!.add(hrHistoryData);
+                });
+                debugPrint('💓 HR History Data received: ${hrHistoryData.entries.length} entries for ${hrHistoryData.timestamp}');
+            },
+            onError: (error) {
+                debugPrint('HR history data stream error: $error');
+            },
+        );
     }
 
     Future<void> disconnectDevice() async {
@@ -324,6 +374,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
             await _spo2DataSubscription?.cancel();
             await _temperatureDataSubscription?.cancel();
             await _sportsDataSubscription?.cancel();
+            await _exerciseHistorySubscription?.cancel();
+            await _hrHistoryListSubscription?.cancel();
+            await _hrHistoryDataSubscription?.cancel();
             await _sensorService.stop();
             await _heartRateService.stop();
             await _batteryService.stop();
@@ -344,6 +397,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 latestSpO2Data = null;
                 latestTemperatureData = null;
                 latestSportsData = null;
+                latestExerciseHistory = null;
+                latestHRHistoryList = null;
+                latestHRHistoryData = null;
             });
         }
     }
@@ -355,6 +411,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         _batteryLevelSubscription.cancel();
         _hrvDataSubscription?.cancel();
         _spo2DataSubscription?.cancel();
+        _temperatureDataSubscription?.cancel();
+        _sportsDataSubscription?.cancel();
+        _exerciseHistorySubscription?.cancel();
+        _hrHistoryListSubscription?.cancel();
+        _hrHistoryDataSubscription?.cancel();
         _temperatureDataSubscription?.cancel();
         _sportsDataSubscription?.cancel();
         _sensorService.dispose();
@@ -484,6 +545,52 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         }
     }
 
+    // Historical data methods
+    Future<void> requestExerciseHistory() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _extendedService.requestExerciseHistory();
+            showSuccess('Exercise history requested');
+        } catch (e) {
+            debugPrint('Failed to request exercise history: $e');
+            showError('Failed to request exercise history');
+        }
+    }
+
+    Future<void> requestHRHistory() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _extendedService.requestHRHistoryList();
+            showSuccess('HR history requested');
+        } catch (e) {
+            debugPrint('Failed to request HR history: $e');
+            showError('Failed to request HR history');
+        }
+    }
+
+    Future<void> requestAllHistoricalData() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _extendedService.requestAllHistoricalData();
+            showSuccess('All historical data requested');
+        } catch (e) {
+            debugPrint('Failed to request all historical data: $e');
+            showError('Failed to request all historical data');
+        }
+    }
+
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -526,6 +633,17 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 const SizedBox(height: 16),
                 // Accelerometer a larghezza piena
                 AccelerometerWidget(latestData: latestAccelData),
+                const SizedBox(height: 16),
+                // Historical Data Widget
+                HistoricalDataWidget(
+                    exerciseHistory: latestExerciseHistory,
+                    hrHistoryList: latestHRHistoryList,
+                    hrHistoryData: latestHRHistoryData,
+                    isConnected: connectedDevice != null,
+                    onRequestExercise: requestExerciseHistory,
+                    onRequestHRHistory: requestHRHistory,
+                    onRequestAllHistory: requestAllHistoricalData,
+                ),
             ],
         );
     }
@@ -585,8 +703,16 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 
                 const SizedBox(height: 16),
                 
-                // Sensor Information Widget
-                const SensorInfoWidget(),
+                // Historical Data Widget
+                HistoricalDataWidget(
+                    exerciseHistory: latestExerciseHistory,
+                    hrHistoryList: latestHRHistoryList,
+                    hrHistoryData: latestHRHistoryData,
+                    isConnected: connectedDevice != null,
+                    onRequestExercise: requestExerciseHistory,
+                    onRequestHRHistory: requestHRHistory,
+                    onRequestAllHistory: requestAllHistoricalData,
+                ),
             ],
         );
     }

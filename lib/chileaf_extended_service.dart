@@ -8,6 +8,7 @@ import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
 import 'models/hrv_data.dart';
 import 'models/heart_rate_data.dart';
+import 'models/historical_data.dart';
 
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
@@ -15,6 +16,7 @@ import 'services/data_processors/temperature_processor.dart';
 import 'services/data_processors/sports_processor.dart';
 import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
+import 'services/data_processors/historical_data_processor.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
@@ -50,6 +52,11 @@ class ChileafExtendedService {
   SpO2Diagnostics? _spo2Diagnostics;
   BLEDiagnostics? _bleDiagnostics;
 
+  // Historical data streams
+  final StreamController<List<ExerciseHistoryData>> _exerciseHistoryController = StreamController<List<ExerciseHistoryData>>.broadcast();
+  final StreamController<HeartRateHistoryList> _hrHistoryListController = StreamController<HeartRateHistoryList>.broadcast();
+  final StreamController<HeartRateHistoryData> _hrHistoryDataController = StreamController<HeartRateHistoryData>.broadcast();
+
   // Constructor
   ChileafExtendedService() {
     _initializeProcessors();
@@ -68,6 +75,11 @@ class ChileafExtendedService {
   Stream<SpO2Data> get spo2DataStream => _spo2Processor.spo2DataStream;
   Stream<TemperatureData> get temperatureDataStream => _temperatureProcessor.temperatureDataStream;
   Stream<HRVData> get hrvDataStream => _healthProcessor.hrvDataStream;
+  
+  // Historical data streams
+  Stream<List<ExerciseHistoryData>> get exerciseHistoryStream => _exerciseHistoryController.stream;
+  Stream<HeartRateHistoryList> get hrHistoryListStream => _hrHistoryListController.stream;
+  Stream<HeartRateHistoryData> get hrHistoryDataStream => _hrHistoryDataController.stream;
 
   Future<void> start(BluetoothDevice device) async {
     try {
@@ -231,6 +243,28 @@ class ChileafExtendedService {
       case ChileafProtocol.commandHealthData:
         _healthProcessor.processHealthData(data);
         break;
+      case 0x16: // Exercise History
+        debugPrint('📊 EXERCISE HISTORY DATA: Processing historical exercise data');
+        var exerciseHistory = HistoricalDataProcessor.processExerciseHistory(Uint8List.fromList(data));
+        if (exerciseHistory.isNotEmpty) {
+          _exerciseHistoryController.add(exerciseHistory);
+        }
+        break;
+      case 0x21: // HR History List
+        debugPrint('💓 HR HISTORY LIST: Processing HR timestamp list');
+        var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(Uint8List.fromList(data));
+        _hrHistoryListController.add(hrHistoryList);
+        
+        // Auto-request detailed data for each timestamp
+        _requestDetailedHRData(hrHistoryList);
+        break;
+      case 0x22: // HR History Data
+        debugPrint('💓 HR HISTORY DATA: Processing detailed HR historical data');
+        var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(Uint8List.fromList(data));
+        if (hrHistoryData != null) {
+          _hrHistoryDataController.add(hrHistoryData);
+        }
+        break;
       default:
         debugPrint('Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
     }
@@ -333,6 +367,11 @@ class ChileafExtendedService {
     await _dataSubscription?.cancel();
     _dataSubscription = null;
     
+    // Close historical data streams
+    await _exerciseHistoryController.close();
+    await _hrHistoryListController.close();
+    await _hrHistoryDataController.close();
+    
     // Exit SPO2 mode before stopping
     try {
       await exitSPO2Mode();
@@ -350,5 +389,73 @@ class ChileafExtendedService {
     _temperatureProcessor.dispose();
     _sportsProcessor.dispose();
     _healthProcessor.dispose();
+  }
+
+  // === Historical Data Methods ===
+  
+  /// Richiede lo storico degli esercizi degli ultimi 7 giorni
+  Future<void> requestExerciseHistory() async {
+    debugPrint('📊 Requesting 7 days exercise history...');
+    try {
+      List<int> command = CommandBuilder.buildExerciseHistoryRequest();
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request exercise history: $e');
+    }
+  }
+  
+  /// Richiede la lista degli storici della frequenza cardiaca
+  Future<void> requestHRHistoryList() async {
+    debugPrint('💓 Requesting HR history list...');
+    try {
+      List<int> command = CommandBuilder.buildHRHistoryListRequest();
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history list: $e');
+    }
+  }
+  
+  /// Richiede i dati storici HR per un timestamp specifico
+  Future<void> requestHRHistoryData(DateTime timestamp) async {
+    int utcTimestamp = timestamp.millisecondsSinceEpoch ~/ 1000;
+    debugPrint('💓 Requesting HR history data for timestamp: $timestamp ($utcTimestamp)');
+    try {
+      List<int> command = CommandBuilder.buildHRHistoryDataRequest(utcTimestamp);
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history data: $e');
+    }
+  }
+  
+  /// Richiede automaticamente i dati HR dettagliati per ogni timestamp nella lista
+  Future<void> _requestDetailedHRData(HeartRateHistoryList hrHistoryList) async {
+    debugPrint('💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
+    
+    for (int i = 0; i < hrHistoryList.timestamps.length; i++) {
+      try {
+        await Future.delayed(Duration(milliseconds: 300 * i)); // Delay between requests
+        await requestHRHistoryData(hrHistoryList.timestamps[i]);
+      } catch (e) {
+        debugPrint('❌ Failed to request HR data for timestamp ${hrHistoryList.timestamps[i]}: $e');
+      }
+    }
+  }
+
+  /// Richiede tutti i dati storici disponibili (sequenza completa)
+  Future<void> requestAllHistoricalData() async {
+    debugPrint('📚 Requesting all historical data...');
+    try {
+      // 1. Prima richiedi lo storico esercizi
+      await requestExerciseHistory();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // 2. Poi richiedi la lista HR
+      await requestHRHistoryList();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Nota: I dati HR specifici verranno richiesti quando arriva la lista
+    } catch (e) {
+      debugPrint('❌ Failed to request all historical data: $e');
+    }
   }
 }

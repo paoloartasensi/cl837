@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'chileaf_protocol.dart';
 
 /// Costruttore di comandi per il protocollo Chileaf
@@ -55,6 +56,32 @@ class CommandBuilder {
     return ChileafProtocol.buildProtocolFrame([ChileafProtocol.commandSpo2, parameter]);
   }
 
+  /// Costruisce comando per richiedere storico esercizio (7 giorni)
+  static List<int> buildExerciseHistoryRequest() {
+    debugPrint('🏗️ Building Exercise History Request (0x16)');
+    return ChileafProtocol.buildProtocolFrame([0x16]);
+  }
+
+  /// Costruisce comando per richiedere lista storico HR
+  static List<int> buildHRHistoryListRequest() {
+    debugPrint('🏗️ Building HR History List Request (0x21)');
+    return ChileafProtocol.buildProtocolFrame([0x21]);
+  }
+
+  /// Costruisce comando per richiedere dati storico HR con timestamp
+  static List<int> buildHRHistoryDataRequest(int utcTimestamp) {
+    debugPrint('🏗️ Building HR History Data Request (0x22) for timestamp: $utcTimestamp');
+    List<int> payload = [0x22];
+    
+    // Aggiungi timestamp UTC (4 bytes, little endian)
+    payload.add(utcTimestamp & 0xFF);
+    payload.add((utcTimestamp >> 8) & 0xFF);
+    payload.add((utcTimestamp >> 16) & 0xFF);
+    payload.add((utcTimestamp >> 24) & 0xFF);
+    
+    return ChileafProtocol.buildProtocolFrame(payload);
+  }
+
   /// Ottiene lista di tutti i comandi disponibili per test
   static Map<String, List<int>> getAllTestCommands() {
     return {
@@ -64,6 +91,9 @@ class CommandBuilder {
       'disableSpO2': buildDisableSpO2Mode(),
       'inquireSpO2': buildSpO2StatusInquiry(),
       'simpleSpO2': buildSimpleSpO2Command(),
+      'exerciseHistory': buildExerciseHistoryRequest(),
+      'hrHistoryList': buildHRHistoryListRequest(),
+      'hrHistoryData': buildHRHistoryDataRequest(DateTime.now().millisecondsSinceEpoch ~/ 1000),
     };
   }
 }
