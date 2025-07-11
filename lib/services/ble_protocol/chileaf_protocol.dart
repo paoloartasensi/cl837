@@ -9,6 +9,14 @@ class ChileafProtocol {
   static const int commandSports = 0x15; // Real-time sports data notification
   static const int commandHealthData = 0x75; // Extended health data (discovered from logs)
   static const int commandAccelerometer = 0x0C; // High-frequency accelerometer/motion data
+  static const int commandExerciseHistory = 0x16; // 7 days exercise history
+  static const int commandHRHistoryList = 0x21; // HR history list
+  static const int commandHRHistoryData = 0x22; // HR history data
+  static const int commandHRHistoryEnd = 0x23; // HR history end signal
+  static const int commandRopeStatus = 0x40; // Rope skipping status
+  static const int commandRopeRealtime = 0x41; // Realtime rope notifications
+  static const int commandRopeSetMode = 0x42; // Set rope mode
+  static const int commandRopeClearData = 0x45; // Clear rope data
 
   /// Costruisce un frame di protocollo Chileaf
   static List<int> buildProtocolFrame(List<int> data) {
@@ -66,6 +74,22 @@ class ChileafProtocol {
         return 'Health Data (0x75)';
       case commandAccelerometer:
         return 'Accelerometer (0x0C)';
+      case commandExerciseHistory:
+        return 'Exercise History (0x16)';
+      case commandHRHistoryList:
+        return 'HR History List (0x21)';
+      case commandHRHistoryData:
+        return 'HR History Data (0x22)';
+      case commandHRHistoryEnd:
+        return 'HR History End (0x23)';
+      case commandRopeStatus:
+        return 'Rope Status (0x40)';
+      case commandRopeRealtime:
+        return 'Rope Realtime (0x41)';
+      case commandRopeSetMode:
+        return 'Rope Set Mode (0x42)';
+      case commandRopeClearData:
+        return 'Rope Clear Data (0x45)';
       default:
         return 'Unknown (0x${command.toRadixString(16)})';
     }

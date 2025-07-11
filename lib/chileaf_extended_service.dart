@@ -9,6 +9,7 @@ import 'models/temperature_data.dart';
 import 'models/hrv_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/historical_data.dart';
+import 'models/rope_data.dart';
 
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
@@ -17,6 +18,7 @@ import 'services/data_processors/sports_processor.dart';
 import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
 import 'services/data_processors/historical_data_processor.dart';
+import 'services/data_processors/rope_processor.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
@@ -57,6 +59,10 @@ class ChileafExtendedService {
   final StreamController<HeartRateHistoryList> _hrHistoryListController = StreamController<HeartRateHistoryList>.broadcast();
   final StreamController<HeartRateHistoryData> _hrHistoryDataController = StreamController<HeartRateHistoryData>.broadcast();
 
+  // Rope skipping streams
+  final StreamController<RopeSkippingData> _ropeStatusController = StreamController<RopeSkippingData>.broadcast();
+  final StreamController<RopeRealtimeData> _ropeRealtimeController = StreamController<RopeRealtimeData>.broadcast();
+
   // Constructor
   ChileafExtendedService() {
     _initializeProcessors();
@@ -80,6 +86,10 @@ class ChileafExtendedService {
   Stream<List<ExerciseHistoryData>> get exerciseHistoryStream => _exerciseHistoryController.stream;
   Stream<HeartRateHistoryList> get hrHistoryListStream => _hrHistoryListController.stream;
   Stream<HeartRateHistoryData> get hrHistoryDataStream => _hrHistoryDataController.stream;
+
+  // Rope skipping streams
+  Stream<RopeSkippingData> get ropeStatusStream => _ropeStatusController.stream;
+  Stream<RopeRealtimeData> get ropeRealtimeStream => _ropeRealtimeController.stream;
 
   Future<void> start(BluetoothDevice device) async {
     try {
@@ -265,6 +275,24 @@ class ChileafExtendedService {
           _hrHistoryDataController.add(hrHistoryData);
         }
         break;
+      case 0x23: // HR History End Signal
+        debugPrint('🏁 HR HISTORY END: Received end signal for HR history data');
+        // Signal that HR history transfer is complete
+        break;
+      case 0x40: // Rope Status
+        debugPrint('🪢 ROPE STATUS: Processing rope skipping status data');
+        var ropeStatus = RopeSkippingProcessor.processRopeStatus(Uint8List.fromList(data));
+        if (ropeStatus != null) {
+          _ropeStatusController.add(ropeStatus);
+        }
+        break;
+      case 0x41: // Rope Realtime
+        debugPrint('🪢⚡ ROPE REALTIME: Processing realtime rope notifications');
+        var ropeRealtime = RopeSkippingProcessor.processRopeRealtime(Uint8List.fromList(data));
+        if (ropeRealtime != null) {
+          _ropeRealtimeController.add(ropeRealtime);
+        }
+        break;
       default:
         debugPrint('Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
     }
@@ -438,6 +466,42 @@ class ChileafExtendedService {
       } catch (e) {
         debugPrint('❌ Failed to request HR data for timestamp ${hrHistoryList.timestamps[i]}: $e');
       }
+    }
+  }
+
+  // ===== ROPE SKIPPING METHODS =====
+
+  /// Sets the rope skipping mode
+  Future<void> setRopeMode(RopeMode mode) async {
+    debugPrint('🪢⚙️ Setting rope mode to: ${mode.name}');
+    try {
+      if (_txCharacteristic != null) {
+        var command = RopeSkippingProcessor.createSetModeCommand(mode);
+        var frame = ChileafProtocol.buildProtocolFrame(command);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Rope mode command sent successfully');
+      } else {
+        debugPrint('❌ TX characteristic not available for rope mode command');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to set rope mode: $e');
+    }
+  }
+
+  /// Clears rope skipping data
+  Future<void> clearRopeData() async {
+    debugPrint('🪢🧹 Clearing rope skipping data...');
+    try {
+      if (_txCharacteristic != null) {
+        var command = RopeSkippingProcessor.createClearDataCommand();
+        var frame = ChileafProtocol.buildProtocolFrame(command);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Rope clear data command sent successfully');
+      } else {
+        debugPrint('❌ TX characteristic not available for rope clear command');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to clear rope data: $e');
     }
   }
 
