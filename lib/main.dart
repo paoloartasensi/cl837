@@ -17,6 +17,7 @@ import 'widgets/sports_widget.dart';
 import 'widgets/sensor_info_widget.dart';
 import 'widgets/historical_data_widget.dart';
 import 'widgets/rope_skipping_widget.dart';
+import 'widgets/device_info_widget.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -719,6 +720,11 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
                 
                 // Rope Skipping Widget
                 RopeSkippingWidget(service: _extendedService),
+                
+                const SizedBox(height: 16),
+                
+                // Device Information Widget
+                DeviceInfoWidget(service: _extendedService),
             ],
         );
     }

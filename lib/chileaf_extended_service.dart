@@ -10,6 +10,7 @@ import 'models/hrv_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/historical_data.dart';
 import 'models/rope_data.dart';
+import 'models/device_info.dart';
 
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
@@ -19,6 +20,7 @@ import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
 import 'services/data_processors/historical_data_processor.dart';
 import 'services/data_processors/rope_processor.dart';
+import 'services/data_processors/device_info_processor.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
@@ -63,6 +65,14 @@ class ChileafExtendedService {
   final StreamController<RopeSkippingData> _ropeStatusController = StreamController<RopeSkippingData>.broadcast();
   final StreamController<RopeRealtimeData> _ropeRealtimeController = StreamController<RopeRealtimeData>.broadcast();
 
+  // Device info streams
+  final StreamController<DeviceInfo> _deviceInfoController = StreamController<DeviceInfo>.broadcast();
+  final StreamController<BatteryInfo> _batteryInfoController = StreamController<BatteryInfo>.broadcast();
+  final StreamController<String> _firmwareVersionController = StreamController<String>.broadcast();
+  final StreamController<String> _hardwareVersionController = StreamController<String>.broadcast();
+  final StreamController<String> _deviceNameController = StreamController<String>.broadcast();
+  final StreamController<String> _macAddressController = StreamController<String>.broadcast();
+
   // Constructor
   ChileafExtendedService() {
     _initializeProcessors();
@@ -90,6 +100,14 @@ class ChileafExtendedService {
   // Rope skipping streams
   Stream<RopeSkippingData> get ropeStatusStream => _ropeStatusController.stream;
   Stream<RopeRealtimeData> get ropeRealtimeStream => _ropeRealtimeController.stream;
+
+  // Device info streams
+  Stream<DeviceInfo> get deviceInfoStream => _deviceInfoController.stream;
+  Stream<BatteryInfo> get batteryInfoStream => _batteryInfoController.stream;
+  Stream<String> get firmwareVersionStream => _firmwareVersionController.stream;
+  Stream<String> get hardwareVersionStream => _hardwareVersionController.stream;
+  Stream<String> get deviceNameStream => _deviceNameController.stream;
+  Stream<String> get macAddressStream => _macAddressController.stream;
 
   Future<void> start(BluetoothDevice device) async {
     try {
@@ -236,6 +254,48 @@ class ChileafExtendedService {
 
   void _routeToProcessor(int command, List<int> data) {
     switch (command) {
+      case 0x01: // Device Info
+        debugPrint('📱 DEVICE INFO: Processing device information');
+        var deviceInfo = DeviceInfoProcessor.processDeviceInfo(data);
+        if (deviceInfo != null) {
+          _deviceInfoController.add(deviceInfo);
+        }
+        break;
+      case 0x02: // Battery Level
+        debugPrint('🔋 BATTERY LEVEL: Processing battery information');
+        var batteryInfo = DeviceInfoProcessor.processBatteryLevel(data);
+        if (batteryInfo != null) {
+          _batteryInfoController.add(batteryInfo);
+        }
+        break;
+      case 0x03: // Firmware Version
+        debugPrint('💾 FIRMWARE VERSION: Processing firmware version');
+        var firmwareVersion = DeviceInfoProcessor.processFirmwareVersion(data);
+        if (firmwareVersion != null) {
+          _firmwareVersionController.add(firmwareVersion);
+        }
+        break;
+      case 0x04: // Hardware Version
+        debugPrint('🔧 HARDWARE VERSION: Processing hardware version');
+        var hardwareVersion = DeviceInfoProcessor.processHardwareVersion(data);
+        if (hardwareVersion != null) {
+          _hardwareVersionController.add(hardwareVersion);
+        }
+        break;
+      case 0x05: // Device Name
+        debugPrint('📱 DEVICE NAME: Processing device name');
+        var deviceName = DeviceInfoProcessor.processDeviceName(data);
+        if (deviceName != null) {
+          _deviceNameController.add(deviceName);
+        }
+        break;
+      case 0x06: // MAC Address
+        debugPrint('🔗 MAC ADDRESS: Processing MAC address');
+        var macAddress = DeviceInfoProcessor.processMacAddress(data);
+        if (macAddress != null) {
+          _macAddressController.add(macAddress);
+        }
+        break;
       case ChileafProtocol.commandSports:
         _sportsProcessor.processSportsData(data);
         break;
@@ -281,14 +341,14 @@ class ChileafExtendedService {
         break;
       case 0x40: // Rope Status
         debugPrint('🪢 ROPE STATUS: Processing rope skipping status data');
-        var ropeStatus = RopeSkippingProcessor.processRopeStatus(Uint8List.fromList(data));
+        var ropeStatus = RopeSkippingProcessor.processRopeStatus(data);
         if (ropeStatus != null) {
           _ropeStatusController.add(ropeStatus);
         }
         break;
       case 0x41: // Rope Realtime
         debugPrint('🪢⚡ ROPE REALTIME: Processing realtime rope notifications');
-        var ropeRealtime = RopeSkippingProcessor.processRopeRealtime(Uint8List.fromList(data));
+        var ropeRealtime = RopeSkippingProcessor.processRopeRealtime(data);
         if (ropeRealtime != null) {
           _ropeRealtimeController.add(ropeRealtime);
         }
@@ -412,6 +472,19 @@ class ChileafExtendedService {
     debugPrint('Disposing Chileaf Extended Service...');
     stop();
     
+    // Close all stream controllers
+    _exerciseHistoryController.close();
+    _hrHistoryListController.close();
+    _hrHistoryDataController.close();
+    _ropeStatusController.close();
+    _ropeRealtimeController.close();
+    _deviceInfoController.close();
+    _batteryInfoController.close();
+    _firmwareVersionController.close();
+    _hardwareVersionController.close();
+    _deviceNameController.close();
+    _macAddressController.close();
+    
     // Dispose all processors
     _spo2Processor.dispose();
     _temperatureProcessor.dispose();
@@ -502,6 +575,132 @@ class ChileafExtendedService {
       }
     } catch (e) {
       debugPrint('❌ Failed to clear rope data: $e');
+    }
+  }
+
+  // ===== DEVICE INFO METHODS =====
+
+  /// Richiede informazioni generali del dispositivo
+  Future<void> requestDeviceInfo() async {
+    debugPrint('📱 Requesting device info...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x01]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Device info request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for device info request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request device info: $e');
+    }
+  }
+
+  /// Richiede livello batteria esteso
+  Future<void> requestBatteryInfo() async {
+    debugPrint('🔋 Requesting battery info...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x02]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Battery info request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for battery info request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request battery info: $e');
+    }
+  }
+
+  /// Richiede versione firmware
+  Future<void> requestFirmwareVersion() async {
+    debugPrint('💾 Requesting firmware version...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x03]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Firmware version request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for firmware version request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request firmware version: $e');
+    }
+  }
+
+  /// Richiede versione hardware
+  Future<void> requestHardwareVersion() async {
+    debugPrint('🔧 Requesting hardware version...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x04]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Hardware version request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for hardware version request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request hardware version: $e');
+    }
+  }
+
+  /// Richiede nome dispositivo
+  Future<void> requestDeviceName() async {
+    debugPrint('📱 Requesting device name...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x05]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Device name request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for device name request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request device name: $e');
+    }
+  }
+
+  /// Richiede MAC address
+  Future<void> requestMacAddress() async {
+    debugPrint('🔗 Requesting MAC address...');
+    try {
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x06]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ MAC address request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for MAC address request');
+      }
+    } catch (e) {
+      debugPrint('❌ Failed to request MAC address: $e');
+    }
+  }
+
+  /// Richiede tutte le informazioni del dispositivo
+  Future<void> requestAllDeviceInfo() async {
+    debugPrint('📱🔋💾 Requesting all device information...');
+    try {
+      await requestDeviceInfo();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestBatteryInfo();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestFirmwareVersion();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestHardwareVersion();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestDeviceName();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestMacAddress();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      debugPrint('✅ All device info requests sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request all device info: $e');
     }
   }
 

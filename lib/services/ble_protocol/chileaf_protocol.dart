@@ -4,6 +4,15 @@ import 'package:flutter/foundation.dart';
 /// Fornisce metodi per costruire frame, calcolare checksum e validare pacchetti
 class ChileafProtocol {
   // Command codes from Chileaf BLE Protocol SDK v0.6
+  // Device Information Commands
+  static const int commandDeviceInfo = 0x01;
+  static const int commandBatteryLevel = 0x02;
+  static const int commandFirmwareVersion = 0x03;
+  static const int commandHardwareVersion = 0x04;
+  static const int commandDeviceName = 0x05;
+  static const int commandMacAddress = 0x06;
+  
+  // Data Commands
   static const int commandSpo2 = 0x37;
   static const int commandTemperature = 0x38;
   static const int commandSports = 0x15; // Real-time sports data notification
@@ -64,6 +73,18 @@ class ChileafProtocol {
   /// Ottiene il nome del comando per debug
   static String getCommandName(int command) {
     switch (command) {
+      case commandDeviceInfo:
+        return 'Device Info (0x01)';
+      case commandBatteryLevel:
+        return 'Battery Level (0x02)';
+      case commandFirmwareVersion:
+        return 'Firmware Version (0x03)';
+      case commandHardwareVersion:
+        return 'Hardware Version (0x04)';
+      case commandDeviceName:
+        return 'Device Name (0x05)';
+      case commandMacAddress:
+        return 'MAC Address (0x06)';
       case commandSpo2:
         return 'SpO2 (0x37)';
       case commandTemperature:

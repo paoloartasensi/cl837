@@ -73,6 +73,8 @@ class HistoricalDataProcessor {
   /// Formato: Lista di timestamp UTC (0xFFFFFFFF = no data)
   static HeartRateHistoryList processHRHistoryList(Uint8List data) {
     debugPrint('💓 Processing HR History List (0x21) - ${data.length} bytes');
+    debugPrint('💓 Raw HR History List data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    
     List<DateTime> timestamps = [];
     
     try {
@@ -81,6 +83,11 @@ class HistoricalDataProcessor {
       int numTimestamps = (data.length - 3) ~/ timestampSize; // -3 per header
       
       debugPrint('💓 HR History List: Expected $numTimestamps timestamps');
+      
+      if (numTimestamps == 0) {
+        debugPrint('💓 HR History List: No timestamps found - device might not have HR history data');
+        return const HeartRateHistoryList(timestamps: []);
+      }
       
       for (int i = 0; i < numTimestamps; i++) {
         int offset = 3 + (i * timestampSize);

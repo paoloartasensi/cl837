@@ -4,7 +4,7 @@ import '../../models/rope_data.dart';
 class RopeSkippingProcessor {
   /// Processes rope status data (command 0x40)
   /// Returns status with mode, stats, and day totals
-  static RopeSkippingData? processRopeStatus(Uint8List data) {
+  static RopeSkippingData? processRopeStatus(List<int> data) {
     try {
       if (data.length < 8) {
         debugPrint('⚠️ Rope status data too short: ${data.length} bytes');
@@ -45,7 +45,7 @@ class RopeSkippingProcessor {
 
   /// Processes realtime rope notifications (command 0x41)
   /// Returns realtime data with current session info
-  static RopeRealtimeData? processRopeRealtime(Uint8List data) {
+  static RopeRealtimeData? processRopeRealtime(List<int> data) {
     try {
       if (data.length < 8) {
         debugPrint('⚠️ Rope realtime data too short: ${data.length} bytes');
