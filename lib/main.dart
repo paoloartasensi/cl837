@@ -133,7 +133,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
 
     Future<void> _initializeTestDiary() async {
         try {
-            await TestDiaryService.instance.initializeSampleDataIfEmpty();
+            // Temporaneamente forza la reinizializzazione per risolvere problemi di tipo
+            debugPrint('🔄 Force reinitializing diary to fix type issues...');
+            await TestDiaryService.instance.forceReinitialize();
         } catch (e) {
             debugPrint('❌ Error initializing test diary: $e');
         }

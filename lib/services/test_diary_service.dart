@@ -278,6 +278,12 @@ class TestDiaryService {
     }
   }
 
+  /// Forza la pulizia e reinizializzazione (per debug)
+  Future<void> forceReinitialize() async {
+    debugPrint('🔄 Force reinitializing diary data...');
+    await clearAndReinitialize();
+  }
+
   /// Pulisce dati corrotti e reinizializza il diario
   Future<void> clearAndReinitialize() async {
     debugPrint('🔄 Clearing corrupted diary data and reinitializing...');
