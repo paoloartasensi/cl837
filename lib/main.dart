@@ -960,17 +960,21 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             runSpacing: 8.0,
                             children: [
                                 ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                         print('Manual request: Temperature');
-                                        _extendedService.requestTemperatureData();
+                                        await _extendedService.requestTemperatureData();
+                                        // Add delay to prevent rapid commands
+                                        await Future.delayed(Duration(milliseconds: 1500));
                                     },
                                     icon: Icon(Icons.thermostat),
                                     label: Text('Temperature'),
                                 ),
                                 ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                         print('Manual request: Sports');
-                                        _extendedService.requestSportsData();
+                                        await _extendedService.requestSportsData();
+                                        // Add delay to prevent rapid commands
+                                        await Future.delayed(Duration(milliseconds: 1500));
                                     },
                                     icon: Icon(Icons.sports),
                                     label: Text('Sports'),
