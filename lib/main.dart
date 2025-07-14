@@ -243,6 +243,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             debugPrint('📋 MANUAL MODE: Disabling automatic data requests for accuracy testing...');
             _extendedService.pausePeriodicRequests();
             
+            // 🎮 TOGGLE MODES: Uncomment line below to switch to AUTOMATIC mode
+            // _extendedService.resumePeriodicRequests(); // 🔄 AUTOMATIC MODE
+            
             // Optional: Pause heart rate service to turn off green LED
             // _heartRateService.pause(); // Uncomment to test LED off state
             
@@ -632,6 +635,29 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     }
 
     // Manual control methods for accuracy testing
+    bool _isManualMode = true; // Track current mode
+    
+    Future<void> toggleDataRequestMode() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        setState(() {
+            _isManualMode = !_isManualMode;
+        });
+        
+        if (_isManualMode) {
+            debugPrint('🎮 SWITCHING TO MANUAL MODE...');
+            _extendedService.pausePeriodicRequests();
+            showSuccess('Manual mode enabled - Use buttons to request data');
+        } else {
+            debugPrint('🔄 SWITCHING TO AUTOMATIC MODE...');
+            _extendedService.resumePeriodicRequests();
+            showSuccess('Automatic mode enabled - Data requests every 10s');
+        }
+    }
+
     Future<void> manualRequestTemperature() async {
         if (connectedDevice == null) {
             showError('No device connected');
@@ -952,10 +978,35 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                        Row(
+                            children: [
+                                Text(
+                                    'Manual Control Panel',
+                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                    ),
+                                ),
+                                const Spacer(),
+                                // Mode Toggle Button
+                                ElevatedButton.icon(
+                                    onPressed: toggleDataRequestMode,
+                                    icon: Icon(_isManualMode ? Icons.touch_app : Icons.refresh),
+                                    label: Text(_isManualMode ? 'MANUAL' : 'AUTO'),
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: _isManualMode ? Colors.orange : Colors.green,
+                                        foregroundColor: Colors.white,
+                                    ),
+                                ),
+                            ],
+                        ),
+                        const SizedBox(height: 8),
                         Text(
-                            'Manual Control Panel - Accuracy Testing',
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
+                            _isManualMode 
+                                ? 'Manual Mode: Use buttons to request data'
+                                : 'Automatic Mode: Data requested every 10 seconds',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: _isManualMode ? Colors.orange : Colors.green,
+                                fontWeight: FontWeight.w500,
                             ),
                         ),
                         const SizedBox(height: 12),
