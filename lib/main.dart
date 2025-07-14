@@ -232,6 +232,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             
             _setupStreamSubscriptions();
             
+            // Auto-request historical data after successful connection
+            debugPrint('🎯 AUTO-REQUESTING HISTORICAL DATA after connection...');
+            _autoRequestHistoricalDataAfterConnection();
+            
             if (mounted) {
                 setState(() {
                     connectedDevice = device;
@@ -527,6 +531,37 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         } catch (e) {
             debugPrint('Failed to request all historical data: $e');
             showError('Failed to request all historical data');
+        }
+    }
+
+    /// Auto-request historical data after device connection (non-blocking)
+    Future<void> _autoRequestHistoricalDataAfterConnection() async {
+        // Wait a bit for the connection to stabilize
+        await Future.delayed(const Duration(seconds: 2));
+        
+        if (connectedDevice == null) {
+            debugPrint('🚫 Auto-request cancelled: device disconnected');
+            return;
+        }
+        
+        debugPrint('🎯 AUTO-REQUESTING: Starting automatic historical data request...');
+        
+        try {
+            // Request Exercise History first
+            debugPrint('🎯 AUTO-REQUESTING: Exercise History...');
+            await _extendedService.requestExerciseHistory();
+            
+            await Future.delayed(const Duration(milliseconds: 500));
+            
+            // Request HR History List
+            debugPrint('🎯 AUTO-REQUESTING: HR History List...');
+            await _extendedService.requestHRHistoryList();
+            
+            debugPrint('🎯 AUTO-REQUESTING: Historical data requests completed!');
+            
+        } catch (e) {
+            debugPrint('🚫 Auto-request historical data failed: $e');
+            // Non mostrare errore all'utente per le richieste automatiche
         }
     }
 
@@ -883,7 +918,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             onPressed: disconnectDevice,
                             tooltip: 'Disconnect',
                         ),
-                    ],
+                    ]
                 ],
                 bottom: TabBar(
                     controller: _tabController,

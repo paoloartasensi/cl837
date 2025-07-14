@@ -23,12 +23,10 @@ class HistoricalDataWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // DEBUG: Log current data state
-    debugPrint('🔍 HistoricalDataWidget build():');
-    debugPrint('🔍   Exercise History: ${exerciseHistory?.length ?? 0} entries');
-    debugPrint('🔍   HR History List: ${hrHistoryList?.timestamps.length ?? 0} timestamps');
-    debugPrint('🔍   HR History Data: ${hrHistoryData?.length ?? 0} entries');
-    debugPrint('🔍   Is Connected: $isConnected');
+    // DEBUG: Log current data state every 5 seconds to avoid spam
+    if (DateTime.now().second % 5 == 0) {
+      debugPrint('🔍 HistoricalDataWidget: Exercise=${exerciseHistory?.length ?? 0}, HR List=${hrHistoryList?.timestamps.length ?? 0}, HR Data=${hrHistoryData?.length ?? 0}');
+    }
     
     return Card(
       child: Padding(
