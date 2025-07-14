@@ -95,8 +95,13 @@ class HistoricalDataProcessor {
           DateTime date = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
           double calories = caloriesRaw / 10.0; // Convert from 0.1 kcal units
           
-          // Skip invalid entries (0xFFFFFFFF indicates no data)
-          if (utcTimestamp != 0xFFFFFFFF && steps > 0) {
+          // Validate data ranges (realistic values)
+          bool isValidTimestamp = utcTimestamp != 0xFFFFFFFF && date.year >= 2020 && date.year <= 2030;
+          bool isValidSteps = steps > 0 && steps <= 100000; // Max 100k steps per day
+          bool isValidCalories = calories >= 0 && calories <= 10000; // Max 10k kcal per day
+          
+          // Skip invalid entries
+          if (isValidTimestamp && isValidSteps && isValidCalories) {
             ExerciseHistoryData entry = ExerciseHistoryData(
               date: date,
               steps: steps,
@@ -104,9 +109,9 @@ class HistoricalDataProcessor {
             );
             
             history.add(entry);
-            debugPrint('📊 Exercise Day ${i + 1}: ${entry.toString()}');
+            debugPrint('📊✅ Exercise Day ${i + 1}: ${entry.toString()} (VALID)');
           } else {
-            debugPrint('📊 Exercise Day ${i + 1}: No data (0xFFFFFFFF)');
+            debugPrint('📊❌ Exercise Day ${i + 1}: INVALID DATA - Timestamp: ${isValidTimestamp ? 'OK' : 'BAD'}, Steps: ${isValidSteps ? steps : 'BAD ($steps)'}, Calories: ${isValidCalories ? calories.toStringAsFixed(1) : 'BAD (${calories.toStringAsFixed(1)})'}');
           }
         }
       }
@@ -217,7 +222,11 @@ class HistoricalDataProcessor {
           int heartRate = data[i];
           int activityIndex = data[i + 1];
           
-          if (heartRate > 0 && heartRate < 200) { // Valid HR range
+          // Validate HR range (30-220 BPM) and timestamp
+          bool isValidHR = heartRate >= 30 && heartRate <= 220;
+          bool isValidTimestamp = timestamp.year >= 2020 && timestamp.year <= 2030;
+          
+          if (isValidHR && isValidTimestamp) {
             // Estimate time within the session (every minute?)
             DateTime entryTime = timestamp.add(Duration(minutes: (i - 7) ~/ 2));
             
@@ -228,7 +237,9 @@ class HistoricalDataProcessor {
             );
             
             entries.add(entry);
-            debugPrint('💓 HR Entry: ${entry.toString()}');
+            debugPrint('💓✅ HR Entry: ${entry.toString()} (VALID)');
+          } else {
+            debugPrint('💓❌ HR Entry: HR=$heartRate (${isValidHR ? 'OK' : 'BAD'}), Time=${timestamp.year} (${isValidTimestamp ? 'OK' : 'BAD'}) - SKIPPED');
           }
         }
       }
