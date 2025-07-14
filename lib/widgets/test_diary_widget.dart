@@ -232,7 +232,7 @@ class _TestDiaryWidgetState extends State<TestDiaryWidget> {
             Text('Totale record: ${_statistics!['totalRecords']}'),
             Text('Media giornaliera: ${(_statistics!['averagePerDay'] as double).toStringAsFixed(1)}'),
             if (_statistics!['oldestRecord'] != null)
-              Text('Primo record: ${DateTime.parse(_statistics!['oldestRecord']).toString().substring(0, 10)}'),
+              Text('Primo record: ${(_statistics!['oldestRecord'] as DateTime).toString().substring(0, 10)}'),
             const SizedBox(height: 8),
             const Text('Per tipo:', style: TextStyle(fontWeight: FontWeight.bold)),
             ...(_statistics!['byType'] as Map<String, int>).entries.map(

@@ -42,17 +42,25 @@ class TestDiaryService {
       
       for (final json in jsonList) {
         try {
+          // Ensure json is a Map
+          if (json is! Map<String, dynamic>) {
+            debugPrint('⚠️ Skipping invalid record format: ${json.runtimeType}');
+            continue;
+          }
+          
           final record = TestRecord.fromJson(json);
           records.add(record);
         } catch (e) {
-          debugPrint('⚠️ Skipping corrupted record: $e');
+          debugPrint('⚠️ Skipping corrupted record: $e - Record: $json');
           // Skip corrupted records instead of failing completely
         }
       }
       
+      debugPrint('📝 Loaded ${records.length} valid records from diary');
       return records;
     } catch (e) {
       debugPrint('❌ Error loading test records, clearing corrupted data: $e');
+      debugPrint('❌ Corrupted data content: ${jsonString.substring(0, jsonString.length > 200 ? 200 : jsonString.length)}...');
       // Clear corrupted data and return empty list
       await prefs.remove(_keyTestRecords);
       return [];
@@ -262,7 +270,23 @@ class TestDiaryService {
       final existingRecords = await getAllRecords();
       if (existingRecords.isNotEmpty) {
         debugPrint('📝 Diario già popolato con ${existingRecords.length} record');
-        return;
+        
+        // Verifica se i record sono validi cercando di accedere alle loro proprietà
+        try {
+          for (final record in existingRecords) {
+            // Test se i dati sono accessibili senza errori di tipo
+            final _ = record.timestamp.toString();
+            // ignore: non_constant_identifier_names
+            final __ = record.summary;
+          }
+          debugPrint('📝 Tutti i record esistenti sono validi');
+          return;
+        } catch (e) {
+          debugPrint('❌ Detected corrupted records during validation: $e');
+          // Se i record esistenti sono corrotti, forza la reinizializzazione
+          await clearAndReinitialize();
+          return;
+        }
       }
       
       debugPrint('📝 Inizializzando dati di test per il diario...');
