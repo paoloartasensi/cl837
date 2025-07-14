@@ -127,6 +127,8 @@ class HistoricalDataProcessor {
     debugPrint('💓 Raw HR History List data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
     
     List<DateTime> timestamps = [];
+    List<DateTime> validTimestamps = [];
+    List<DateTime> corruptedTimestamps = [];
     
     try {
       // Ogni timestamp è 4 bytes
@@ -152,14 +154,33 @@ class HistoricalDataProcessor {
           if (utcTimestamp != 0xFFFFFFFF) {
             DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
             timestamps.add(timestamp);
-            debugPrint('💓 HR Timestamp ${i + 1}: $timestamp');
+            
+            // Validate timestamp (reasonable range)
+            if (timestamp.year >= 2020 && timestamp.year <= 2030) {
+              validTimestamps.add(timestamp);
+              debugPrint('💓✅ HR Timestamp ${i + 1}: $timestamp (VALID)');
+            } else {
+              corruptedTimestamps.add(timestamp);
+              debugPrint('💓❌ HR Timestamp ${i + 1}: $timestamp (CORRUPTED - year ${timestamp.year})');
+            }
           } else {
             debugPrint('💓 HR Timestamp ${i + 1}: No data (0xFFFFFFFF)');
           }
         }
       }
       
-      debugPrint('💓 HR History List: Found ${timestamps.length} valid timestamps');
+      debugPrint('💓 HR History List Summary:');
+      debugPrint('💓   Total: ${timestamps.length} timestamps');
+      debugPrint('💓   Valid: ${validTimestamps.length} timestamps');
+      debugPrint('💓   Corrupted: ${corruptedTimestamps.length} timestamps');
+      debugPrint('💓   Empty slots: ${numTimestamps - timestamps.length}');
+      
+      // If most timestamps are corrupted, device memory is likely in circular buffer overflow
+      if (corruptedTimestamps.length > validTimestamps.length) {
+        debugPrint('💓⚠️ WARNING: Device memory appears to be in circular buffer overflow state');
+        debugPrint('💓⚠️ Only using ${validTimestamps.length} valid timestamps for data requests');
+        return HeartRateHistoryList(timestamps: validTimestamps);
+      }
       
     } catch (e) {
       debugPrint('❌ Error parsing HR History List: $e');

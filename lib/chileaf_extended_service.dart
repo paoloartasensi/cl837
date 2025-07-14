@@ -558,14 +558,33 @@ class ChileafExtendedService {
   Future<void> _requestDetailedHRData(HeartRateHistoryList hrHistoryList) async {
     debugPrint('💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
     
-    for (int i = 0; i < hrHistoryList.timestamps.length; i++) {
+    // Limit requests to avoid overwhelming the device
+    int maxRequests = 5; // Only request first 5 valid timestamps
+    int requestCount = 0;
+    
+    for (int i = 0; i < hrHistoryList.timestamps.length && requestCount < maxRequests; i++) {
       try {
-        await Future.delayed(Duration(milliseconds: 300 * i)); // Delay between requests
-        await requestHRHistoryData(hrHistoryList.timestamps[i]);
-        debugPrint('💓 Requested HR data for timestamp ${i + 1}/${hrHistoryList.timestamps.length}');
+        DateTime timestamp = hrHistoryList.timestamps[i];
+        
+        // Skip timestamps that are clearly corrupted
+        if (timestamp.year < 2020 || timestamp.year > 2030) {
+          debugPrint('💓⚠️ Skipping corrupted timestamp: $timestamp');
+          continue;
+        }
+        
+        await Future.delayed(Duration(milliseconds: 500 * requestCount)); // Longer delay between requests
+        await requestHRHistoryData(timestamp);
+        requestCount++;
+        debugPrint('💓 Requested HR data for timestamp $requestCount/$maxRequests: $timestamp');
       } catch (e) {
         debugPrint('❌ Failed to request HR data for timestamp $i: $e');
       }
+    }
+    
+    if (requestCount == 0) {
+      debugPrint('💓⚠️ No valid timestamps found - all timestamps appear to be corrupted');
+    } else {
+      debugPrint('💓✅ Requested HR data for $requestCount valid timestamps (limited to reduce device load)');
     }
   }
 
