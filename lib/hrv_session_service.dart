@@ -235,8 +235,16 @@ class HRVSessionService {
 
     _sessionController.add(_currentSession!);
 
-    // Auto-stop after max duration
+    // Auto-stop after minimum session duration (60 seconds)
+    if (duration >= _minSessionDuration) {
+      debugPrint('HRV session completed automatically after ${duration.inSeconds} seconds');
+      stopSession();
+      return;
+    }
+
+    // Safety auto-stop after max duration
     if (duration >= _maxSessionDuration) {
+      debugPrint('HRV session force-stopped after maximum duration');
       stopSession();
     }
   }

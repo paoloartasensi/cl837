@@ -298,6 +298,11 @@ class ChileafExtendedService {
         break;
       case ChileafProtocol.commandSports:
         _sportsProcessor.processSportsData(data);
+        
+        // Auto-save to diary if enabled (rimuovi per ora)
+        // if (_autoSaveEnabled && data.length >= 13) {
+        //   _saveSportsDataToDiary(sportsData);
+        // }
         break;
       case ChileafProtocol.commandSpo2:
         debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');

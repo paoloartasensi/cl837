@@ -18,6 +18,7 @@ import 'widgets/sensor_info_widget.dart';
 import 'widgets/historical_data_widget.dart';
 import 'widgets/rope_skipping_widget.dart';
 import 'widgets/device_info_widget.dart';
+import 'widgets/test_diary_widget.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -64,12 +65,14 @@ class SensorDisplayPage extends StatefulWidget {
     State<SensorDisplayPage> createState() => _SensorDisplayPageState();
 }
 
-class _SensorDisplayPageState extends State<SensorDisplayPage> {
+class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProviderStateMixin {
     final SensorService _sensorService = SensorService();
     final HeartRateService _heartRateService = HeartRateService();
     final BatteryService _batteryService = BatteryService();
     final ChileafExtendedService _extendedService = ChileafExtendedService();
     final HRVSessionService _hrvSessionService = HRVSessionService();
+    
+    late TabController _tabController;
     
     BluetoothDevice? connectedDevice;
     List<BluetoothDevice> foundDevices = [];
@@ -107,6 +110,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
     @override
     void initState() {
         super.initState();
+        _tabController = TabController(length: 3, vsync: this); // Sensori, Diario, Info
+        _setupStreamSubscriptions();
         _initializeBluetooth();
     }
 
@@ -408,6 +413,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
 
     @override
     void dispose() {
+        _tabController.dispose();
         _accelDataSubscription.cancel();
         _heartRateSubscription.cancel();
         _batteryLevelSubscription.cancel();
@@ -754,95 +760,146 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> {
         );
     }
 
+    Widget _buildSensorTab() {
+        return Column(
+            children: [
+                Container(
+                    color: Colors.grey[100],
+                    padding: const EdgeInsets.all(16.0),
+                    child: Row(
+                        children: [
+                            Expanded(
+                                child: ElevatedButton.icon(
+                                    icon: const Icon(Icons.search),
+                                    label: Text(
+                                        isScanning ? 'Scanning...' : 'Scan for Devices',
+                                    ),
+                                    onPressed: isScanning ? null : startScan,
+                                ),
+                            ),
+                        ],
+                    ),
+                ),
+                if (foundDevices.isNotEmpty)
+                    Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: DropdownButtonFormField<BluetoothDevice>(
+                            decoration: InputDecoration(
+                                labelText: 'Select Device',
+                                border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                ),
+                            ),
+                            value: selectedDevice,
+                            hint: const Text('Choose a Bluetooth Device'),
+                            items: foundDevices.map((device) {
+                                return DropdownMenuItem<BluetoothDevice>(
+                                    value: device,
+                                    child: Text(device.platformName.isNotEmpty ? device.platformName : 'Unknown Device'),
+                                );
+                            }).toList(),
+                            onChanged: (device) {
+                                if (device != null) {
+                                    setState(() {
+                                        selectedDevice = device;
+                                    });
+                                }
+                            },
+                        ),
+                    ),
+                if (selectedDevice != null && connectedDevice == null)
+                    Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                        child: ElevatedButton(
+                            onPressed: isConnecting ? null : () => connectToDevice(selectedDevice!),
+                            child: Text(
+                                isConnecting ? 'Connecting...' : 'Connect to ${selectedDevice!.platformName}',
+                            ),
+                        ),
+                    ),
+                Expanded(
+                    child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(8.0),
+                        child: LayoutBuilder(
+                            builder: (context, constraints) {
+                                // Determina se usiamo layout a colonne o griglia
+                                final isWideScreen = constraints.maxWidth > 600;
+                                
+                                if (isWideScreen) {
+                                    // Layout a griglia per schermi larghi
+                                    return _buildGridLayout();
+                                } else {
+                                    // Layout a colonna per schermi stretti
+                                    return _buildColumnLayout();
+                                }
+                            },
+                        ),
+                    ),
+                ),
+            ],
+        );
+    }
+
+    Widget _buildInfoTab() {
+        return SingleChildScrollView(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+                children: [
+                    DeviceInfoWidget(service: _extendedService),
+                    const SizedBox(height: 16),
+                    const SensorInfoWidget(),
+                ],
+            ),
+        );
+    }
+
     @override
     Widget build(BuildContext context) {
         return Scaffold(
             appBar: AppBar(
-                title: const Text('CL837 Sensor Display'),
+                title: Row(
+                    children: [
+                        const Icon(Icons.sensors),
+                        const SizedBox(width: 8),
+                        Text(connectedDevice?.platformName ?? 'CL837 Sensor Display'),
+                    ],
+                ),
+                backgroundColor: connectedDevice != null ? Colors.green : Colors.blue,
                 actions: [
-                    if (connectedDevice != null)
+                    if (connectedDevice != null) ...[
                         IconButton(
-                            icon: const Icon(Icons.bluetooth_connected),
-                            tooltip: 'Disconnect',
+                            icon: const Icon(Icons.refresh),
+                            onPressed: () {
+                                _extendedService.requestAllDeviceInfo();
+                                _extendedService.requestAllHistoricalData();
+                            },
+                            tooltip: 'Refresh Data',
+                        ),
+                        IconButton(
+                            icon: const Icon(Icons.bluetooth_disabled),
                             onPressed: disconnectDevice,
-                        )
+                            tooltip: 'Disconnect',
+                        ),
+                    ],
                 ],
+                bottom: TabBar(
+                    controller: _tabController,
+                    tabs: const [
+                        Tab(icon: Icon(Icons.sensors), text: 'Sensori'),
+                        Tab(icon: Icon(Icons.book), text: 'Diario'),
+                        Tab(icon: Icon(Icons.info), text: 'Info'),
+                    ],
+                ),
             ),
-            body: Column(
+            body: TabBarView(
+                controller: _tabController,
                 children: [
-                    Container(
-                        color: Colors.grey[100],
-                        padding: const EdgeInsets.all(16.0),
-                        child: Row(
-                            children: [
-                                Expanded(
-                                    child: ElevatedButton.icon(
-                                        icon: const Icon(Icons.search),
-                                        label: Text(
-                                            isScanning ? 'Scanning...' : 'Scan for Devices',
-                                        ),
-                                        onPressed: isScanning ? null : startScan,
-                                    ),
-                                ),
-                            ],
-                        ),
-                    ),
-                    if (foundDevices.isNotEmpty)
-                        Padding(
-                            padding: const EdgeInsets.all(16.0),
-                            child: DropdownButtonFormField<BluetoothDevice>(
-                                decoration: InputDecoration(
-                                    labelText: 'Select Device',
-                                    border: OutlineInputBorder(
-                                        borderRadius: BorderRadius.circular(10),
-                                    ),
-                                ),
-                                value: selectedDevice,
-                                hint: const Text('Choose a Bluetooth Device'),
-                                items: foundDevices.map((device) {
-                                    return DropdownMenuItem<BluetoothDevice>(
-                                        value: device,
-                                        child: Text(device.platformName.isNotEmpty ? device.platformName : 'Unknown Device'),
-                                    );
-                                }).toList(),
-                                onChanged: (device) {
-                                    if (device != null) {
-                                        setState(() {
-                                            selectedDevice = device;
-                                        });
-                                    }
-                                },
-                            ),
-                        ),
-                    if (selectedDevice != null && connectedDevice == null)
-                        Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                            child: ElevatedButton(
-                                onPressed: isConnecting ? null : () => connectToDevice(selectedDevice!),
-                                child: Text(
-                                    isConnecting ? 'Connecting...' : 'Connect to ${selectedDevice!.platformName}',
-                                ),
-                            ),
-                        ),
-                    Expanded(
-                        child: SingleChildScrollView(
-                            padding: const EdgeInsets.all(8.0),
-                            child: LayoutBuilder(
-                                builder: (context, constraints) {
-                                    // Determina se usiamo layout a colonne o griglia
-                                    final isWideScreen = constraints.maxWidth > 600;
-                                    
-                                    if (isWideScreen) {
-                                        // Layout a griglia per schermi larghi
-                                        return _buildGridLayout();
-                                    } else {
-                                        // Layout a colonna per schermi stretti
-                                        return _buildColumnLayout();
-                                    }
-                                },
-                            ),
-                        ),
-                    ),
+                    // Tab 1: Sensori
+                    _buildSensorTab(),
+                    // Tab 2: Diario  
+                    const TestDiaryWidget(),
+                    // Tab 3: Info dispositivo
+                    _buildInfoTab(),
                 ],
             ),
         );
