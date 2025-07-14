@@ -326,18 +326,23 @@ class ChileafExtendedService {
         }
         break;
       case 0x21: // HR History List
-        debugPrint('💓 HR HISTORY LIST: Processing HR timestamp list');
+        debugPrint('💓📋 HR HISTORY LIST: Processing HR timestamp list (${data.length} bytes)');
         var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(Uint8List.fromList(data));
+        debugPrint('💓📋 HR History List processed: ${hrHistoryList.timestamps.length} timestamps');
         _hrHistoryListController.add(hrHistoryList);
         
         // Auto-request detailed data for each timestamp
+        debugPrint('💓🔄 Auto-requesting detailed HR data...');
         _requestDetailedHRData(hrHistoryList);
         break;
       case 0x22: // HR History Data
-        debugPrint('💓 HR HISTORY DATA: Processing detailed HR historical data');
+        debugPrint('💓📊 HR HISTORY DATA: Processing detailed HR historical data (${data.length} bytes)');
         var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(Uint8List.fromList(data));
         if (hrHistoryData != null) {
+          debugPrint('💓📊 HR History Data processed: ${hrHistoryData.entries.length} HR values');
           _hrHistoryDataController.add(hrHistoryData);
+        } else {
+          debugPrint('💓❌ Failed to process HR History Data');
         }
         break;
       case 0x23: // HR History End Signal
@@ -512,10 +517,12 @@ class ChileafExtendedService {
   
   /// Richiede la lista degli storici della frequenza cardiaca
   Future<void> requestHRHistoryList() async {
-    debugPrint('💓 Requesting HR history list...');
+    debugPrint('💓🔄 requestHRHistoryList() called');
     try {
       List<int> command = CommandBuilder.buildHRHistoryListRequest();
+      debugPrint('💓📤 Sending HR history list command: $command');
       await _sendCommand(command);
+      debugPrint('💓✅ HR history list command sent successfully');
     } catch (e) {
       debugPrint('❌ Failed to request HR history list: $e');
     }

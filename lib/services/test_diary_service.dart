@@ -38,9 +38,23 @@ class TestDiaryService {
     
     try {
       final jsonList = jsonDecode(jsonString) as List;
-      return jsonList.map((json) => TestRecord.fromJson(json)).toList();
+      final records = <TestRecord>[];
+      
+      for (final json in jsonList) {
+        try {
+          final record = TestRecord.fromJson(json);
+          records.add(record);
+        } catch (e) {
+          debugPrint('⚠️ Skipping corrupted record: $e');
+          // Skip corrupted records instead of failing completely
+        }
+      }
+      
+      return records;
     } catch (e) {
-      debugPrint('❌ Error loading test records: $e');
+      debugPrint('❌ Error loading test records, clearing corrupted data: $e');
+      // Clear corrupted data and return empty list
+      await prefs.remove(_keyTestRecords);
       return [];
     }
   }
@@ -244,10 +258,36 @@ class TestDiaryService {
 
   /// Inizializza dati di test se il diario è vuoto
   Future<void> initializeSampleDataIfEmpty() async {
-    final existingRecords = await getAllRecords();
-    if (existingRecords.isNotEmpty) return;
-    
-    debugPrint('📝 Inizializzando dati di test per il diario...');
+    try {
+      final existingRecords = await getAllRecords();
+      if (existingRecords.isNotEmpty) {
+        debugPrint('📝 Diario già popolato con ${existingRecords.length} record');
+        return;
+      }
+      
+      debugPrint('📝 Inizializzando dati di test per il diario...');
+      await _createSampleData();
+    } catch (e) {
+      debugPrint('❌ Error initializing sample data: $e');
+      // In case of any error, try to clear and retry once
+      try {
+        await clearAndReinitialize();
+      } catch (e2) {
+        debugPrint('❌ Failed to recover from error: $e2');
+      }
+    }
+  }
+
+  /// Pulisce dati corrotti e reinizializza il diario
+  Future<void> clearAndReinitialize() async {
+    debugPrint('🔄 Clearing corrupted diary data and reinitializing...');
+    await deleteAllRecords();
+    await _createSampleData(); // Use internal method to avoid recursion
+  }
+
+  /// Crea i dati di esempio (metodo interno)
+  Future<void> _createSampleData() async {
+    debugPrint('📝 Creando dati di test...');
     
     // Heart Rate test
     final hrRecord = TestRecord.fromHeartRate(75, [800, 820, 810, 790]);
@@ -273,6 +313,6 @@ class TestDiaryService {
     final batteryRecord = TestRecord.fromBattery(85, false, 3850);
     await saveTestRecord(batteryRecord);
     
-    debugPrint('📝 Dati di test inizializzati con successo');
+    debugPrint('📝 Dati di test creati con successo');
   }
 }

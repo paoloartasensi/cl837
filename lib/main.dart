@@ -580,16 +580,20 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     }
 
     Future<void> requestHRHistory() async {
+        debugPrint('🔄 requestHRHistory() called from UI');
         if (connectedDevice == null) {
+            debugPrint('❌ No device connected for HR History request');
             showError('No device connected');
             return;
         }
         
         try {
+            debugPrint('📞 Calling _extendedService.requestHRHistoryList()...');
             await _extendedService.requestHRHistoryList();
+            debugPrint('✅ HR History request sent successfully');
             showSuccess('HR history requested');
         } catch (e) {
-            debugPrint('Failed to request HR history: $e');
+            debugPrint('❌ Failed to request HR history: $e');
             showError('Failed to request HR history');
         }
     }
