@@ -94,10 +94,30 @@ class HistoricalDataWidget extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         
-        if (exerciseHistory == null || exerciseHistory!.isEmpty)
-          const Text('No exercise data available', 
-                    style: TextStyle(color: Colors.grey))
-        else
+        if (exerciseHistory == null || exerciseHistory!.isEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.orange.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.orange.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.orange.shade700, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isConnected 
+                      ? 'No exercise data available. Device may be new or memory corrupted.'
+                      : 'Connect to device to view exercise history',
+                    style: TextStyle(color: Colors.orange.shade700, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else
           Column(
             children: exerciseHistory!.map((data) => Padding(
               padding: const EdgeInsets.only(bottom: 4.0),
@@ -141,13 +161,51 @@ class HistoricalDataWidget extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         
-        if (hrHistoryList == null)
-          const Text('No HR history list available', 
-                    style: TextStyle(color: Colors.grey))
-        else if (hrHistoryList!.timestamps.isEmpty)
-          const Text('No HR timestamps found', 
-                    style: TextStyle(color: Colors.grey))
-        else
+        if (hrHistoryList == null) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.red.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.red.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline, color: Colors.red.shade700, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isConnected 
+                      ? 'No HR history available. Request data or check device memory.'
+                      : 'Connect to device to view HR history',
+                    style: TextStyle(color: Colors.red.shade700, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else if (hrHistoryList!.timestamps.isEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.amber.shade50,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.amber.shade200),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.warning_outlined, color: Colors.amber.shade700, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Device memory appears corrupted or in overflow state. All HR timestamps are invalid.',
+                    style: TextStyle(color: Colors.amber.shade700, fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ] else
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

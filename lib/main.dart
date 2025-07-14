@@ -235,6 +235,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             // Auto-request historical data after successful connection
             debugPrint('🎯 AUTO-REQUESTING HISTORICAL DATA after connection...');
             _autoRequestHistoricalDataAfterConnection();
+            debugPrint('🎯 AUTO-REQUEST METHOD CALLED successfully!');
             
             if (mounted) {
                 setState(() {

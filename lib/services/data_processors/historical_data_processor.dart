@@ -58,60 +58,113 @@ class HistoricalDataProcessor {
   
   /// Processa i dati storici dell'esercizio (comando 0x16)
   /// Formato: 7 giorni di dati con UTC + steps + calories per ogni giorno
+  /// ANALISI FORMATO CL837: Il dispositivo sembra inviare un formato diverso dal previsto
   static List<ExerciseHistoryData> processExerciseHistory(Uint8List data) {
     debugPrint('📊 Processing Exercise History (0x16) - ${data.length} bytes');
+    debugPrint('📊 Raw Exercise Data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
     List<ExerciseHistoryData> history = [];
     
     try {
-      // Ogni entry dovrebbe essere 12 bytes: 4 UTC + 4 steps + 4 calories
-      const int entrySize = 12;
-      int numEntries = (data.length - 3) ~/ entrySize; // -3 per header (0xFF, length, command)
+      // ANALISI FORMATO REALE: Analizza il formato attuale del dispositivo
+      debugPrint('📊 ANALYZING REAL DEVICE FORMAT:');
+      debugPrint('📊   Total length: ${data.length} bytes');
+      debugPrint('📊   Header: 0x${data[0].toRadixString(16)} 0x${data[1].toRadixString(16)} 0x${data[2].toRadixString(16)}');
+      debugPrint('📊   Payload: ${data.length - 3} bytes');
       
-      debugPrint('📊 Exercise History: Expected $numEntries entries');
+      // Cerca pattern riconoscibili nei dati
+      List<int> possibleTimestamps = [];
+      for (int i = 3; i < data.length - 3; i += 4) {
+        if (i + 3 < data.length) {
+          int timestamp = data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24);
+          if (timestamp != 0 && timestamp != 0xFFFFFFFF) {
+            DateTime date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+            if (date.year >= 2020 && date.year <= 2030) {
+              possibleTimestamps.add(timestamp);
+              debugPrint('📊   Possible valid timestamp at offset $i: $date');
+            }
+          }
+        }
+      }
       
-      for (int i = 0; i < numEntries && i < 7; i++) {
-        int offset = 3 + (i * entrySize); // Start after header
+      // Se non troviamo timestamp validi nel formato standard, prova formati alternativi
+      if (possibleTimestamps.isEmpty) {
+        debugPrint('📊 ⚠️ No valid timestamps found in standard format, trying alternative parsing...');
         
-        if (offset + entrySize <= data.length) {
-          // Parse UTC timestamp (4 bytes, little endian)
-          int utcTimestamp = data[offset] | 
-                           (data[offset + 1] << 8) | 
-                           (data[offset + 2] << 16) | 
-                           (data[offset + 3] << 24);
-          
-          // Parse steps (4 bytes, little endian)
-          int steps = data[offset + 4] | 
-                     (data[offset + 5] << 8) | 
-                     (data[offset + 6] << 16) | 
-                     (data[offset + 7] << 24);
-          
-          // Parse calories (4 bytes, little endian, in 0.1 kcal units)
-          int caloriesRaw = data[offset + 8] | 
-                           (data[offset + 9] << 8) | 
-                           (data[offset + 10] << 16) | 
-                           (data[offset + 11] << 24);
-          
-          // Convert to actual values
-          DateTime date = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
-          double calories = caloriesRaw / 10.0; // Convert from 0.1 kcal units
-          
-          // Validate data ranges (realistic values)
-          bool isValidTimestamp = utcTimestamp != 0xFFFFFFFF && date.year >= 2020 && date.year <= 2030;
-          bool isValidSteps = steps > 0 && steps <= 100000; // Max 100k steps per day
-          bool isValidCalories = calories >= 0 && calories <= 10000; // Max 10k kcal per day
-          
-          // Skip invalid entries
-          if (isValidTimestamp && isValidSteps && isValidCalories) {
-            ExerciseHistoryData entry = ExerciseHistoryData(
-              date: date,
-              steps: steps,
-              calories: calories,
-            );
+        // FORMATO ALTERNATIVO 1: Prova a vedere se ci sono dati daily aggregati senza timestamp validi
+        // Cerca valori realistici per steps (0-50000) e calories (0-5000)
+        for (int i = 3; i < data.length - 7; i += 4) {
+          if (i + 7 < data.length) {
+            int value1 = data[i] | (data[i + 1] << 8) | (data[i + 2] << 16) | (data[i + 3] << 24);
+            int value2 = data[i + 4] | (data[i + 5] << 8) | (data[i + 6] << 16) | (data[i + 7] << 24);
             
-            history.add(entry);
-            debugPrint('📊✅ Exercise Day ${i + 1}: ${entry.toString()} (VALID)');
-          } else {
-            debugPrint('📊❌ Exercise Day ${i + 1}: INVALID DATA - Timestamp: ${isValidTimestamp ? 'OK' : 'BAD'}, Steps: ${isValidSteps ? steps : 'BAD ($steps)'}, Calories: ${isValidCalories ? calories.toStringAsFixed(1) : 'BAD (${calories.toStringAsFixed(1)})'}');
+            // Controlla se potrebbero essere steps e calories ragionevoli
+            if ((value1 >= 0 && value1 <= 50000) && (value2 >= 0 && value2 <= 50000)) {
+              debugPrint('📊   Possible steps/calories at offset $i: steps=$value1, calories=${value2/10.0}');
+              
+              // Usa la data corrente meno i giorni
+              DateTime estimatedDate = DateTime.now().subtract(Duration(days: (i - 3) ~/ 8));
+              
+              ExerciseHistoryData entry = ExerciseHistoryData(
+                date: estimatedDate,
+                steps: value1,
+                calories: value2 / 10.0, // Assumendo formato 0.1 kcal
+              );
+              
+              history.add(entry);
+              debugPrint('📊✅ Exercise Day (estimated): ${entry.toString()} (ESTIMATED DATE)');
+            }
+          }
+        }
+      } else {
+        // Usa il formato standard se troviamo timestamp validi
+        const int entrySize = 12;
+        int numEntries = (data.length - 3) ~/ entrySize;
+        
+        debugPrint('📊 Exercise History: Expected $numEntries entries (standard format)');
+        
+        for (int i = 0; i < numEntries && i < 7; i++) {
+          int offset = 3 + (i * entrySize);
+          
+          if (offset + entrySize <= data.length) {
+            // Parse UTC timestamp (4 bytes, little endian)
+            int utcTimestamp = data[offset] | 
+                             (data[offset + 1] << 8) | 
+                             (data[offset + 2] << 16) | 
+                             (data[offset + 3] << 24);
+            
+            // Parse steps (4 bytes, little endian)
+            int steps = data[offset + 4] | 
+                       (data[offset + 5] << 8) | 
+                       (data[offset + 6] << 16) | 
+                       (data[offset + 7] << 24);
+            
+            // Parse calories (4 bytes, little endian, in 0.1 kcal units)
+            int caloriesRaw = data[offset + 8] | 
+                             (data[offset + 9] << 8) | 
+                             (data[offset + 10] << 16) | 
+                             (data[offset + 11] << 24);
+            
+            // Convert to actual values
+            DateTime date = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
+            double calories = caloriesRaw / 10.0;
+            
+            // Validate data ranges
+            bool isValidTimestamp = utcTimestamp != 0xFFFFFFFF && date.year >= 2020 && date.year <= 2030;
+            bool isValidSteps = steps >= 0 && steps <= 100000; // Allow 0 steps
+            bool isValidCalories = calories >= 0 && calories <= 10000;
+            
+            if (isValidTimestamp && isValidSteps && isValidCalories) {
+              ExerciseHistoryData entry = ExerciseHistoryData(
+                date: date,
+                steps: steps,
+                calories: calories,
+              );
+              
+              history.add(entry);
+              debugPrint('📊✅ Exercise Day ${i + 1}: ${entry.toString()} (VALID)');
+            } else {
+              debugPrint('📊❌ Exercise Day ${i + 1}: INVALID DATA - Timestamp: ${isValidTimestamp ? 'OK' : 'BAD'}, Steps: ${isValidSteps ? steps : 'BAD ($steps)'}, Calories: ${isValidCalories ? calories.toStringAsFixed(1) : 'BAD (${calories.toStringAsFixed(1)})'}');
+            }
           }
         }
       }
@@ -127,6 +180,7 @@ class HistoricalDataProcessor {
   
   /// Processa la lista degli storici HR (comando 0x21)
   /// Formato: Lista di timestamp UTC (0xFFFFFFFF = no data)
+  /// GESTIONE OVERFLOW: Il dispositivo CL837 ha memoria limitata e usa buffer circolare
   static HeartRateHistoryList processHRHistoryList(Uint8List data) {
     debugPrint('💓 Processing HR History List (0x21) - ${data.length} bytes');
     debugPrint('💓 Raw HR History List data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
@@ -134,6 +188,7 @@ class HistoricalDataProcessor {
     List<DateTime> timestamps = [];
     List<DateTime> validTimestamps = [];
     List<DateTime> corruptedTimestamps = [];
+    List<DateTime> recentValidTimestamps = [];
     
     try {
       // Ogni timestamp è 4 bytes
@@ -147,6 +202,7 @@ class HistoricalDataProcessor {
         return const HeartRateHistoryList(timestamps: []);
       }
       
+      // Prima passata: raccolta di tutti i timestamp
       for (int i = 0; i < numTimestamps; i++) {
         int offset = 3 + (i * timestampSize);
         
@@ -156,20 +212,26 @@ class HistoricalDataProcessor {
                            (data[offset + 2] << 16) | 
                            (data[offset + 3] << 24);
           
-          if (utcTimestamp != 0xFFFFFFFF) {
+          if (utcTimestamp != 0xFFFFFFFF && utcTimestamp != 0) {
             DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
             timestamps.add(timestamp);
             
             // Validate timestamp (reasonable range)
             if (timestamp.year >= 2020 && timestamp.year <= 2030) {
               validTimestamps.add(timestamp);
+              
+              // Considera "recenti" gli ultimi 30 giorni
+              if (timestamp.isAfter(DateTime.now().subtract(const Duration(days: 30)))) {
+                recentValidTimestamps.add(timestamp);
+              }
+              
               debugPrint('💓✅ HR Timestamp ${i + 1}: $timestamp (VALID)');
             } else {
               corruptedTimestamps.add(timestamp);
               debugPrint('💓❌ HR Timestamp ${i + 1}: $timestamp (CORRUPTED - year ${timestamp.year})');
             }
           } else {
-            debugPrint('💓 HR Timestamp ${i + 1}: No data (0xFFFFFFFF)');
+            debugPrint('💓 HR Timestamp ${i + 1}: No data (0x${utcTimestamp.toRadixString(16).padLeft(8, '0').toUpperCase()})');
           }
         }
       }
@@ -177,21 +239,48 @@ class HistoricalDataProcessor {
       debugPrint('💓 HR History List Summary:');
       debugPrint('💓   Total: ${timestamps.length} timestamps');
       debugPrint('💓   Valid: ${validTimestamps.length} timestamps');
+      debugPrint('💓   Recent valid: ${recentValidTimestamps.length} timestamps');
       debugPrint('💓   Corrupted: ${corruptedTimestamps.length} timestamps');
       debugPrint('💓   Empty slots: ${numTimestamps - timestamps.length}');
       
-      // If most timestamps are corrupted, device memory is likely in circular buffer overflow
-      if (corruptedTimestamps.length > validTimestamps.length) {
-        debugPrint('💓⚠️ WARNING: Device memory appears to be in circular buffer overflow state');
-        debugPrint('💓⚠️ Only using ${validTimestamps.length} valid timestamps for data requests');
-        return HeartRateHistoryList(timestamps: validTimestamps);
+      // STRATEGIA MIGLIORATA: Usa i timestamp più recenti e validi
+      List<DateTime> timestampsToUse = [];
+      
+      if (recentValidTimestamps.isNotEmpty) {
+        // Usa preferibilmente i timestamp recenti e validi
+        timestampsToUse = recentValidTimestamps;
+        debugPrint('💓✅ Using ${recentValidTimestamps.length} recent valid timestamps');
+      } else if (validTimestamps.isNotEmpty) {
+        // Se non ci sono timestamp recenti, usa tutti quelli validi
+        timestampsToUse = validTimestamps;
+        debugPrint('💓⚠️ Using ${validTimestamps.length} valid timestamps (not recent)');
+      } else {
+        // Se non ci sono timestamp validi, il dispositivo è in overflow
+        debugPrint('💓❌ Device memory appears to be in circular buffer overflow state');
+        debugPrint('💓❌ All timestamps are corrupted - cannot retrieve HR history');
+        return const HeartRateHistoryList(timestamps: []);
       }
+      
+      // Ordina i timestamp per data (più recenti primi)
+      timestampsToUse.sort((a, b) => b.compareTo(a));
+      
+      // Limita a un numero ragionevole per evitare troppi request
+      if (timestampsToUse.length > 10) {
+        debugPrint('💓⚠️ Too many timestamps (${timestampsToUse.length}), limiting to 10 most recent');
+        timestampsToUse = timestampsToUse.take(10).toList();
+      }
+      
+      debugPrint('💓✅ Final HR History List: ${timestampsToUse.length} timestamps to use');
+      for (int i = 0; i < timestampsToUse.length; i++) {
+        debugPrint('💓   ${i + 1}. ${timestampsToUse[i]}');
+      }
+      
+      return HeartRateHistoryList(timestamps: timestampsToUse);
       
     } catch (e) {
       debugPrint('❌ Error parsing HR History List: $e');
+      return const HeartRateHistoryList(timestamps: []);
     }
-    
-    return HeartRateHistoryList(timestamps: timestamps);
   }
   
   /// Processa i dati storici HR (comando 0x22)
