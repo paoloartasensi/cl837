@@ -481,91 +481,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         );
     }
 
-    // SpO2 measurement methods
-    Future<void> measureSpO2() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            setState(() {
-                // You can add an isMeasuring state variable if needed
-            });
-            
-            await _extendedService.measureSpO2();
-            showSuccess('SpO2 measurement started');
-        } catch (e) {
-            debugPrint('Failed to measure SpO2: $e');
-            showError('Failed to measure SpO2');
-        }
-    }
-
-    Future<void> measureSpO2Alternative() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            setState(() {
-                // You can add an isMeasuring state variable if needed
-            });
-            
-            await _extendedService.measureSpO2Alternative();
-            showSuccess('Alternative SpO2 measurement started');
-        } catch (e) {
-            debugPrint('Failed to measure SpO2 (alternative): $e');
-            showError('Failed to measure SpO2 (alternative)');
-        }
-    }
-
-    Future<void> forceExitSpO2Mode() async {
-        try {
-            await _extendedService.forceExitSpO2Mode();
-            showSuccess('Force exit SpO2 mode completed');
-        } catch (e) {
-            debugPrint('Failed to force exit SpO2 mode: $e');
-            showError('Failed to force exit SpO2 mode');
-        }
-    }
-
-    Future<void> testSpO2LED() async {
-        try {
-            await _extendedService.testLEDFunctionality();
-            showSuccess('LED test completed');
-        } catch (e) {
-            debugPrint('Failed to test LED: $e');
-            showError('Failed to test LED');
-        }
-    }
-
-    Future<void> diagnoseBLE() async {
-        try {
-            await _extendedService.diagnoseBLEIssues();
-            showSuccess('BLE diagnostics completed');
-        } catch (e) {
-            debugPrint('Failed to diagnose BLE: $e');
-            showError('Failed to diagnose BLE');
-        }
-    }
-
-    Future<void> startHRVSession() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _hrvSessionService.startSession(_heartRateService.dataStream);
-            showSuccess('HRV session started');
-        } catch (e) {
-            debugPrint('Failed to start HRV session: $e');
-            showError('Failed to start HRV session');
-        }
-    }
-
-    // Historical data methods
     Future<void> requestExerciseHistory() async {
         if (connectedDevice == null) {
             showError('No device connected');
@@ -615,6 +530,84 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
+    // SpO2 measurement methods (CL837 Protocol v0.6 - Command 0x37)
+    Future<void> measureSpO2() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            debugPrint('📡 Starting SpO2 measurement...');
+            await _extendedService.enableSpO2Mode();
+            showSuccess('SpO2 measurement started');
+        } catch (e) {
+            debugPrint('Failed to start SpO2 measurement: $e');
+            showError('Failed to start SpO2 measurement');
+        }
+    }
+
+    Future<void> exitSpO2Mode() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            debugPrint('📡 Exiting SpO2 mode...');
+            await _extendedService.disableSpO2Mode();
+            showSuccess('Exited SpO2 mode');
+        } catch (e) {
+            debugPrint('Failed to exit SpO2 mode: $e');
+            showError('Failed to exit SpO2 mode');
+        }
+    }
+
+    Future<void> forceExitSpO2Mode() async {
+        try {
+            await _extendedService.forceExitSpO2Mode();
+            showSuccess('Force exit SpO2 mode completed');
+        } catch (e) {
+            debugPrint('Failed to force exit SpO2 mode: $e');
+            showError('Failed to force exit SpO2 mode');
+        }
+    }
+
+    Future<void> testSpO2LED() async {
+        try {
+            await _extendedService.testLEDFunctionality();
+            showSuccess('LED test completed');
+        } catch (e) {
+            debugPrint('Failed to test LED: $e');
+            showError('Failed to test LED');
+        }
+    }
+
+    Future<void> diagnoseBLE() async {
+        try {
+            await _extendedService.diagnoseBLEIssues();
+            showSuccess('BLE diagnostics completed');
+        } catch (e) {
+            debugPrint('Failed to diagnose BLE: $e');
+            showError('Failed to diagnose BLE');
+        }
+    }
+
+    Future<void> startHRVSession() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            await _hrvSessionService.startSession(_heartRateService.dataStream);
+            showSuccess('HRV session started');
+        } catch (e) {
+            debugPrint('Failed to start HRV session: $e');
+            showError('Failed to start HRV session');
+        }
+    }
+
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -639,10 +632,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
                             onMeasureSpO2: measureSpO2,
-                            onMeasureSpO2Alternative: measureSpO2Alternative,
-                            onForceExit: forceExitSpO2Mode,
-                            onTestLED: testSpO2LED,
-                            onDiagnoseBLE: diagnoseBLE,
+                            onExitSpO2Mode: exitSpO2Mode,
                         ),
                         TemperatureWidget(
                             temperatureData: latestTemperatureData,
@@ -694,10 +684,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
                         onMeasureSpO2: measureSpO2,
-                        onMeasureSpO2Alternative: measureSpO2Alternative,
-                        onForceExit: forceExitSpO2Mode,
-                        onTestLED: testSpO2LED,
-                        onDiagnoseBLE: diagnoseBLE,
+                        onExitSpO2Mode: exitSpO2Mode,
                     ),
                 ]),
                 

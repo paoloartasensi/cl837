@@ -5,10 +5,7 @@ class SpO2Widget extends StatelessWidget {
   final SpO2Data? spo2Data;
   final bool isConnected;
   final VoidCallback? onMeasureSpO2;
-  final VoidCallback? onMeasureSpO2Alternative; // Alternative SpO2 command
-  final VoidCallback? onForceExit;  // Bottone emergenza
-  final VoidCallback? onTestLED;    // Test LED
-  final VoidCallback? onDiagnoseBLE; // Diagnostica BLE
+  final VoidCallback? onExitSpO2Mode;  // Renamed from onForceExit
   final bool isMeasuring;
 
   const SpO2Widget({
@@ -16,10 +13,7 @@ class SpO2Widget extends StatelessWidget {
     this.spo2Data,
     required this.isConnected,
     this.onMeasureSpO2,
-    this.onMeasureSpO2Alternative,
-    this.onForceExit,
-    this.onTestLED,
-    this.onDiagnoseBLE,
+    this.onExitSpO2Mode,  // Official exit mode function
     this.isMeasuring = false,
   });
 
@@ -81,98 +75,27 @@ class SpO2Widget extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 8),
               
-              // Alternative SpO2 method button
-              if (onMeasureSpO2Alternative != null) ...[
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: isMeasuring ? null : onMeasureSpO2Alternative,
-                    icon: isMeasuring 
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.science, size: 16),
-                    label: Text(
-                      isMeasuring ? 'Measuring...' : 'Try Alt Method',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      backgroundColor: isMeasuring ? Colors.grey : Colors.teal,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 4),
-              ],
-              
-              // Emergency exit button (se connesso)
-              if (onForceExit != null) ...[
+              // Exit SpO2 mode button (official command)
+              if (onExitSpO2Mode != null) ...[
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
-                    onPressed: onForceExit,
-                    icon: const Icon(Icons.power_settings_new, size: 14),
+                    onPressed: onExitSpO2Mode,
+                    icon: const Icon(Icons.exit_to_app, size: 14),
                     label: const Text(
-                      'Force Exit SpO₂ Mode',
-                      style: TextStyle(fontSize: 10),
+                      'Exit SpO₂ Mode',
+                      style: TextStyle(fontSize: 11),
                     ),
                     style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      side: BorderSide(color: Colors.red[300]!),
-                      foregroundColor: Colors.red[700],
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      side: BorderSide(color: Colors.orange[300]!),
+                      foregroundColor: Colors.orange[700],
                     ),
                   ),
                 ),
-              ],
-              
-              // Debug buttons (only in debug mode)
-              if (isConnected && (onTestLED != null || onDiagnoseBLE != null)) ...[
                 const SizedBox(height: 4),
-                Row(
-                  children: [
-                    if (onTestLED != null) ...[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onTestLED,
-                          icon: const Icon(Icons.lightbulb_outline, size: 12),
-                          label: const Text(
-                            'Test LED',
-                            style: TextStyle(fontSize: 9),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            side: BorderSide(color: Colors.orange[300]!),
-                            foregroundColor: Colors.orange[700],
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (onTestLED != null && onDiagnoseBLE != null) 
-                      const SizedBox(width: 4),
-                    if (onDiagnoseBLE != null) ...[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: onDiagnoseBLE,
-                          icon: const Icon(Icons.bug_report, size: 12),
-                          label: const Text(
-                            'Debug BLE',
-                            style: TextStyle(fontSize: 9),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            side: BorderSide(color: Colors.purple[300]!),
-                            foregroundColor: Colors.purple[700],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
               ],
               const SizedBox(height: 8),
             ],
