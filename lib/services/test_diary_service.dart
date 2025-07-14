@@ -23,9 +23,10 @@ class TestDiaryService {
     // Ordina per timestamp più recente
     records.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     
-    final jsonList = records.map((r) => r.toJson()).toList();      await prefs.setString(_keyTestRecords, jsonEncode(jsonList));
-      
-      debugPrint('📝 Test record saved: ${record.summary}');
+    final jsonList = records.map((r) => r.toJson()).toList();
+    await prefs.setString(_keyTestRecords, jsonEncode(jsonList));
+    
+    debugPrint('📝 Test record saved: ${record.summary}');
   }
 
   /// Recupera tutti i record dal diario
@@ -239,5 +240,39 @@ class TestDiaryService {
     final prefs = await SharedPreferences.getInstance();
     final dateString = prefs.getString(_keyLastBackup);
     return dateString != null ? DateTime.parse(dateString) : null;
+  }
+
+  /// Inizializza dati di test se il diario è vuoto
+  Future<void> initializeSampleDataIfEmpty() async {
+    final existingRecords = await getAllRecords();
+    if (existingRecords.isNotEmpty) return;
+    
+    debugPrint('📝 Inizializzando dati di test per il diario...');
+    
+    // Heart Rate test
+    final hrRecord = TestRecord.fromHeartRate(75, [800, 820, 810, 790]);
+    await saveTestRecord(hrRecord);
+    
+    // SpO2 test
+    final spo2Record = TestRecord.fromSpO2(98, 85, 'Good');
+    await saveTestRecord(spo2Record);
+    
+    // Temperature test
+    final tempRecord = TestRecord.fromTemperature(25.5, 32.1, 36.7);
+    await saveTestRecord(tempRecord);
+    
+    // Sports test
+    final sportsRecord = TestRecord.fromSports(1250, 85000, 42.5);
+    await saveTestRecord(sportsRecord);
+    
+    // Rope skipping test
+    final ropeRecord = TestRecord.fromRopeSkipping('Counter', 150, 120, 8.3);
+    await saveTestRecord(ropeRecord);
+    
+    // Battery test
+    final batteryRecord = TestRecord.fromBattery(85, false, 3850);
+    await saveTestRecord(batteryRecord);
+    
+    debugPrint('📝 Dati di test inizializzati con successo');
   }
 }

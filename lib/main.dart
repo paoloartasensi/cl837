@@ -19,6 +19,7 @@ import 'widgets/historical_data_widget.dart';
 import 'widgets/rope_skipping_widget.dart';
 import 'widgets/device_info_widget.dart';
 import 'widgets/test_diary_widget.dart';
+import 'services/test_diary_service.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -113,6 +114,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         _tabController = TabController(length: 3, vsync: this); // Sensori, Diario, Info
         _setupStreamSubscriptions();
         _initializeBluetooth();
+        _initializeTestDiary();
     }
 
     Future<void> _initializeBluetooth() async {
@@ -127,6 +129,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             Permission.bluetoothConnect.request(),
             Permission.location.request(),
         ]);
+    }
+
+    Future<void> _initializeTestDiary() async {
+        try {
+            await TestDiaryService.instance.initializeSampleDataIfEmpty();
+        } catch (e) {
+            debugPrint('❌ Error initializing test diary: $e');
+        }
     }
 
     Future<void> startScan() async {
