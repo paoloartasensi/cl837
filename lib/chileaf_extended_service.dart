@@ -209,11 +209,12 @@ class ChileafExtendedService {
     await Future.delayed(const Duration(milliseconds: 500));
     await _sendCommand(CommandBuilder.buildSportsDataRequest());
 
-    // Set up periodic data requests
-    _dataRequestTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
+    // Set up periodic data requests (reduced frequency to prevent device overload)
+    _dataRequestTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
       try {
+        debugPrint('📡 Periodic request: Temperature + Sports data (30s interval)');
         await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-        await Future.delayed(const Duration(milliseconds: 300));
+        await Future.delayed(const Duration(milliseconds: 1000));
         await _sendCommand(CommandBuilder.buildSportsDataRequest());
       } catch (e) {
         debugPrint('Error in periodic data request: $e');
@@ -756,5 +757,40 @@ class ChileafExtendedService {
     } catch (e) {
       debugPrint('❌ Failed to request rope status: $e');
     }
+  }
+
+  /// Temporarily pause periodic requests to reduce device load
+  void pausePeriodicRequests() {
+    debugPrint('⏸️ Pausing periodic requests to reduce device load...');
+    _dataRequestTimer?.cancel();
+    _dataRequestTimer = null;
+  }
+  
+  /// Resume periodic requests after a pause
+  void resumePeriodicRequests() {
+    if (_dataRequestTimer != null) return; // Already running
+    
+    debugPrint('▶️ Resuming periodic requests...');
+    _dataRequestTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+      try {
+        debugPrint('📡 Periodic request: Temperature + Sports data (30s interval)');
+        await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
+        await Future.delayed(const Duration(milliseconds: 1000));
+        await _sendCommand(CommandBuilder.buildSportsDataRequest());
+      } catch (e) {
+        debugPrint('Error in periodic data request: $e');
+      }
+    });
+  }
+
+  // Manual request methods for accuracy testing
+  Future<void> requestTemperatureData() async {
+    debugPrint('🌡️ Manual request: Temperature data');
+    await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
+  }
+  
+  Future<void> requestSportsData() async {
+    debugPrint('🏃 Manual request: Sports data');
+    await _sendCommand(CommandBuilder.buildSportsDataRequest());
   }
 }

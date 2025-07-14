@@ -1,3 +1,5 @@
+// ignore_for_file: avoid_print, prefer_const_constructors
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -233,8 +235,19 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             _setupStreamSubscriptions();
             
             // Auto-request historical data after successful connection
-            debugPrint('🎯 AUTO-REQUESTING HISTORICAL DATA after connection...');
-            _autoRequestHistoricalDataAfterConnection();
+            // Manual mode: Don't auto-request historical data
+            // debugPrint('🎯 AUTO-REQUESTING HISTORICAL DATA after connection...');
+            // _autoRequestHistoricalDataAfterConnection();
+            
+            // Manual mode: Pause all periodic requests for manual control
+            debugPrint('📋 MANUAL MODE: Disabling automatic data requests for accuracy testing...');
+            _extendedService.pausePeriodicRequests();
+            
+            // Force exit SpO2 mode to stop red LED and vibration
+            debugPrint('🚨 FORCE EXITING SpO2 MODE to stop red LED...');
+            await forceExitSpO2Mode();
+            
+            debugPrint('✅ MANUAL MODE ENABLED: Use buttons to request data manually for accuracy testing');
             debugPrint('🎯 AUTO-REQUEST METHOD CALLED successfully!');
             
             if (mounted) {
@@ -535,36 +548,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
-    /// Auto-request historical data after device connection (non-blocking)
-    Future<void> _autoRequestHistoricalDataAfterConnection() async {
-        // Wait a bit for the connection to stabilize
-        await Future.delayed(const Duration(seconds: 2));
-        
-        if (connectedDevice == null) {
-            debugPrint('🚫 Auto-request cancelled: device disconnected');
-            return;
-        }
-        
-        debugPrint('🎯 AUTO-REQUESTING: Starting automatic historical data request...');
-        
-        try {
-            // Request Exercise History first
-            debugPrint('🎯 AUTO-REQUESTING: Exercise History...');
-            await _extendedService.requestExerciseHistory();
-            
-            await Future.delayed(const Duration(milliseconds: 500));
-            
-            // Request HR History List
-            debugPrint('🎯 AUTO-REQUESTING: HR History List...');
-            await _extendedService.requestHRHistoryList();
-            
-            debugPrint('🎯 AUTO-REQUESTING: Historical data requests completed!');
-            
-        } catch (e) {
-            debugPrint('🚫 Auto-request historical data failed: $e');
-            // Non mostrare errore all'utente per le richieste automatiche
-        }
-    }
 
     // SpO2 measurement methods (CL837 Protocol v0.6 - Command 0x37)
     Future<void> measureSpO2() async {
@@ -644,6 +627,56 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
+    // Manual control methods for accuracy testing
+    Future<void> manualRequestTemperature() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            debugPrint('🌡️ MANUAL REQUEST: Temperature data');
+            await _extendedService.requestTemperatureData();
+            showSuccess('Temperature data requested');
+        } catch (e) {
+            debugPrint('Failed to request temperature data: $e');
+            showError('Failed to request temperature data');
+        }
+    }
+
+    Future<void> manualRequestSportsData() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            debugPrint('🏃 MANUAL REQUEST: Sports data');
+            await _extendedService.requestSportsData();
+            showSuccess('Sports data requested');
+        } catch (e) {
+            debugPrint('Failed to request sports data: $e');
+            showError('Failed to request sports data');
+        }
+    }
+
+    Future<void> manualRequestDeviceInfo() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            debugPrint('ℹ️ MANUAL REQUEST: Device info');
+            await _extendedService.requestDeviceInfo();
+            showSuccess('Device info requested');
+        } catch (e) {
+            debugPrint('Failed to request device info: $e');
+            showError('Failed to request device info');
+        }
+    }
+
+
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -670,14 +703,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             onMeasureSpO2: measureSpO2,
                             onExitSpO2Mode: exitSpO2Mode,
                         ),
-                        TemperatureWidget(
-                            temperatureData: latestTemperatureData,
-                            isConnected: connectedDevice != null,
-                        ),
-                        SportsWidget(
-                            sportsData: latestSportsData,
-                            isConnected: connectedDevice != null,
-                        ),
+                        // Manual Control Panel
+                        _buildManualControlPanel(),
                     ],
                 ),
                 const SizedBox(height: 16),
@@ -693,6 +720,25 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestExercise: requestExerciseHistory,
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
+                ),
+                const SizedBox(height: 16),
+                // Temperature and Sports Data Row
+                Row(
+                    children: [
+                        Expanded(
+                            child: TemperatureWidget(
+                                temperatureData: latestTemperatureData,
+                                isConnected: connectedDevice != null,
+                            ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                            child: SportsWidget(
+                                sportsData: latestSportsData,
+                                isConnected: connectedDevice != null,
+                            ),
+                        ),
+                    ],
                 ),
             ],
         );
@@ -888,6 +934,75 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     const SizedBox(height: 16),
                     const SensorInfoWidget(),
                 ],
+            ),
+        );
+    }
+
+    // Manual Control Panel for accuracy testing
+    Widget _buildManualControlPanel() {
+        if (connectedDevice == null) return Container();
+        
+        return Card(
+            child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                        Text(
+                            'Manual Control Panel - Accuracy Testing',
+                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.bold,
+                            ),
+                        ),
+                        const SizedBox(height: 12),
+                        Wrap(
+                            spacing: 8.0,
+                            runSpacing: 8.0,
+                            children: [
+                                ElevatedButton.icon(
+                                    onPressed: () {
+                                        print('Manual request: Temperature');
+                                        _extendedService.requestTemperatureData();
+                                    },
+                                    icon: Icon(Icons.thermostat),
+                                    label: Text('Temperature'),
+                                ),
+                                ElevatedButton.icon(
+                                    onPressed: () {
+                                        print('Manual request: Sports');
+                                        _extendedService.requestSportsData();
+                                    },
+                                    icon: Icon(Icons.sports),
+                                    label: Text('Sports'),
+                                ),
+                                ElevatedButton.icon(
+                                    onPressed: () {
+                                        print('Manual request: Device Info');
+                                        _extendedService.requestAllDeviceInfo();
+                                    },
+                                    icon: Icon(Icons.info),
+                                    label: Text('Device Info'),
+                                ),
+                                ElevatedButton.icon(
+                                    onPressed: () {
+                                        print('Manual request: SpO2');
+                                        measureSpO2();
+                                    },
+                                    icon: Icon(Icons.favorite),
+                                    label: Text('SpO2'),
+                                ),
+                                ElevatedButton.icon(
+                                    onPressed: () {
+                                        print('Manual request: All Historical Data');
+                                        requestAllHistoricalData();
+                                    },
+                                    icon: Icon(Icons.history),
+                                    label: Text('All History'),
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
             ),
         );
     }
