@@ -243,11 +243,15 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             debugPrint('📋 MANUAL MODE: Disabling automatic data requests for accuracy testing...');
             _extendedService.pausePeriodicRequests();
             
+            // Optional: Pause heart rate service to turn off green LED
+            // _heartRateService.pause(); // Uncomment to test LED off state
+            
             // Force exit SpO2 mode to stop red LED and vibration
             debugPrint('🚨 FORCE EXITING SpO2 MODE to stop red LED...');
             await forceExitSpO2Mode();
             
             debugPrint('✅ MANUAL MODE ENABLED: Use buttons to request data manually for accuracy testing');
+            debugPrint('🔋 Device LED should now be stable GREEN (Heart Rate mode)');
             debugPrint('🎯 AUTO-REQUEST METHOD CALLED successfully!');
             
             if (mounted) {
