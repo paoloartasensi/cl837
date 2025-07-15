@@ -257,6 +257,10 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
   Color _getLEDDisplayColor(LEDStatusData status) {
     switch (status.currentColor) {
       case LEDColor.green:
+        // In manual mode, apply slow blink effect
+        if (widget.isManualMode && widget.isConnected) {
+          return Colors.green.withOpacity(_blinkAnimation.value);
+        }
         return Colors.green;
       case LEDColor.red:
         return Colors.red;
@@ -301,7 +305,7 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
     final ledColor = _getLEDDisplayColor(status);
     
     return AnimatedBuilder(
-      animation: Listenable.merge([_cyclingController, _pulseController]),
+      animation: Listenable.merge([_cyclingController, _pulseController, _blinkController]),
       builder: (context, child) {
         return Card(
           elevation: 4,
@@ -484,6 +488,7 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
   void dispose() {
     _cyclingController.dispose();
     _pulseController.dispose();
+    _blinkController.dispose();
     _vibrationTimer?.cancel();
     super.dispose();
   }
