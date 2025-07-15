@@ -56,8 +56,10 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
     with TickerProviderStateMixin {
   late AnimationController _cyclingController;
   late AnimationController _pulseController;
+  late AnimationController _blinkController; // For slow green blink
   late Animation<Color?> _cyclingAnimation;
   late Animation<double> _pulseAnimation;
+  late Animation<double> _blinkAnimation;
   
   Timer? _vibrationTimer;
   bool _isVibrating = false;
@@ -75,6 +77,12 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
     // Pulse animation for vibration feedback
     _pulseController = AnimationController(
       duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+    
+    // Slow blink animation for manual mode green LED
+    _blinkController = AnimationController(
+      duration: const Duration(seconds: 2),
       vsync: this,
     );
     
@@ -113,6 +121,14 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
       curve: Curves.elasticOut,
     ));
     
+    _blinkAnimation = Tween<double>(
+      begin: 0.3,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _blinkController,
+      curve: Curves.easeInOut,
+    ));
+    
     _updateLEDState();
   }
   
@@ -131,21 +147,27 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
     if (!widget.isConnected) {
       // Boot/Pairing sequence - cycling colors
       _cyclingController.repeat();
+      _blinkController.stop();
       _stopVibration();
     } else {
       _cyclingController.stop();
       
+      // For connected device, show actual observed behavior:
       if (widget.isSpO2Active) {
-        // SpO2 mode - red LED with periodic vibration
+        // SpO2 mode - red LED during active measurement
+        _blinkController.stop();
         _startPeriodicVibration();
       } else if (widget.isHeartRatePaused) {
         // Paused - LED off
+        _blinkController.stop();
         _stopVibration();
-      } else if (!widget.isManualMode) {
-        // Auto mode - stressed device
-        _startFrequentVibration();
+      } else if (widget.isManualMode) {
+        // Manual mode - slow green blink (like real device)
+        _blinkController.repeat(reverse: true);
+        _stopVibration();
       } else {
-        // Manual mode - stable operation
+        // Auto mode - stop blinking
+        _blinkController.stop();
         _stopVibration();
       }
     }
@@ -154,13 +176,6 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
   void _startPeriodicVibration() {
     _vibrationTimer?.cancel();
     _vibrationTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      _triggerVibrationPulse();
-    });
-  }
-  
-  void _startFrequentVibration() {
-    _vibrationTimer?.cancel();
-    _vibrationTimer = Timer.periodic(const Duration(milliseconds: 1500), (timer) {
       _triggerVibrationPulse();
     });
   }
@@ -217,13 +232,14 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
       );
     }
     
+    // For normal connected operation, show the actual observed device behavior
     if (widget.isManualMode) {
       return LEDStatusData(
         currentColor: LEDColor.green,
         mode: DeviceMode.manual,
         isConnected: true,
-        isVibrating: _isVibrating,
-        statusMessage: "Manual Mode - Stable Operation",
+        isVibrating: false, // No continuous vibration in manual mode
+        statusMessage: "Manual Mode - Slow Green Blink (ACTUAL)",
         timestamp: DateTime.now(),
       );
     } else {
@@ -231,8 +247,8 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
         currentColor: LEDColor.red,
         mode: DeviceMode.automatic,
         isConnected: true,
-        isVibrating: _isVibrating,
-        statusMessage: "Auto Mode - Device Stressed",
+        isVibrating: false, // Show real vibration state, not simulated
+        statusMessage: "Auto Mode - Device May Be Stressed",
         timestamp: DateTime.now(),
       );
     }
@@ -429,7 +445,7 @@ class _LEDStatusWidgetState extends State<LEDStatusWidget>
                 Text(
                   status.currentColor == LEDColor.cycling
                       ? 'LED cycling G→R→W is NORMAL before connection!'
-                      : 'Real-time sync with device LED status',
+                      : 'Mirroring actual device LED behavior - not simulated',
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey[600],
                     fontStyle: FontStyle.italic,

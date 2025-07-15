@@ -639,34 +639,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     bool _isManualMode = true; // Track current mode
     bool _isHeartRateServicePaused = false; // Track HR service state
     
-    Future<void> _simulateDeviceVibration() async {
-        // Simulate the 3-pulse vibration that happens on device
-        setState(() {
-        });
-        
-        // Show user feedback
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Row(
-                    children: const [
-                        Icon(Icons.vibration, color: Colors.white),
-                        SizedBox(width: 8),
-                        Text('Device vibration: 3 pulses'),
-                    ],
-                ),
-                backgroundColor: Colors.orange,
-                duration: Duration(milliseconds: 1500),
-            ),
-        );
-        
-        // Reset after vibration simulation
-        await Future.delayed(Duration(milliseconds: 1500));
-        if (mounted) {
-            setState(() {
-            });
-        }
-    }
-    
     Future<void> toggleDataRequestMode() async {
         if (connectedDevice == null) {
             showError('No device connected');
@@ -1069,8 +1041,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         const SizedBox(height: 8),
                         Text(
                             _isManualMode 
-                                ? 'Manual Mode: Use buttons to request data'
-                                : 'Automatic Mode: Data requested every 10 seconds',
+                                ? 'Manual Mode: Device shows slow green blink (stable)'
+                                : 'Automatic Mode: Device may show stress indicators',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                 color: _isManualMode ? Colors.orange : Colors.green,
                                 fontWeight: FontWeight.w500,
@@ -1083,39 +1055,35 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             children: [
                                 ElevatedButton.icon(
                                     onPressed: () async {
-                                        print('Manual request: Temperature');
-                                        await _simulateDeviceVibration();
+                                        debugPrint('Manual request: Temperature');
                                         await _extendedService.requestTemperatureData();
-                                        // Add delay to prevent rapid commands
-                                        await Future.delayed(Duration(milliseconds: 1500));
+                                        // Show user feedback without continuous vibration
+                                        showSuccess('Temperature requested');
                                     },
                                     icon: Icon(Icons.thermostat),
                                     label: Text('Temperature'),
                                 ),
                                 ElevatedButton.icon(
                                     onPressed: () async {
-                                        print('Manual request: Sports');
-                                        await _simulateDeviceVibration();
+                                        debugPrint('Manual request: Sports');
                                         await _extendedService.requestSportsData();
-                                        // Add delay to prevent rapid commands
-                                        await Future.delayed(Duration(milliseconds: 1500));
+                                        showSuccess('Sports data requested');
                                     },
                                     icon: Icon(Icons.sports),
                                     label: Text('Sports'),
                                 ),
                                 ElevatedButton.icon(
                                     onPressed: () async {
-                                        print('Manual request: Device Info');
-                                        await _simulateDeviceVibration();
+                                        debugPrint('Manual request: Device Info');
                                         _extendedService.requestAllDeviceInfo();
+                                        showSuccess('Device info requested');
                                     },
                                     icon: Icon(Icons.info),
                                     label: Text('Device Info'),
                                 ),
                                 ElevatedButton.icon(
                                     onPressed: () async {
-                                        print('Manual request: SpO2');
-                                        await _simulateDeviceVibration();
+                                        debugPrint('Manual request: SpO2');
                                         measureSpO2();
                                     },
                                     icon: Icon(Icons.favorite),
@@ -1123,8 +1091,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                 ),
                                 ElevatedButton.icon(
                                     onPressed: () async {
-                                        print('Manual request: All Historical Data');
-                                        await _simulateDeviceVibration();
+                                        debugPrint('Manual request: All Historical Data');
                                         requestAllHistoricalData();
                                     },
                                     icon: Icon(Icons.history),
