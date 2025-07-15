@@ -1130,12 +1130,55 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                     icon: Icon(Icons.history),
                                     label: Text('All History'),
                                 ),
+                                ElevatedButton.icon(
+                                    onPressed: _isHeartRateServicePaused ? resumeHeartRateService : pauseHeartRateService,
+                                    icon: Icon(_isHeartRateServicePaused ? Icons.play_arrow : Icons.pause),
+                                    label: Text(_isHeartRateServicePaused ? 'Resume HR' : 'Pause HR'),
+                                    style: ElevatedButton.styleFrom(
+                                        backgroundColor: _isHeartRateServicePaused ? Colors.green : Colors.orange,
+                                    ),
+                                ),
                             ],
                         ),
                     ],
                 ),
             ),
         );
+    }
+
+    // Heart Rate Service Management for LED Status
+    Future<void> pauseHeartRateService() async {
+        if (connectedDevice == null) return;
+        
+        try {
+            debugPrint('⏸️ Pausing heart rate service...');
+            // Simulate pausing by stopping the subscription temporarily
+            _heartRateSubscription.pause();
+            setState(() {
+                _isHeartRateServicePaused = true;
+            });
+            showSuccess('Heart rate service paused');
+        } catch (e) {
+            debugPrint('Failed to pause heart rate service: $e');
+            showError('Failed to pause heart rate service');
+        }
+    }
+    
+    Future<void> resumeHeartRateService() async {
+        if (connectedDevice == null) return;
+        
+        try {
+            debugPrint('▶️ Resuming heart rate service...');
+            // Resume the subscription
+            _heartRateSubscription.resume();
+            setState(() {
+                _isHeartRateServicePaused = false;
+            });
+            showSuccess('Heart rate service resumed');
+        } catch (e) {
+            debugPrint('Failed to resume heart rate service: $e');
+            showError('Failed to resume heart rate service');
+        }
     }
 
     @override
