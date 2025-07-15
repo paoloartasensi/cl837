@@ -56,10 +56,6 @@ class ChileafExtendedService {
   SpO2Diagnostics? _spo2Diagnostics;
   BLEDiagnostics? _bleDiagnostics;
 
-  // Statistics tracking
-  int _accelerometerPacketCount = 0;
-  DateTime? _lastAccelerometerSummary;
-
   // Historical data streams
   final StreamController<List<ExerciseHistoryData>> _exerciseHistoryController = StreamController<List<ExerciseHistoryData>>.broadcast();
   final StreamController<HeartRateHistoryList> _hrHistoryListController = StreamController<HeartRateHistoryList>.broadcast();
@@ -209,12 +205,11 @@ class ChileafExtendedService {
     await Future.delayed(const Duration(milliseconds: 500));
     await _sendCommand(CommandBuilder.buildSportsDataRequest());
 
-    // Set up periodic data requests (reduced frequency to prevent device overload)
-    _dataRequestTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
+    // Set up periodic data requests
+    _dataRequestTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       try {
-        debugPrint('📡 Periodic request: Temperature + Sports data (30s interval)');
         await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-        await Future.delayed(const Duration(milliseconds: 1000));
+        await Future.delayed(const Duration(milliseconds: 300));
         await _sendCommand(CommandBuilder.buildSportsDataRequest());
       } catch (e) {
         debugPrint('Error in periodic data request: $e');
@@ -223,19 +218,19 @@ class ChileafExtendedService {
   }
 
   void _processIncomingData(List<int> data) {
+    debugPrint('🔄 _processIncomingData called with ${data.length} bytes');
     if (data.isEmpty) return;
 
     try {
+      // Log frame details for debugging
+      ChileafProtocol.logFrameDetails(data);
+
       // Handle different data formats
       if (ChileafProtocol.isValidChileafFrame(data)) {
         final command = ChileafProtocol.extractCommand(data);
         if (command == null) return;
 
-        // Only log non-accelerometer data to reduce noise
-        if (command != ChileafProtocol.commandAccelerometer) {
-          debugPrint('🔄 Processing ${ChileafProtocol.getCommandName(command)} (${data.length} bytes)');
-          ChileafProtocol.logFrameDetails(data);
-        }
+        debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
         
         // 🎯 TARGETED SpO2 SEARCH: Only search in packets that actually contain SpO2 data
         if (ChileafProtocol.commandContainsSpO2Data(command)) {
@@ -317,18 +312,8 @@ class ChileafExtendedService {
         _temperatureProcessor.processTemperatureData(data);
         break;
       case ChileafProtocol.commandAccelerometer:
-        // Process accelerometer data quietly (high frequency data)
+        debugPrint('📊 ACCELEROMETER DATA: Processing motion data (NOT SpO2)');
         _accelerometerProcessor.processAccelerometerData(data);
-        
-        // Track packets and show periodic summary
-        _accelerometerPacketCount++;
-        final now = DateTime.now();
-        if (_lastAccelerometerSummary == null || 
-            now.difference(_lastAccelerometerSummary!).inSeconds >= 10) {
-          debugPrint('📊 Accelerometer: $_accelerometerPacketCount packets in last 10s');
-          _accelerometerPacketCount = 0;
-          _lastAccelerometerSummary = now;
-        }
         break;
       case ChileafProtocol.commandHealthData:
         _healthProcessor.processHealthData(data);
@@ -341,23 +326,18 @@ class ChileafExtendedService {
         }
         break;
       case 0x21: // HR History List
-        debugPrint('💓📋 HR HISTORY LIST: Processing HR timestamp list (${data.length} bytes)');
+        debugPrint('💓 HR HISTORY LIST: Processing HR timestamp list');
         var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(Uint8List.fromList(data));
-        debugPrint('💓📋 HR History List processed: ${hrHistoryList.timestamps.length} timestamps');
         _hrHistoryListController.add(hrHistoryList);
         
         // Auto-request detailed data for each timestamp
-        debugPrint('💓🔄 Auto-requesting detailed HR data...');
         _requestDetailedHRData(hrHistoryList);
         break;
       case 0x22: // HR History Data
-        debugPrint('💓📊 HR HISTORY DATA: Processing detailed HR historical data (${data.length} bytes)');
+        debugPrint('💓 HR HISTORY DATA: Processing detailed HR historical data');
         var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(Uint8List.fromList(data));
         if (hrHistoryData != null) {
-          debugPrint('💓📊 HR History Data processed: ${hrHistoryData.entries.length} HR values');
           _hrHistoryDataController.add(hrHistoryData);
-        } else {
-          debugPrint('💓❌ Failed to process HR History Data');
         }
         break;
       case 0x23: // HR History End Signal
@@ -532,12 +512,10 @@ class ChileafExtendedService {
   
   /// Richiede la lista degli storici della frequenza cardiaca
   Future<void> requestHRHistoryList() async {
-    debugPrint('💓🔄 requestHRHistoryList() called');
+    debugPrint('💓 Requesting HR history list...');
     try {
       List<int> command = CommandBuilder.buildHRHistoryListRequest();
-      debugPrint('💓📤 Sending HR history list command: $command');
       await _sendCommand(command);
-      debugPrint('💓✅ HR history list command sent successfully');
     } catch (e) {
       debugPrint('❌ Failed to request HR history list: $e');
     }
@@ -559,127 +537,97 @@ class ChileafExtendedService {
   Future<void> _requestDetailedHRData(HeartRateHistoryList hrHistoryList) async {
     debugPrint('💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
     
-    // Limit requests to avoid overwhelming the device
-    int maxRequests = 5; // Only request first 5 valid timestamps
-    int requestCount = 0;
-    
-    for (int i = 0; i < hrHistoryList.timestamps.length && requestCount < maxRequests; i++) {
+    for (int i = 0; i < hrHistoryList.timestamps.length; i++) {
       try {
-        DateTime timestamp = hrHistoryList.timestamps[i];
-        
-        // Skip timestamps that are clearly corrupted
-        if (timestamp.year < 2020 || timestamp.year > 2030) {
-          debugPrint('💓⚠️ Skipping corrupted timestamp: $timestamp');
-          continue;
-        }
-        
-        await Future.delayed(Duration(milliseconds: 500 * requestCount)); // Longer delay between requests
-        await requestHRHistoryData(timestamp);
-        requestCount++;
-        debugPrint('💓 Requested HR data for timestamp $requestCount/$maxRequests: $timestamp');
+        await Future.delayed(Duration(milliseconds: 300 * i)); // Delay between requests
+        await requestHRHistoryData(hrHistoryList.timestamps[i]);
       } catch (e) {
-        debugPrint('❌ Failed to request HR data for timestamp $i: $e');
+        debugPrint('❌ Failed to request HR data for timestamp ${hrHistoryList.timestamps[i]}: $e');
       }
     }
-    
-    if (requestCount == 0) {
-      debugPrint('💓⚠️ No valid timestamps found - all timestamps appear to be corrupted');
-    } else {
-      debugPrint('💓✅ Requested HR data for $requestCount valid timestamps (limited to reduce device load)');
-    }
   }
 
-  // SpO2 Methods (CL837 Protocol v0.6 - Command 0x37)
-  
-  /// Abilita modalità SpO2 (0x37, 0x01)
-  Future<void> enableSpO2Mode() async {
-    debugPrint('🫁📡 Enabling SpO2 Mode...');
+  // ===== ROPE SKIPPING METHODS =====
+
+  /// Sets the rope skipping mode
+  Future<void> setRopeMode(RopeMode mode) async {
+    debugPrint('🪢⚙️ Setting rope mode to: ${mode.name}');
     try {
-      List<int> command = CommandBuilder.buildEnableSpO2Mode();
-      await _sendCommand(command);
-      debugPrint('🫁✅ SpO2 mode enabled successfully');
+      if (_txCharacteristic != null) {
+        var command = RopeSkippingProcessor.createSetModeCommand(mode);
+        var frame = ChileafProtocol.buildProtocolFrame(command);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Rope mode command sent successfully');
+      } else {
+        debugPrint('❌ TX characteristic not available for rope mode command');
+      }
     } catch (e) {
-      debugPrint('❌ Failed to enable SpO2 mode: $e');
+      debugPrint('❌ Failed to set rope mode: $e');
     }
   }
 
-  /// Disabilita modalità SpO2 (0x37, 0x00)
-  Future<void> disableSpO2Mode() async {
-    debugPrint('🫁📡 Disabling SpO2 Mode...');
+  /// Clears rope skipping data
+  Future<void> clearRopeData() async {
+    debugPrint('🪢🧹 Clearing rope skipping data...');
     try {
-      List<int> command = CommandBuilder.buildDisableSpO2Mode();
-      await _sendCommand(command);
-      debugPrint('🫁✅ SpO2 mode disabled successfully');
+      if (_txCharacteristic != null) {
+        var command = RopeSkippingProcessor.createClearDataCommand();
+        var frame = ChileafProtocol.buildProtocolFrame(command);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Rope clear data command sent successfully');
+      } else {
+        debugPrint('❌ TX characteristic not available for rope clear command');
+      }
     } catch (e) {
-      debugPrint('❌ Failed to disable SpO2 mode: $e');
+      debugPrint('❌ Failed to clear rope data: $e');
     }
   }
 
-  /// Richiede stato SpO2 (0x37, 0x02)
-  Future<void> inquireSpO2Status() async {
-    debugPrint('🫁📡 Inquiring SpO2 Status...');
-    try {
-      List<int> command = CommandBuilder.buildSpO2StatusInquiry();
-      await _sendCommand(command);
-      debugPrint('🫁✅ SpO2 status inquiry sent successfully');
-    } catch (e) {
-      debugPrint('❌ Failed to inquire SpO2 status: $e');
-    }
-  }
+  // ===== DEVICE INFO METHODS =====
 
-  // Convenience methods for bulk requests
-  
-  /// Richiede tutte le informazioni del dispositivo
-  Future<void> requestAllDeviceInfo() async {
-    debugPrint('📱 Requesting all device information...');
-    await requestDeviceInfo();
-    await requestBatteryLevel();
-    await requestFirmwareVersion();
-    await requestHardwareVersion();
-    await requestDeviceName();
-    await requestMacAddress();
-  }
-
-  /// Richiede tutti i dati storici disponibili
-  Future<void> requestAllHistoricalData() async {
-    debugPrint('📊 Requesting all historical data...');
-    await requestExerciseHistory();
-    await requestHRHistoryList();
-  }
-
-  // Device Info Request Methods
-  
-  /// Richiede informazioni del dispositivo
+  /// Richiede informazioni generali del dispositivo
   Future<void> requestDeviceInfo() async {
     debugPrint('📱 Requesting device info...');
     try {
-      List<int> command = CommandBuilder.buildDeviceInfoCommand();
-      await _sendCommand(command);
-      debugPrint('📱✅ Device info request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x01]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Device info request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for device info request');
+      }
     } catch (e) {
       debugPrint('❌ Failed to request device info: $e');
     }
   }
 
-  /// Richiede livello batteria
-  Future<void> requestBatteryLevel() async {
-    debugPrint('🔋 Requesting battery level...');
+  /// Richiede livello batteria esteso
+  Future<void> requestBatteryInfo() async {
+    debugPrint('🔋 Requesting battery info...');
     try {
-      List<int> command = CommandBuilder.buildBatteryLevelCommand();
-      await _sendCommand(command);
-      debugPrint('🔋✅ Battery level request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x02]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Battery info request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for battery info request');
+      }
     } catch (e) {
-      debugPrint('❌ Failed to request battery level: $e');
+      debugPrint('❌ Failed to request battery info: $e');
     }
   }
 
   /// Richiede versione firmware
   Future<void> requestFirmwareVersion() async {
-    debugPrint('⚡ Requesting firmware version...');
+    debugPrint('💾 Requesting firmware version...');
     try {
-      List<int> command = CommandBuilder.buildFirmwareVersionCommand();
-      await _sendCommand(command);
-      debugPrint('⚡✅ Firmware version request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x03]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Firmware version request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for firmware version request');
+      }
     } catch (e) {
       debugPrint('❌ Failed to request firmware version: $e');
     }
@@ -689,9 +637,13 @@ class ChileafExtendedService {
   Future<void> requestHardwareVersion() async {
     debugPrint('🔧 Requesting hardware version...');
     try {
-      List<int> command = CommandBuilder.buildHardwareVersionCommand();
-      await _sendCommand(command);
-      debugPrint('🔧✅ Hardware version request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x04]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Hardware version request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for hardware version request');
+      }
     } catch (e) {
       debugPrint('❌ Failed to request hardware version: $e');
     }
@@ -699,98 +651,79 @@ class ChileafExtendedService {
 
   /// Richiede nome dispositivo
   Future<void> requestDeviceName() async {
-    debugPrint('🏷️ Requesting device name...');
+    debugPrint('📱 Requesting device name...');
     try {
-      List<int> command = CommandBuilder.buildDeviceNameCommand();
-      await _sendCommand(command);
-      debugPrint('🏷️✅ Device name request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x05]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Device name request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for device name request');
+      }
     } catch (e) {
       debugPrint('❌ Failed to request device name: $e');
     }
   }
 
-  /// Richiede indirizzo MAC
+  /// Richiede MAC address
   Future<void> requestMacAddress() async {
-    debugPrint('🆔 Requesting MAC address...');
+    debugPrint('🔗 Requesting MAC address...');
     try {
-      List<int> command = CommandBuilder.buildMacAddressCommand();
-      await _sendCommand(command);
-      debugPrint('🆔✅ MAC address request sent');
+      if (_txCharacteristic != null) {
+        var frame = ChileafProtocol.buildProtocolFrame([0x06]);
+        await _txCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ MAC address request sent');
+      } else {
+        debugPrint('❌ TX characteristic not available for MAC address request');
+      }
     } catch (e) {
       debugPrint('❌ Failed to request MAC address: $e');
     }
   }
 
-  // Rope Skipping Methods (CL837 Protocol v0.6)
-  
-  /// Imposta modalità rope skipping (0x42)
-  Future<void> setRopeMode(int mode) async {
-    debugPrint('🪢📡 Setting rope mode to: $mode');
+  /// Richiede tutte le informazioni del dispositivo
+  Future<void> requestAllDeviceInfo() async {
+    debugPrint('📱🔋💾 Requesting all device information...');
     try {
-      List<int> command = CommandBuilder.buildSetRopeModeCommand(mode);
-      await _sendCommand(command);
-      debugPrint('🪢✅ Rope mode set successfully');
+      await requestDeviceInfo();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestBatteryInfo();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestFirmwareVersion();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestHardwareVersion();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestDeviceName();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      await requestMacAddress();
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      debugPrint('✅ All device info requests sent');
     } catch (e) {
-      debugPrint('❌ Failed to set rope mode: $e');
+      debugPrint('❌ Failed to request all device info: $e');
     }
   }
 
-  /// Cancella dati rope skipping (0x45)
-  Future<void> clearRopeData() async {
-    debugPrint('🪢🗑️ Clearing rope data...');
+  /// Richiede tutti i dati storici disponibili (sequenza completa)
+  Future<void> requestAllHistoricalData() async {
+    debugPrint('📚 Requesting all historical data...');
     try {
-      List<int> command = CommandBuilder.buildClearRopeDataCommand();
-      await _sendCommand(command);
-      debugPrint('🪢✅ Rope data cleared successfully');
+      // 1. Prima richiedi lo storico esercizi
+      await requestExerciseHistory();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // 2. Poi richiedi la lista HR
+      await requestHRHistoryList();
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Nota: I dati HR specifici verranno richiesti quando arriva la lista
     } catch (e) {
-      debugPrint('❌ Failed to clear rope data: $e');
+      debugPrint('❌ Failed to request all historical data: $e');
     }
-  }
-
-  /// Richiede stato rope skipping (0x40)
-  Future<void> requestRopeStatus() async {
-    debugPrint('🪢📡 Requesting rope status...');
-    try {
-      List<int> command = CommandBuilder.buildRopeStatusCommand();
-      await _sendCommand(command);
-      debugPrint('🪢✅ Rope status request sent');
-    } catch (e) {
-      debugPrint('❌ Failed to request rope status: $e');
-    }
-  }
-
-  /// Temporarily pause periodic requests to reduce device load
-  void pausePeriodicRequests() {
-    debugPrint('⏸️ Pausing periodic requests to reduce device load...');
-    _dataRequestTimer?.cancel();
-    _dataRequestTimer = null;
-  }
-  
-  /// Resume periodic requests after a pause
-  void resumePeriodicRequests() {
-    if (_dataRequestTimer != null) return; // Already running
-    
-    debugPrint('▶️ Resuming periodic requests...');
-    _dataRequestTimer = Timer.periodic(const Duration(seconds: 30), (timer) async {
-      try {
-        debugPrint('📡 Periodic request: Temperature + Sports data (30s interval)');
-        await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-        await Future.delayed(const Duration(milliseconds: 1000));
-        await _sendCommand(CommandBuilder.buildSportsDataRequest());
-      } catch (e) {
-        debugPrint('Error in periodic data request: $e');
-      }
-    });
-  }
-
-  // Manual request methods for accuracy testing
-  Future<void> requestTemperatureData() async {
-    debugPrint('🌡️ Manual request: Temperature data');
-    await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-  }
-  
-  Future<void> requestSportsData() async {
-    debugPrint('🏃 Manual request: Sports data');
-    await _sendCommand(CommandBuilder.buildSportsDataRequest());
   }
 }

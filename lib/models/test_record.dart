@@ -15,24 +15,12 @@ class TestRecord {
   });
 
   factory TestRecord.fromJson(Map<String, dynamic> json) {
-    // Handle timestamp parsing more robustly
-    DateTime timestamp;
-    final timestampValue = json['timestamp'];
-    if (timestampValue is String) {
-      timestamp = DateTime.parse(timestampValue);
-    } else if (timestampValue is DateTime) {
-      timestamp = timestampValue;
-    } else {
-      // Fallback to current time if timestamp is invalid
-      timestamp = DateTime.now();
-    }
-
     return TestRecord(
-      id: json['id']?.toString() ?? DateTime.now().millisecondsSinceEpoch.toString(),
-      timestamp: timestamp,
-      type: TestType.fromString(json['type']?.toString() ?? 'heartRate'),
-      data: Map<String, dynamic>.from(json['data'] ?? {}),
-      notes: json['notes']?.toString(),
+      id: json['id'],
+      timestamp: DateTime.parse(json['timestamp']),
+      type: TestType.fromString(json['type']),
+      data: Map<String, dynamic>.from(json['data']),
+      notes: json['notes'],
     );
   }
 

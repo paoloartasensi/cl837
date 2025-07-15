@@ -1,5 +1,3 @@
-// ignore_for_file: avoid_print, prefer_const_constructors
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -21,8 +19,6 @@ import 'widgets/historical_data_widget.dart';
 import 'widgets/rope_skipping_widget.dart';
 import 'widgets/device_info_widget.dart';
 import 'widgets/test_diary_widget.dart';
-import 'widgets/led_status_widget.dart';
-import 'services/test_diary_service.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -117,7 +113,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         _tabController = TabController(length: 3, vsync: this); // Sensori, Diario, Info
         _setupStreamSubscriptions();
         _initializeBluetooth();
-        _initializeTestDiary();
     }
 
     Future<void> _initializeBluetooth() async {
@@ -132,16 +127,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             Permission.bluetoothConnect.request(),
             Permission.location.request(),
         ]);
-    }
-
-    Future<void> _initializeTestDiary() async {
-        try {
-            // Temporaneamente forza la reinizializzazione per risolvere problemi di tipo
-            debugPrint('🔄 Force reinitializing diary to fix type issues...');
-            await TestDiaryService.instance.forceReinitialize();
-        } catch (e) {
-            debugPrint('❌ Error initializing test diary: $e');
-        }
     }
 
     Future<void> startScan() async {
@@ -234,29 +219,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             }
             
             _setupStreamSubscriptions();
-            
-            // Auto-request historical data after successful connection
-            // Manual mode: Don't auto-request historical data
-            // debugPrint('🎯 AUTO-REQUESTING HISTORICAL DATA after connection...');
-            // _autoRequestHistoricalDataAfterConnection();
-            
-            // Manual mode: Pause all periodic requests for manual control
-            debugPrint('📋 MANUAL MODE: Disabling automatic data requests for accuracy testing...');
-            _extendedService.pausePeriodicRequests();
-            
-            // 🎮 TOGGLE MODES: Uncomment line below to switch to AUTOMATIC mode
-            // _extendedService.resumePeriodicRequests(); // 🔄 AUTOMATIC MODE
-            
-            // Optional: Pause heart rate service to turn off green LED
-            // _heartRateService.pause(); // Uncomment to test LED off state
-            
-            // Force exit SpO2 mode to stop red LED and vibration
-            debugPrint('🚨 FORCE EXITING SpO2 MODE to stop red LED...');
-            await forceExitSpO2Mode();
-            
-            debugPrint('✅ MANUAL MODE ENABLED: Use buttons to request data manually for accuracy testing');
-            debugPrint('🔋 Device LED should now be stable GREEN (Heart Rate mode)');
-            debugPrint('🎯 AUTO-REQUEST METHOD CALLED successfully!');
             
             if (mounted) {
                 setState(() {
@@ -507,57 +469,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         );
     }
 
-    Future<void> requestExerciseHistory() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _extendedService.requestExerciseHistory();
-            showSuccess('Exercise history requested');
-        } catch (e) {
-            debugPrint('Failed to request exercise history: $e');
-            showError('Failed to request exercise history');
-        }
-    }
-
-    Future<void> requestHRHistory() async {
-        debugPrint('🔄 requestHRHistory() called from UI');
-        if (connectedDevice == null) {
-            debugPrint('❌ No device connected for HR History request');
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            debugPrint('📞 Calling _extendedService.requestHRHistoryList()...');
-            await _extendedService.requestHRHistoryList();
-            debugPrint('✅ HR History request sent successfully');
-            showSuccess('HR history requested');
-        } catch (e) {
-            debugPrint('❌ Failed to request HR history: $e');
-            showError('Failed to request HR history');
-        }
-    }
-
-    Future<void> requestAllHistoricalData() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _extendedService.requestAllHistoricalData();
-            showSuccess('All historical data requested');
-        } catch (e) {
-            debugPrint('Failed to request all historical data: $e');
-            showError('Failed to request all historical data');
-        }
-    }
-
-
-    // SpO2 measurement methods (CL837 Protocol v0.6 - Command 0x37)
+    // SpO2 measurement methods
     Future<void> measureSpO2() async {
         if (connectedDevice == null) {
             showError('No device connected');
@@ -565,28 +477,34 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
         
         try {
-            debugPrint('📡 Starting SpO2 measurement...');
-            await _extendedService.enableSpO2Mode();
+            setState(() {
+                // You can add an isMeasuring state variable if needed
+            });
+            
+            await _extendedService.measureSpO2();
             showSuccess('SpO2 measurement started');
         } catch (e) {
-            debugPrint('Failed to start SpO2 measurement: $e');
-            showError('Failed to start SpO2 measurement');
+            debugPrint('Failed to measure SpO2: $e');
+            showError('Failed to measure SpO2');
         }
     }
 
-    Future<void> exitSpO2Mode() async {
+    Future<void> measureSpO2Alternative() async {
         if (connectedDevice == null) {
             showError('No device connected');
             return;
         }
         
         try {
-            debugPrint('📡 Exiting SpO2 mode...');
-            await _extendedService.disableSpO2Mode();
-            showSuccess('Exited SpO2 mode');
+            setState(() {
+                // You can add an isMeasuring state variable if needed
+            });
+            
+            await _extendedService.measureSpO2Alternative();
+            showSuccess('Alternative SpO2 measurement started');
         } catch (e) {
-            debugPrint('Failed to exit SpO2 mode: $e');
-            showError('Failed to exit SpO2 mode');
+            debugPrint('Failed to measure SpO2 (alternative): $e');
+            showError('Failed to measure SpO2 (alternative)');
         }
     }
 
@@ -635,79 +553,51 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
-    // Manual control methods for accuracy testing
-    bool _isManualMode = true; // Track current mode
-    bool _isHeartRateServicePaused = false; // Track HR service state
-    
-    Future<void> toggleDataRequestMode() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        setState(() {
-            _isManualMode = !_isManualMode;
-        });
-        
-        if (_isManualMode) {
-            debugPrint('🎮 SWITCHING TO MANUAL MODE...');
-            _extendedService.pausePeriodicRequests();
-            showSuccess('Manual mode enabled - Use buttons to request data');
-        } else {
-            debugPrint('🔄 SWITCHING TO AUTOMATIC MODE...');
-            _extendedService.resumePeriodicRequests();
-            showSuccess('Automatic mode enabled - Data requests every 10s');
-        }
-    }
-
-    Future<void> manualRequestTemperature() async {
+    // Historical data methods
+    Future<void> requestExerciseHistory() async {
         if (connectedDevice == null) {
             showError('No device connected');
             return;
         }
         
         try {
-            debugPrint('🌡️ MANUAL REQUEST: Temperature data');
-            await _extendedService.requestTemperatureData();
-            showSuccess('Temperature data requested');
+            await _extendedService.requestExerciseHistory();
+            showSuccess('Exercise history requested');
         } catch (e) {
-            debugPrint('Failed to request temperature data: $e');
-            showError('Failed to request temperature data');
+            debugPrint('Failed to request exercise history: $e');
+            showError('Failed to request exercise history');
         }
     }
 
-    Future<void> manualRequestSportsData() async {
+    Future<void> requestHRHistory() async {
         if (connectedDevice == null) {
             showError('No device connected');
             return;
         }
         
         try {
-            debugPrint('🏃 MANUAL REQUEST: Sports data');
-            await _extendedService.requestSportsData();
-            showSuccess('Sports data requested');
+            await _extendedService.requestHRHistoryList();
+            showSuccess('HR history requested');
         } catch (e) {
-            debugPrint('Failed to request sports data: $e');
-            showError('Failed to request sports data');
+            debugPrint('Failed to request HR history: $e');
+            showError('Failed to request HR history');
         }
     }
 
-    Future<void> manualRequestDeviceInfo() async {
+    Future<void> requestAllHistoricalData() async {
         if (connectedDevice == null) {
             showError('No device connected');
             return;
         }
         
         try {
-            debugPrint('ℹ️ MANUAL REQUEST: Device info');
-            await _extendedService.requestDeviceInfo();
-            showSuccess('Device info requested');
+            await _extendedService.requestAllHistoricalData();
+            showSuccess('All historical data requested');
         } catch (e) {
-            debugPrint('Failed to request device info: $e');
-            showError('Failed to request device info');
+            debugPrint('Failed to request all historical data: $e');
+            showError('Failed to request all historical data');
         }
     }
-
 
     // Responsive layout methods
     Widget _buildGridLayout() {
@@ -733,19 +623,20 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
                             onMeasureSpO2: measureSpO2,
-                            onExitSpO2Mode: exitSpO2Mode,
+                            onMeasureSpO2Alternative: measureSpO2Alternative,
+                            onForceExit: forceExitSpO2Mode,
+                            onTestLED: testSpO2LED,
+                            onDiagnoseBLE: diagnoseBLE,
                         ),
-                        // Manual Control Panel
-                        _buildManualControlPanel(),
+                        TemperatureWidget(
+                            temperatureData: latestTemperatureData,
+                            isConnected: connectedDevice != null,
+                        ),
+                        SportsWidget(
+                            sportsData: latestSportsData,
+                            isConnected: connectedDevice != null,
+                        ),
                     ],
-                ),
-                const SizedBox(height: 16),
-                // LED Status Monitor Widget
-                LEDStatusWidget(
-                    isConnected: connectedDevice != null,
-                    isManualMode: _isManualMode,
-                    isSpO2Active: latestSpO2Data != null,
-                    isHeartRatePaused: _isHeartRateServicePaused, // Track HR service state
                 ),
                 const SizedBox(height: 16),
                 // Accelerometer a larghezza piena
@@ -760,25 +651,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestExercise: requestExerciseHistory,
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
-                ),
-                const SizedBox(height: 16),
-                // Temperature and Sports Data Row
-                Row(
-                    children: [
-                        Expanded(
-                            child: TemperatureWidget(
-                                temperatureData: latestTemperatureData,
-                                isConnected: connectedDevice != null,
-                            ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                            child: SportsWidget(
-                                sportsData: latestSportsData,
-                                isConnected: connectedDevice != null,
-                            ),
-                        ),
-                    ],
                 ),
             ],
         );
@@ -806,7 +678,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
                         onMeasureSpO2: measureSpO2,
-                        onExitSpO2Mode: exitSpO2Mode,
+                        onMeasureSpO2Alternative: measureSpO2Alternative,
+                        onForceExit: forceExitSpO2Mode,
+                        onTestLED: testSpO2LED,
+                        onDiagnoseBLE: diagnoseBLE,
                     ),
                 ]),
                 
@@ -823,16 +698,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         isConnected: connectedDevice != null,
                     ),
                 ]),
-                
-                const SizedBox(height: 16),
-                
-                // LED Status Monitor Widget
-                LEDStatusWidget(
-                    isConnected: connectedDevice != null,
-                    isManualMode: _isManualMode,
-                    isSpO2Active: latestSpO2Data != null,
-                    isHeartRatePaused: _isHeartRateServicePaused, // Track HR service state
-                ),
                 
                 const SizedBox(height: 16),
                 
@@ -988,166 +853,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         );
     }
 
-    // Manual Control Panel for accuracy testing
-    Widget _buildManualControlPanel() {
-        if (connectedDevice == null) return Container();
-        
-        return Card(
-            child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                        Row(
-                            children: [
-                                Icon(
-                                    Icons.lightbulb_outline,
-                                    size: 16,
-                                    color: _isManualMode ? Colors.green : Colors.red,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                    'Manual Control Panel',
-                                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                        fontWeight: FontWeight.bold,
-                                    ),
-                                ),
-                                const Spacer(),
-                                // LED Status Indicator
-                                Container(
-                                    width: 12,
-                                    height: 12,
-                                    decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        color: connectedDevice == null 
-                                            ? Colors.white
-                                            : (_isManualMode ? Colors.green : Colors.red),
-                                        border: Border.all(color: Colors.black, width: 1),
-                                    ),
-                                ),
-                                const SizedBox(width: 8),
-                                // Mode Toggle Button
-                                ElevatedButton.icon(
-                                    onPressed: toggleDataRequestMode,
-                                    icon: Icon(_isManualMode ? Icons.touch_app : Icons.refresh),
-                                    label: Text(_isManualMode ? 'MANUAL' : 'AUTO'),
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: _isManualMode ? Colors.orange : Colors.green,
-                                        foregroundColor: Colors.white,
-                                    ),
-                                ),
-                            ],
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                            _isManualMode 
-                                ? 'Manual Mode: Device shows slow green blink (stable)'
-                                : 'Automatic Mode: Device may show stress indicators',
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: _isManualMode ? Colors.orange : Colors.green,
-                                fontWeight: FontWeight.w500,
-                            ),
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                            spacing: 8.0,
-                            runSpacing: 8.0,
-                            children: [
-                                ElevatedButton.icon(
-                                    onPressed: () async {
-                                        debugPrint('Manual request: Temperature');
-                                        await _extendedService.requestTemperatureData();
-                                        // Show user feedback without continuous vibration
-                                        showSuccess('Temperature requested');
-                                    },
-                                    icon: Icon(Icons.thermostat),
-                                    label: Text('Temperature'),
-                                ),
-                                ElevatedButton.icon(
-                                    onPressed: () async {
-                                        debugPrint('Manual request: Sports');
-                                        await _extendedService.requestSportsData();
-                                        showSuccess('Sports data requested');
-                                    },
-                                    icon: Icon(Icons.sports),
-                                    label: Text('Sports'),
-                                ),
-                                ElevatedButton.icon(
-                                    onPressed: () async {
-                                        debugPrint('Manual request: Device Info');
-                                        _extendedService.requestAllDeviceInfo();
-                                        showSuccess('Device info requested');
-                                    },
-                                    icon: Icon(Icons.info),
-                                    label: Text('Device Info'),
-                                ),
-                                ElevatedButton.icon(
-                                    onPressed: () async {
-                                        debugPrint('Manual request: SpO2');
-                                        measureSpO2();
-                                    },
-                                    icon: Icon(Icons.favorite),
-                                    label: Text('SpO2'),
-                                ),
-                                ElevatedButton.icon(
-                                    onPressed: () async {
-                                        debugPrint('Manual request: All Historical Data');
-                                        requestAllHistoricalData();
-                                    },
-                                    icon: Icon(Icons.history),
-                                    label: Text('All History'),
-                                ),
-                                ElevatedButton.icon(
-                                    onPressed: _isHeartRateServicePaused ? resumeHeartRateService : pauseHeartRateService,
-                                    icon: Icon(_isHeartRateServicePaused ? Icons.play_arrow : Icons.pause),
-                                    label: Text(_isHeartRateServicePaused ? 'Resume HR' : 'Pause HR'),
-                                    style: ElevatedButton.styleFrom(
-                                        backgroundColor: _isHeartRateServicePaused ? Colors.green : Colors.orange,
-                                    ),
-                                ),
-                            ],
-                        ),
-                    ],
-                ),
-            ),
-        );
-    }
-
-    // Heart Rate Service Management for LED Status
-    Future<void> pauseHeartRateService() async {
-        if (connectedDevice == null) return;
-        
-        try {
-            debugPrint('⏸️ Pausing heart rate service...');
-            // Simulate pausing by stopping the subscription temporarily
-            _heartRateSubscription.pause();
-            setState(() {
-                _isHeartRateServicePaused = true;
-            });
-            showSuccess('Heart rate service paused');
-        } catch (e) {
-            debugPrint('Failed to pause heart rate service: $e');
-            showError('Failed to pause heart rate service');
-        }
-    }
-    
-    Future<void> resumeHeartRateService() async {
-        if (connectedDevice == null) return;
-        
-        try {
-            debugPrint('▶️ Resuming heart rate service...');
-            // Resume the subscription
-            _heartRateSubscription.resume();
-            setState(() {
-                _isHeartRateServicePaused = false;
-            });
-            showSuccess('Heart rate service resumed');
-        } catch (e) {
-            debugPrint('Failed to resume heart rate service: $e');
-            showError('Failed to resume heart rate service');
-        }
-    }
-
     @override
     Widget build(BuildContext context) {
         return Scaffold(
@@ -1175,7 +880,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             onPressed: disconnectDevice,
                             tooltip: 'Disconnect',
                         ),
-                    ]
+                    ],
                 ],
                 bottom: TabBar(
                     controller: _tabController,

@@ -23,10 +23,9 @@ class TestDiaryService {
     // Ordina per timestamp più recente
     records.sort((a, b) => b.timestamp.compareTo(a.timestamp));
     
-    final jsonList = records.map((r) => r.toJson()).toList();
-    await prefs.setString(_keyTestRecords, jsonEncode(jsonList));
-    
-    debugPrint('📝 Test record saved: ${record.summary}');
+    final jsonList = records.map((r) => r.toJson()).toList();      await prefs.setString(_keyTestRecords, jsonEncode(jsonList));
+      
+      debugPrint('📝 Test record saved: ${record.summary}');
   }
 
   /// Recupera tutti i record dal diario
@@ -38,31 +37,9 @@ class TestDiaryService {
     
     try {
       final jsonList = jsonDecode(jsonString) as List;
-      final records = <TestRecord>[];
-      
-      for (final json in jsonList) {
-        try {
-          // Ensure json is a Map
-          if (json is! Map<String, dynamic>) {
-            debugPrint('⚠️ Skipping invalid record format: ${json.runtimeType}');
-            continue;
-          }
-          
-          final record = TestRecord.fromJson(json);
-          records.add(record);
-        } catch (e) {
-          debugPrint('⚠️ Skipping corrupted record: $e - Record: $json');
-          // Skip corrupted records instead of failing completely
-        }
-      }
-      
-      debugPrint('📝 Loaded ${records.length} valid records from diary');
-      return records;
+      return jsonList.map((json) => TestRecord.fromJson(json)).toList();
     } catch (e) {
-      debugPrint('❌ Error loading test records, clearing corrupted data: $e');
-      debugPrint('❌ Corrupted data content: ${jsonString.substring(0, jsonString.length > 200 ? 200 : jsonString.length)}...');
-      // Clear corrupted data and return empty list
-      await prefs.remove(_keyTestRecords);
+      debugPrint('❌ Error loading test records: $e');
       return [];
     }
   }
@@ -262,87 +239,5 @@ class TestDiaryService {
     final prefs = await SharedPreferences.getInstance();
     final dateString = prefs.getString(_keyLastBackup);
     return dateString != null ? DateTime.parse(dateString) : null;
-  }
-
-  /// Inizializza dati di test se il diario è vuoto
-  Future<void> initializeSampleDataIfEmpty() async {
-    try {
-      final existingRecords = await getAllRecords();
-      if (existingRecords.isNotEmpty) {
-        debugPrint('📝 Diario già popolato con ${existingRecords.length} record');
-        
-        // Verifica se i record sono validi cercando di accedere alle loro proprietà
-        try {
-          for (final record in existingRecords) {
-            // Test se i dati sono accessibili senza errori di tipo
-            final _ = record.timestamp.toString();
-            // ignore: non_constant_identifier_names
-            final __ = record.summary;
-          }
-          debugPrint('📝 Tutti i record esistenti sono validi');
-          return;
-        } catch (e) {
-          debugPrint('❌ Detected corrupted records during validation: $e');
-          // Se i record esistenti sono corrotti, forza la reinizializzazione
-          await clearAndReinitialize();
-          return;
-        }
-      }
-      
-      debugPrint('📝 Inizializzando dati di test per il diario...');
-      await _createSampleData();
-    } catch (e) {
-      debugPrint('❌ Error initializing sample data: $e');
-      // In case of any error, try to clear and retry once
-      try {
-        await clearAndReinitialize();
-      } catch (e2) {
-        debugPrint('❌ Failed to recover from error: $e2');
-      }
-    }
-  }
-
-  /// Forza la pulizia e reinizializzazione (per debug)
-  Future<void> forceReinitialize() async {
-    debugPrint('🔄 Force reinitializing diary data...');
-    await clearAndReinitialize();
-  }
-
-  /// Pulisce dati corrotti e reinizializza il diario
-  Future<void> clearAndReinitialize() async {
-    debugPrint('🔄 Clearing corrupted diary data and reinitializing...');
-    await deleteAllRecords();
-    await _createSampleData(); // Use internal method to avoid recursion
-  }
-
-  /// Crea i dati di esempio (metodo interno)
-  Future<void> _createSampleData() async {
-    debugPrint('📝 Creando dati di test...');
-    
-    // Heart Rate test
-    final hrRecord = TestRecord.fromHeartRate(75, [800, 820, 810, 790]);
-    await saveTestRecord(hrRecord);
-    
-    // SpO2 test
-    final spo2Record = TestRecord.fromSpO2(98, 85, 'Good');
-    await saveTestRecord(spo2Record);
-    
-    // Temperature test
-    final tempRecord = TestRecord.fromTemperature(25.5, 32.1, 36.7);
-    await saveTestRecord(tempRecord);
-    
-    // Sports test
-    final sportsRecord = TestRecord.fromSports(1250, 85000, 42.5);
-    await saveTestRecord(sportsRecord);
-    
-    // Rope skipping test
-    final ropeRecord = TestRecord.fromRopeSkipping('Counter', 150, 120, 8.3);
-    await saveTestRecord(ropeRecord);
-    
-    // Battery test
-    final batteryRecord = TestRecord.fromBattery(85, false, 3850);
-    await saveTestRecord(batteryRecord);
-    
-    debugPrint('📝 Dati di test creati con successo');
   }
 }

@@ -342,85 +342,23 @@ class SportsData {
 
 ## 💡 LED Control
 
-### Device LED System Overview
-
-The CL837 has **two separate LED systems**:
-1. **Top Status LED**: Device state indicator
-2. **Bottom SpO2 LED**: Skin-contact sensor for SpO2 measurement
-
-### 🔋 Top Status LED (Device State)
-
-#### **When NOT Connected:**
-- **🟢→🔴→⚪ Cycling Pattern**: Boot/pairing sequence
-  - 🟢 Green: System initialization complete
-  - 🔴 Red: Hardware self-test
-  - ⚪ White: Discoverable/waiting for connection
-- **No Vibration** during boot sequence
-
-#### **When Connected:**
-- **🟢 Solid Green**: Heart rate monitoring active (normal operation)
-- **🔴 Solid Red**: SpO2 measurement mode active
-- **⚫ LED Off**: Heart rate service paused/disabled
-
-### 🩸 Bottom SpO2 LED (Sensor)
-
-#### **SpO2 Measurement Mode:**
-- **Red LED (660nm)**: Visible red light for SpO2 measurement
-- **Infrared (940nm)**: Invisible infrared light (not visible to eye)
-- **Safety**: Auto-off after 5 minutes maximum
-- **Vibration**: Periodic pulses during measurement
+### LED States
+- **OFF**: Normal operation
+- **RED**: SpO2 measurement active
+- **Blinking**: Various status indicators
 
 ### LED Control Commands
-
 ```dart
-// SpO2 Mode Control (affects both status LED and sensor LED)
-await sendCommand([0x37, 0x01]); // Enter SpO2 mode (red LEDs on)
-await sendCommand([0x37, 0x00]); // Exit SpO2 mode (red LEDs off)
+// SpO2 LED Control
+await sendCommand([0x37, 0x01]); // LED ON (Red) - SpO2 mode
+await sendCommand([0x37, 0x00]); // LED OFF - Exit SpO2 mode
 
-// Heart Rate Service Control (affects top status LED)
-_heartRateService.pause();  // Turn off green status LED
-_heartRateService.resume(); // Turn on green status LED
-
-// Force Exit SpO2 Mode (emergency LED control)
-Future<void> forceExitSpO2Mode() async {
-  for (int i = 0; i < 3; i++) {
-    await sendCommand([0x37, 0x00]);
-    await Future.delayed(Duration(milliseconds: 500));
-  }
+// Emergency LED OFF (if stuck)
+for (int i = 0; i < 3; i++) {
+  await sendCommand([0x37, 0x00]);
+  await Future.delayed(Duration(milliseconds: 500));
 }
 ```
-
-### Expected LED Behavior Sequence
-
-| Device State | Top Status LED | Vibration | Description |
-|-------------|---------------|-----------|-------------|
-| **Boot/Unpaired** | 🟢→🔴→⚪ (cycling) | None | Ready for pairing |
-| **App Scanning** | 🟢→🔴→⚪ (cycling) | None | Still discoverable |
-| **Connected (Normal)** | 🟢 (solid) | 3 pulses on data | Heart rate mode |
-| **SpO2 Measurement** | 🔴 (solid) | Periodic pulses | SpO2 active |
-| **Service Paused** | ⚫ (off) | None | Power saving mode |
-
-### Troubleshooting LED Issues
-
-```dart
-// If LED stuck cycling after connection
-await device.connect();
-await Future.delayed(Duration(seconds: 2)); // Wait for services
-await forceExitSpO2Mode(); // Ensure clean state
-
-// If red LED won't turn off
-await sendCommand([0x37, 0x00]); // Exit SpO2 mode
-_heartRateService.resume(); // Resume normal green LED
-
-// Check connection state
-if (device.connectionState == BluetoothConnectionState.connected) {
-  print('Device connected - LED should be stable');
-} else {
-  print('Device not connected - LED will cycle');
-}
-```
-
-**📖 Reference**: See `LED_SYSTEM_INFO.md` for detailed LED behavior documentation.
 
 ## 📋 Command Reference
 

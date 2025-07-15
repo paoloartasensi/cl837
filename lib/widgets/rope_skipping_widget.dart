@@ -119,7 +119,7 @@ class _RopeSkippingWidgetState extends State<RopeSkippingWidget> {
                 ),
                 const SizedBox(width: 16),
                 ElevatedButton(
-                  onPressed: () => widget.service.setRopeMode(_selectedMode.value),
+                  onPressed: () => widget.service.setRopeMode(_selectedMode),
                   child: const Text('Set Mode'),
                 ),
               ],

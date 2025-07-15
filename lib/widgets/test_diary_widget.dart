@@ -21,15 +21,8 @@ class _TestDiaryWidgetState extends State<TestDiaryWidget> {
   @override
   void initState() {
     super.initState();
-    _initializeDiary();
-  }
-
-  Future<void> _initializeDiary() async {
-    // Inizializza dati di test se necessario
-    await _diaryService.initializeSampleDataIfEmpty();
-    // Carica i record
-    await _loadRecords();
-    await _loadStatistics();
+    _loadRecords();
+    _loadStatistics();
   }
 
   Future<void> _loadRecords() async {
@@ -232,7 +225,7 @@ class _TestDiaryWidgetState extends State<TestDiaryWidget> {
             Text('Totale record: ${_statistics!['totalRecords']}'),
             Text('Media giornaliera: ${(_statistics!['averagePerDay'] as double).toStringAsFixed(1)}'),
             if (_statistics!['oldestRecord'] != null)
-              Text('Primo record: ${(_statistics!['oldestRecord'] as DateTime).toString().substring(0, 10)}'),
+              Text('Primo record: ${DateTime.parse(_statistics!['oldestRecord']).toString().substring(0, 10)}'),
             const SizedBox(height: 8),
             const Text('Per tipo:', style: TextStyle(fontWeight: FontWeight.bold)),
             ...(_statistics!['byType'] as Map<String, int>).entries.map(
@@ -246,47 +239,45 @@ class _TestDiaryWidgetState extends State<TestDiaryWidget> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Barra di ricerca
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Cerca nei record...',
-                  prefixIcon: Icon(Icons.search),
-                  border: OutlineInputBorder(),
-                ),
-                onChanged: (value) {
-                  setState(() => _searchQuery = value);
-                  _loadRecords();
-                },
-              ),
+    return Column(
+      children: [
+        // Barra di ricerca
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: TextField(
+            decoration: const InputDecoration(
+              labelText: 'Cerca nei record...',
+              prefixIcon: Icon(Icons.search),
+              border: OutlineInputBorder(),
             ),
-            
-            // Filtri per tipo
-            _buildFilterChips(),
-            
-            // Statistiche
-            _buildStatistics(),
-            
-            // Export/Import widget
-            const DiaryExportWidget(),
-            
-            // Header con conteggio e azioni
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Text(
-                    '📝 Diario Test (${_records.length} record)',
-                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const Spacer(),
-                  if (_records.isNotEmpty) ...[
-                    IconButton(
+            onChanged: (value) {
+              setState(() => _searchQuery = value);
+              _loadRecords();
+            },
+          ),
+        ),
+        
+        // Filtri per tipo
+        _buildFilterChips(),
+        
+        // Statistiche
+        _buildStatistics(),
+        
+        // Export/Import widget
+        const DiaryExportWidget(),
+        
+        // Header con conteggio e azioni
+        Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Text(
+                '📝 Diario Test (${_records.length} record)',
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const Spacer(),
+              if (_records.isNotEmpty) ...[
+                IconButton(
                   icon: const Icon(Icons.delete_sweep, color: Colors.red),
                   tooltip: 'Elimina tutti',
                   onPressed: _deleteAllRecords,
@@ -304,110 +295,102 @@ class _TestDiaryWidgetState extends State<TestDiaryWidget> {
           ),
         ),
         
-            // Lista dei record
-            _isLoading
-                ? const SizedBox(
-                    height: 200,
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                : _records.isEmpty
-                    ? SizedBox(
-                        height: 200,
-                        child: Center(
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey),
-                              const SizedBox(height: 16),
-                              Text(
-                                _searchQuery.isNotEmpty 
-                                    ? 'Nessun record trovato per "$_searchQuery"'
-                                    : 'Nessun test salvato nel diario',
-                                style: const TextStyle(fontSize: 16, color: Colors.grey),
-                              ),
-                              if (_searchQuery.isNotEmpty)
-                                TextButton(
-                                  onPressed: () {
-                                    setState(() => _searchQuery = '');
-                                    _loadRecords();
-                                  },
-                                  child: const Text('Mostra tutti'),
-                                ),
-                            ],
+        // Lista dei record
+        Expanded(
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _records.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.note_alt_outlined, size: 64, color: Colors.grey),
+                          const SizedBox(height: 16),
+                          Text(
+                            _searchQuery.isNotEmpty 
+                                ? 'Nessun record trovato per "$_searchQuery"'
+                                : 'Nessun test salvato nel diario',
+                            style: const TextStyle(fontSize: 16, color: Colors.grey),
                           ),
-                        ),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        physics: const NeverScrollableScrollPhysics(),
-                        itemCount: _records.length,
-                        itemBuilder: (context, index) {
-                          final record = _records[index];
-                          return Card(
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            child: ListTile(
-                              leading: CircleAvatar(
-                                backgroundColor: Colors.blue.shade100,
-                                child: Text(record.type.icon),
-                              ),
-                              title: Text(record.summary),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(record.formattedTimestamp),
-                                  if (record.notes != null) ...[
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      record.notes!,
-                                      style: const TextStyle(
-                                        fontStyle: FontStyle.italic,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
-                                  ],
-                                ],
-                              ),
-                              trailing: PopupMenuButton<String>(
-                                onSelected: (value) {
-                                  switch (value) {
-                                    case 'edit':
-                                      _editNotes(record);
-                                      break;
-                                    case 'delete':
-                                      _deleteRecord(record);
-                                      break;
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  const PopupMenuItem(
-                                    value: 'edit',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.edit, size: 20),
-                                        SizedBox(width: 8),
-                                        Text('Modifica note'),
-                                      ],
-                                    ),
-                                  ),
-                                  const PopupMenuItem(
-                                    value: 'delete',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.delete, size: 20, color: Colors.red),
-                                        SizedBox(width: 8),
-                                        Text('Elimina'),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
+                          if (_searchQuery.isNotEmpty)
+                            TextButton(
+                              onPressed: () {
+                                setState(() => _searchQuery = '');
+                                _loadRecords();
+                              },
+                              child: const Text('Mostra tutti'),
                             ),
-                          );
-                        },
+                        ],
                       ),
-          ],
+                    )
+                  : ListView.builder(
+                      itemCount: _records.length,
+                      itemBuilder: (context, index) {
+                        final record = _records[index];
+                        return Card(
+                          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                          child: ListTile(
+                            leading: CircleAvatar(
+                              backgroundColor: Colors.blue.shade100,
+                              child: Text(record.type.icon),
+                            ),
+                            title: Text(record.summary),
+                            subtitle: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(record.formattedTimestamp),
+                                if (record.notes != null) ...[
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    record.notes!,
+                                    style: const TextStyle(
+                                      fontStyle: FontStyle.italic,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            trailing: PopupMenuButton<String>(
+                              onSelected: (value) {
+                                switch (value) {
+                                  case 'edit':
+                                    _editNotes(record);
+                                    break;
+                                  case 'delete':
+                                    _deleteRecord(record);
+                                    break;
+                                }
+                              },
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'edit',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.edit, size: 20),
+                                      SizedBox(width: 8),
+                                      Text('Modifica note'),
+                                    ],
+                                  ),
+                                ),
+                                const PopupMenuItem(
+                                  value: 'delete',
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.delete, size: 20, color: Colors.red),
+                                      SizedBox(width: 8),
+                                      Text('Elimina'),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
         ),
-      ),
+      ],
     );
   }
 }
