@@ -21,6 +21,7 @@ import 'widgets/historical_data_widget.dart';
 import 'widgets/rope_skipping_widget.dart';
 import 'widgets/device_info_widget.dart';
 import 'widgets/test_diary_widget.dart';
+import 'widgets/led_status_widget.dart';
 import 'services/test_diary_service.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
@@ -636,6 +637,35 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
 
     // Manual control methods for accuracy testing
     bool _isManualMode = true; // Track current mode
+    bool _isHeartRateServicePaused = false; // Track HR service state
+    
+    Future<void> _simulateDeviceVibration() async {
+        // Simulate the 3-pulse vibration that happens on device
+        setState(() {
+        });
+        
+        // Show user feedback
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Row(
+                    children: const [
+                        Icon(Icons.vibration, color: Colors.white),
+                        SizedBox(width: 8),
+                        Text('Device vibration: 3 pulses'),
+                    ],
+                ),
+                backgroundColor: Colors.orange,
+                duration: Duration(milliseconds: 1500),
+            ),
+        );
+        
+        // Reset after vibration simulation
+        await Future.delayed(Duration(milliseconds: 1500));
+        if (mounted) {
+            setState(() {
+            });
+        }
+    }
     
     Future<void> toggleDataRequestMode() async {
         if (connectedDevice == null) {
@@ -738,6 +768,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     ],
                 ),
                 const SizedBox(height: 16),
+                // LED Status Monitor Widget
+                LEDStatusWidget(
+                    isConnected: connectedDevice != null,
+                    isManualMode: _isManualMode,
+                    isSpO2Active: latestSpO2Data != null,
+                    isHeartRatePaused: _isHeartRateServicePaused, // Track HR service state
+                ),
+                const SizedBox(height: 16),
                 // Accelerometer a larghezza piena
                 AccelerometerWidget(latestData: latestAccelData),
                 const SizedBox(height: 16),
@@ -813,6 +851,16 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         isConnected: connectedDevice != null,
                     ),
                 ]),
+                
+                const SizedBox(height: 16),
+                
+                // LED Status Monitor Widget
+                LEDStatusWidget(
+                    isConnected: connectedDevice != null,
+                    isManualMode: _isManualMode,
+                    isSpO2Active: latestSpO2Data != null,
+                    isHeartRatePaused: _isHeartRateServicePaused, // Track HR service state
+                ),
                 
                 const SizedBox(height: 16),
                 
@@ -980,6 +1028,12 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     children: [
                         Row(
                             children: [
+                                Icon(
+                                    Icons.lightbulb_outline,
+                                    size: 16,
+                                    color: _isManualMode ? Colors.green : Colors.red,
+                                ),
+                                const SizedBox(width: 4),
                                 Text(
                                     'Manual Control Panel',
                                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
@@ -987,6 +1041,19 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                     ),
                                 ),
                                 const Spacer(),
+                                // LED Status Indicator
+                                Container(
+                                    width: 12,
+                                    height: 12,
+                                    decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: connectedDevice == null 
+                                            ? Colors.white
+                                            : (_isManualMode ? Colors.green : Colors.red),
+                                        border: Border.all(color: Colors.black, width: 1),
+                                    ),
+                                ),
+                                const SizedBox(width: 8),
                                 // Mode Toggle Button
                                 ElevatedButton.icon(
                                     onPressed: toggleDataRequestMode,
@@ -1017,6 +1084,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                 ElevatedButton.icon(
                                     onPressed: () async {
                                         print('Manual request: Temperature');
+                                        await _simulateDeviceVibration();
                                         await _extendedService.requestTemperatureData();
                                         // Add delay to prevent rapid commands
                                         await Future.delayed(Duration(milliseconds: 1500));
@@ -1027,6 +1095,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                 ElevatedButton.icon(
                                     onPressed: () async {
                                         print('Manual request: Sports');
+                                        await _simulateDeviceVibration();
                                         await _extendedService.requestSportsData();
                                         // Add delay to prevent rapid commands
                                         await Future.delayed(Duration(milliseconds: 1500));
@@ -1035,24 +1104,27 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                     label: Text('Sports'),
                                 ),
                                 ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                         print('Manual request: Device Info');
+                                        await _simulateDeviceVibration();
                                         _extendedService.requestAllDeviceInfo();
                                     },
                                     icon: Icon(Icons.info),
                                     label: Text('Device Info'),
                                 ),
                                 ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                         print('Manual request: SpO2');
+                                        await _simulateDeviceVibration();
                                         measureSpO2();
                                     },
                                     icon: Icon(Icons.favorite),
                                     label: Text('SpO2'),
                                 ),
                                 ElevatedButton.icon(
-                                    onPressed: () {
+                                    onPressed: () async {
                                         print('Manual request: All Historical Data');
+                                        await _simulateDeviceVibration();
                                         requestAllHistoricalData();
                                     },
                                     icon: Icon(Icons.history),
