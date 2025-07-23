@@ -7,6 +7,10 @@ import '../../models/spo2_data.dart';
 class SpO2Processor {
   final StreamController<SpO2Data> _spo2DataController = StreamController<SpO2Data>.broadcast();
   
+  // Throttling for verbose SpO2 analysis logs
+  int _enhancedAnalysisCount = 0;
+  static const int _analysisLogThrottle = 5; // Log every 5th analysis
+  
   /// Stream dei dati SpO2 processati
   Stream<SpO2Data> get spo2DataStream => _spo2DataController.stream;
 
@@ -93,7 +97,7 @@ class SpO2Processor {
   }
 
   /// Ricerca aggressiva SpO2 nel comando 0x75 (dati sanitari estesi)
-  void aggressiveSpO2Search(List<int> data) {
+  void aggressiveSpO2Search(List<int> data, {bool shouldLogDetails = true}) {
     // 🎯 FOCUSED SEARCH: Only search for SpO2 in command 0x75 (extended health data)
     // This prevents false positives from accelerometer data (command 0x0C)
     
@@ -103,12 +107,16 @@ class SpO2Processor {
     
     final command = data[2];
     if (command != 0x75) {
-      debugPrint('🚫 Skipping aggressive SpO2 search for command 0x${command.toRadixString(16)} (not 0x75)');
+      if (shouldLogDetails) {
+        debugPrint('🚫 Skipping aggressive SpO2 search for command 0x${command.toRadixString(16)} (not 0x75)');
+      }
       return; // Only search in extended health data
     }
     
-    debugPrint('🔍 FOCUSED SpO2 search in command 0x75 (extended health data)');
-    debugPrint('🔍 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    if (shouldLogDetails) {
+      debugPrint('🔍 FOCUSED SpO2 search in command 0x75 (extended health data)');
+      debugPrint('🔍 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    }
     
     // 🎯 NEW DISCOVERY: SpO2 value is at index 1 (second byte) in health data packets!
     // Check index 1 first as primary SpO2 location
@@ -117,8 +125,10 @@ class SpO2Processor {
       
       // SpO2 values are typically 85-100% (more restrictive range)
       if (spo2Candidate >= 85 && spo2Candidate <= 100) {
-        debugPrint('🎯 PRIMARY SpO2 DETECTION: Found $spo2Candidate% at index 1 in health data');
-        debugPrint('🎯 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        if (shouldLogDetails) {
+          debugPrint('🎯 PRIMARY SpO2 DETECTION: Found $spo2Candidate% at index 1 in health data');
+          debugPrint('🎯 Packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        }
         
         // This is very likely real SpO2 data from health command!
         final spo2Data = SpO2Data(
@@ -129,7 +139,9 @@ class SpO2Processor {
         );
         
         _spo2DataController.add(spo2Data);
-        debugPrint('🎯 REAL SpO2 DATA from health packet index 1: $spo2Candidate% pushed to UI');
+        if (shouldLogDetails) {
+          debugPrint('🎯 REAL SpO2 DATA from health packet index 1: $spo2Candidate% pushed to UI');
+        }
         return; // Found primary SpO2, no need to search further
       }
     }
@@ -140,8 +152,10 @@ class SpO2Processor {
       
       // Look for reasonable SpO2 values (85-100%)
       if (byte >= 85 && byte <= 100) {
-        debugPrint('🔍 SECONDARY SpO2 SEARCH in health data: Found $byte% at position $i');
-        debugPrint('🔍 Context: ${i > 0 ? '0x${data[i-1].toRadixString(16)}' : 'start'} -> 0x${byte.toRadixString(16)} -> ${i < data.length-1 ? '0x${data[i+1].toRadixString(16)}' : 'end'}');
+        if (shouldLogDetails) {
+          debugPrint('🔍 SECONDARY SpO2 SEARCH in health data: Found $byte% at position $i');
+          debugPrint('🔍 Context: ${i > 0 ? '0x${data[i-1].toRadixString(16)}' : 'start'} -> 0x${byte.toRadixString(16)} -> ${i < data.length-1 ? '0x${data[i+1].toRadixString(16)}' : 'end'}');
+        }
         
         // Only use secondary if we didn't find primary SpO2 at index 1
         if (i != 1) {
@@ -153,7 +167,9 @@ class SpO2Processor {
           );
           
           _spo2DataController.add(spo2Data);
-          debugPrint('🔍 SECONDARY SpO2 DATA from health data: $byte% from position $i');
+          if (shouldLogDetails) {
+            debugPrint('🔍 SECONDARY SpO2 DATA from health data: $byte% from position $i');
+          }
           return; // Only process first match
         }
       }
@@ -161,46 +177,66 @@ class SpO2Processor {
   }
 
   /// Analisi migliorata SpO2 - distingue tra stato e valori effettivi
-  void enhancedSpO2Analysis(List<int> data) {
+  void enhancedSpO2Analysis(List<int> data, {bool shouldLogDetails = true}) {
     final command = data[2];
+    _enhancedAnalysisCount++;
     
-    debugPrint('🔬 ENHANCED SpO2 ANALYSIS for command 0x${command.toRadixString(16)}');
-    debugPrint('🔬 Full packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    // Only log detailed analysis occasionally to reduce spam or when explicitly requested
+    bool doLogDetails = shouldLogDetails && (_enhancedAnalysisCount % _analysisLogThrottle == 0);
+    
+    if (doLogDetails) {
+      debugPrint('🔬 ENHANCED SpO2 ANALYSIS for command 0x${command.toRadixString(16)} (analysis #$_enhancedAnalysisCount)');
+      debugPrint('🔬 Full packet: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    }
     
     // Analyze each command type that might contain SpO2 data
     switch (command) {
       case 0x37: // Official SpO2 command
-        debugPrint('🔬 Command 0x37 Analysis (Official SpO2 per SDK):');
+        if (doLogDetails) {
+          debugPrint('🔬 Command 0x37 Analysis (Official SpO2 per SDK):');
+        }
         if (data.length >= 7) {
-          debugPrint('🔬   SDK says: "Returns SPO2 %, posture, signal quality, wear status"');
-          debugPrint('🔬   Byte 3 (supposed SpO2): ${data[3]} (0x${data[3].toRadixString(16)})');
-          debugPrint('🔬   Byte 4 (posture): ${data[4]} (0x${data[4].toRadixString(16)})');
-          debugPrint('🔬   Byte 5 (signal): ${data[5]} (0x${data[5].toRadixString(16)})');
-          debugPrint('🔬   Byte 6 (wearing): ${data[6]} (0x${data[6].toRadixString(16)})');
+          if (doLogDetails) {
+            debugPrint('🔬   SDK says: "Returns SPO2 %, posture, signal quality, wear status"');
+            debugPrint('🔬   Byte 3 (supposed SpO2): ${data[3]} (0x${data[3].toRadixString(16)})');
+            debugPrint('🔬   Byte 4 (posture): ${data[4]} (0x${data[4].toRadixString(16)})');
+            debugPrint('🔬   Byte 5 (signal): ${data[5]} (0x${data[5].toRadixString(16)})');
+            debugPrint('🔬   Byte 6 (wearing): ${data[6]} (0x${data[6].toRadixString(16)})');
+          }
           
           // According to SDK, this SHOULD be actual SpO2 percentage
           if (data[3] <= 1) {
-            debugPrint('🔬   ❌ MISMATCH: SDK says this should be SpO2%, but we get ${data[3]}');
-            debugPrint('🔬   ❌ Device might not be ready or needs different approach');
+            if (doLogDetails) {
+              debugPrint('🔬   ❌ MISMATCH: SDK says this should be SpO2%, but we get ${data[3]}');
+              debugPrint('🔬   ❌ Device might not be ready or needs different approach');
+            }
           } else if (data[3] >= 70 && data[3] <= 100) {
-            debugPrint('🔬   ✅ MATCHES SDK: This should be ACTUAL SpO2 data: ${data[3]}%');
+            if (doLogDetails) {
+              debugPrint('🔬   ✅ MATCHES SDK: This should be ACTUAL SpO2 data: ${data[3]}%');
+            }
           } else {
-            debugPrint('🔬   ⚠️  Unexpected value: ${data[3]} (not typical for SpO2)');
+            if (doLogDetails) {
+              debugPrint('🔬   ⚠️  Unexpected value: ${data[3]} (not typical for SpO2)');
+            }
           }
         }
         break;
         
       case 0x75: // Extended health data - NOT in official SDK but contains SpO2-like values!
-        debugPrint('🔬 Command 0x75 Analysis (NOT in official SDK - discovered):');
-        debugPrint('🔬   This packet is ${data.length} bytes long');
-        debugPrint('🔬   HYPOTHESIS: Real SpO2 data might be embedded here!');
+        if (doLogDetails) {
+          debugPrint('🔬 Command 0x75 Analysis (NOT in official SDK - discovered):');
+          debugPrint('🔬   This packet is ${data.length} bytes long');
+          debugPrint('🔬   HYPOTHESIS: Real SpO2 data might be embedded here!');
+        }
         
         // Search for SpO2 patterns in health data according to aggressive search findings
         List<int> candidateValues = [];
         for (int i = 3; i < data.length - 3; i++) {
           if (data[i] >= 80 && data[i] <= 100) {
             candidateValues.add(data[i]);
-            debugPrint('🔬   Candidate SpO2 at position $i: ${data[i]}% (context: 0x${data[i-1].toRadixString(16)} 0x${data[i+1].toRadixString(16)})');
+            if (doLogDetails) {
+              debugPrint('🔬   Candidate SpO2 at position $i: ${data[i]}% (context: 0x${data[i-1].toRadixString(16)} 0x${data[i+1].toRadixString(16)})');
+            }
           }
         }
         
@@ -212,7 +248,9 @@ class SpO2Processor {
             orElse: () => candidateValues.first
           );
           
-          debugPrint('🔬   🎯 SELECTING $preferredValue% as likely SpO2 from health data');
+          if (doLogDetails) {
+            debugPrint('🔬   🎯 SELECTING $preferredValue% as likely SpO2 from health data');
+          }
           
           // Push this as a real SpO2 reading
           final spo2Data = SpO2Data(
@@ -223,15 +261,19 @@ class SpO2Processor {
           );
           
           _spo2DataController.add(spo2Data);
-          debugPrint('🔬   📤 REAL SpO2 DATA from 0x75 pushed to UI: $preferredValue%');
+          if (doLogDetails) {
+            debugPrint('🔬   📤 REAL SpO2 DATA from 0x75 pushed to UI: $preferredValue%');
+          }
         }
         break;
         
       case 0x0C: // Accelerometer - NEVER contains SpO2 data!
-        debugPrint('🔬 Command 0x0C (Accelerometer per SDK):');
-        debugPrint('🔬   SDK says: "Acceleration 3D raw data, every 250ms"');
-        debugPrint('🔬   ❌ IMPORTANT: This is MOTION DATA, not SpO2! Any 80-100 values are acceleration readings!');
-        debugPrint('🔬   ❌ Acceleration values that happen to be 80-100 should NOT be interpreted as SpO2');
+        if (doLogDetails) {
+          debugPrint('🔬 Command 0x0C (Accelerometer per SDK):');
+          debugPrint('🔬   SDK says: "Acceleration 3D raw data, every 250ms"');
+          debugPrint('🔬   ❌ IMPORTANT: This is MOTION DATA, not SpO2! Any 80-100 values are acceleration readings!');
+          debugPrint('🔬   ❌ Acceleration values that happen to be 80-100 should NOT be interpreted as SpO2');
+        }
         break;
     }
   }

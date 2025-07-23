@@ -45,6 +45,18 @@ class ChileafExtendedService {
   Timer? _dataRequestTimer;
   Timer? _spo2Timer;
 
+  // Log throttling for high-frequency data
+  int _accelerometerLogCount = 0;
+  int _totalDataPackets = 0;
+  int _healthDataLogCount = 0;
+  int _temperatureLogCount = 0;
+  int _sportsLogCount = 0;
+  
+  // Debug logging control
+  final bool _enableVerboseLogging = false; // Set to true for detailed logs
+  final int _logThrottleInterval = 50; // Log every N packets
+  final int _healthDataThrottleInterval = 10; // Log health data every N occurrences
+
   // Data Processors
   late final SpO2Processor _spo2Processor;
   late final TemperatureProcessor _temperatureProcessor;
@@ -218,31 +230,60 @@ class ChileafExtendedService {
   }
 
   void _processIncomingData(List<int> data) {
-    debugPrint('🔄 _processIncomingData called with ${data.length} bytes');
+    _totalDataPackets++;
+    
     if (data.isEmpty) return;
 
     try {
-      // Log frame details for debugging
-      ChileafProtocol.logFrameDetails(data);
+      // Get command first to determine logging strategy
+      final command = ChileafProtocol.extractCommand(data);
+      
+      // Smart throttling based on command type
+      bool shouldLog = _enableVerboseLogging || _shouldLogCommand(command);
+      
+      if (shouldLog) {
+        if (_enableVerboseLogging) {
+          debugPrint('🔄 _processIncomingData called with ${data.length} bytes');
+        } else {
+          debugPrint('🔄 Processed $_totalDataPackets packets (batch update)');
+        }
+      }
+
+      // Log frame details with smart filtering
+      bool isHighFrequency = command == ChileafProtocol.commandAccelerometer || 
+                            command == ChileafProtocol.commandHealthData ||
+                            command == ChileafProtocol.commandTemperature ||
+                            command == ChileafProtocol.commandSports;
+      
+      if (_enableVerboseLogging || !isHighFrequency || shouldLog) {
+        ChileafProtocol.logFrameDetails(data);
+      }
 
       // Handle different data formats
       if (ChileafProtocol.isValidChileafFrame(data)) {
-        final command = ChileafProtocol.extractCommand(data);
         if (command == null) return;
 
-        debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
+        // Only log command processing with smart throttling
+        if (_enableVerboseLogging || !isHighFrequency || shouldLog) {
+          debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
+        }
         
-        // 🎯 TARGETED SpO2 SEARCH: Only search in packets that actually contain SpO2 data
+        // 🎯 TARGETED SpO2 SEARCH: Only search in packets that actually contain SpO2 data with throttling
         if (ChileafProtocol.commandContainsSpO2Data(command)) {
           if (command == ChileafProtocol.commandHealthData) {
-            debugPrint('🎯 Command 0x75: Searching for REAL SpO2 data');
-            _spo2Processor.aggressiveSpO2Search(data);
+            _healthDataLogCount++;
+            bool shouldLogSpO2Search = _enableVerboseLogging || _healthDataLogCount % _healthDataThrottleInterval == 0;
+            if (shouldLogSpO2Search) {
+              debugPrint('🎯 Command 0x75: Searching for REAL SpO2 data (analysis #$_healthDataLogCount)');
+            }
+            _spo2Processor.aggressiveSpO2Search(data, shouldLogDetails: shouldLogSpO2Search);
           }
-          _spo2Processor.enhancedSpO2Analysis(data);
+          // Pass the shouldLog flag to the enhanced analysis to control verbose output
+          _spo2Processor.enhancedSpO2Analysis(data, shouldLogDetails: shouldLog);
         }
         
         // Route to appropriate processor
-        _routeToProcessor(command, data);
+        _routeToProcessor(command, data, shouldLog);
       } else if (data.length >= 4) {
         // Try to detect data patterns without strict protocol
         _tryDetectDataPatterns(data);
@@ -252,7 +293,27 @@ class ChileafExtendedService {
     }
   }
 
-  void _routeToProcessor(int command, List<int> data) {
+  bool _shouldLogCommand(int? command) {
+    if (command == null) return false;
+    
+    switch (command) {
+      case ChileafProtocol.commandAccelerometer:
+        return _totalDataPackets % _logThrottleInterval == 0;
+      case ChileafProtocol.commandHealthData:
+        _healthDataLogCount++;
+        return _healthDataLogCount % _healthDataThrottleInterval == 0;
+      case ChileafProtocol.commandTemperature:
+        _temperatureLogCount++;
+        return _temperatureLogCount % 5 == 0; // Log every 5th temperature reading
+      case ChileafProtocol.commandSports:
+        _sportsLogCount++;
+        return _sportsLogCount % 5 == 0; // Log every 5th sports data
+      default:
+        return true; // Always log other commands (device info, etc.)
+    }
+  }
+
+  void _routeToProcessor(int command, List<int> data, bool shouldLog) {
     switch (command) {
       case 0x01: // Device Info
         debugPrint('📱 DEVICE INFO: Processing device information');
@@ -297,6 +358,10 @@ class ChileafExtendedService {
         }
         break;
       case ChileafProtocol.commandSports:
+        // Only log sports data occasionally to reduce spam
+        if (shouldLog) {
+          debugPrint('🏃 SPORTS DATA: Processing sports statistics (#$_sportsLogCount)');
+        }
         _sportsProcessor.processSportsData(data);
         
         // Auto-save to diary if enabled (rimuovi per ora)
@@ -309,13 +374,25 @@ class ChileafExtendedService {
         _spo2Processor.processSPO2Data(data);
         break;
       case ChileafProtocol.commandTemperature:
+        // Only log temperature data occasionally to reduce spam
+        if (shouldLog) {
+          debugPrint('🌡️ TEMPERATURE DATA: Processing temperature reading (#$_temperatureLogCount)');
+        }
         _temperatureProcessor.processTemperatureData(data);
         break;
       case ChileafProtocol.commandAccelerometer:
-        debugPrint('📊 ACCELEROMETER DATA: Processing motion data (NOT SpO2)');
+        // Only log accelerometer data occasionally to reduce spam
+        if (shouldLog) {
+          _accelerometerLogCount++;
+          debugPrint('📊 ACCELEROMETER DATA: Processing motion data (batch #$_accelerometerLogCount)');
+        }
         _accelerometerProcessor.processAccelerometerData(data);
         break;
       case ChileafProtocol.commandHealthData:
+        // Only log health data occasionally to reduce spam
+        if (shouldLog) {
+          debugPrint('🏥 HEALTH DATA: Processing extended health data (#$_healthDataLogCount)');
+        }
         _healthProcessor.processHealthData(data);
         break;
       case 0x16: // Exercise History

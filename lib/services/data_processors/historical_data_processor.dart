@@ -60,9 +60,57 @@ class HistoricalDataProcessor {
   /// Formato: 7 giorni di dati con UTC + steps + calories per ogni giorno
   static List<ExerciseHistoryData> processExerciseHistory(Uint8List data) {
     debugPrint('📊 Processing Exercise History (0x16) - ${data.length} bytes');
+    debugPrint('📊 Raw Exercise History data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
     List<ExerciseHistoryData> history = [];
     
     try {
+      // PROVA FORMATO ALTERNATIVO: Come i sports data (3 bytes per campo)
+      debugPrint('📊 TESTING ALTERNATIVE FORMAT (3 bytes per field):');
+      if (data.length >= 15) {
+        const int altEntrySize = 10; // 4 UTC + 3 steps + 3 calories
+        int altNumEntries = (data.length - 3) ~/ altEntrySize;
+        debugPrint('📊 Alternative format: $altNumEntries entries with 10 bytes each');
+        
+        for (int i = 0; i < altNumEntries && i < 7; i++) {
+          int offset = 3 + (i * altEntrySize);
+          if (offset + altEntrySize <= data.length) {
+            // UTC (4 bytes)
+            int utc = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
+            // Steps (3 bytes)
+            int steps = data[offset + 4] | (data[offset + 5] << 8) | (data[offset + 6] << 16);
+            // Calories (3 bytes)
+            int calories = data[offset + 7] | (data[offset + 8] << 8) | (data[offset + 9] << 16);
+            
+            if (utc != 0xFFFFFFFF && utc > 0 && utc < 2147483647) {
+              DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+              double caloriesKcal = calories / 10.0;
+              debugPrint('📊 ALT Entry $i: UTC=$utc (${date.toString().substring(0, 10)}), steps=$steps, calories=$caloriesKcal kcal');
+              
+              // Se i valori sembrano ragionevoli, usa questo formato
+              if (steps < 100000 && calories < 10000) {
+                ExerciseHistoryData entry = ExerciseHistoryData(
+                  date: date,
+                  steps: steps,
+                  calories: caloriesKcal,
+                );
+                history.add(entry);
+                debugPrint('📊 ✅ Alternative format looks good! Using this entry.');
+                continue;
+              }
+            }
+          }
+        }
+      }
+      
+      // Se il formato alternativo ha funzionato, ritorna
+      if (history.isNotEmpty) {
+        debugPrint('📊 Alternative format successful! Returning ${history.length} entries');
+        return history;
+      }
+      
+      // Altrimenti prova formato originale (4 bytes per campo)
+      debugPrint('📊 Alternative format failed, trying original format (4 bytes per field):');
+      
       // Ogni entry dovrebbe essere 12 bytes: 4 UTC + 4 steps + 4 calories
       const int entrySize = 12;
       int numEntries = (data.length - 3) ~/ entrySize; // -3 per header (0xFF, length, command)
