@@ -133,10 +133,16 @@ private void sendCommand(final byte cmd, final int... values) {
 | **😴 Sleep History** | `0x05` | `getHistoryOfSleep()` | 2 | Storia del sonno | History |
 | **💓 HR Record List** | `0x21` (33) | `getHistoryOfHRRecord()` | 0 | Lista record HR | History |
 | **💓 HR Data Detail** | `0x22` (34) | `getHistoryOfHRData(stamp)` | 1 + 4 bytes | Dati HR dettagliati | History |
+| **💓 HR Data Extended** | `0x23` (35) | `getHistoryOfHRDataExtended(stamp)` | 1 + 4 bytes | Dati HR estesi | History |
 | **📊 RR Record List** | `0x24` (36) | `getHistoryOfRRRecord()` | - | Lista record RR | History |
 | **📊 RR Data Detail** | `0x25` (37) | `getHistoryOfRRData(stamp)` | 1 + 4 bytes | Dati RR dettagliati | History |
 | **🚶 Interval Steps** | `0x40` (64) | `getIntervalSteps()` | 0 | Passi intervallari | Activity |
+| **🪂 Rope Free Mode** | `0x41` (65) | `getRopeSkippingFree()` | 0 | Corda modalità libera | RopeSkipping |
 | **👆 Single Tap** | `0x42` (66) | `getSingleTapRecords()` | 0 | Record singoli tap | Activity |
+| **🔢 Rope Counter Mode** | `0x43` (67) | `getRopeSkippingCounter()` | 0 | Corda modalità contatore | RopeSkipping |
+| **⏱️ Rope Timer Mode** | `0x44` (68) | `getRopeSkippingTimer()` | 0 | Corda modalità timer | RopeSkipping |
+| **🪂 Rope Current Data** | `0x45` (69) | `getCurrentRopeData()` | 0 | Dati corda correnti | RopeSkipping |
+| **🌡️ Temperature** | `0x38` (56) | `getTemperature()` | 0 | Temperatura (ambient/wrist/body) | Health |
 | **💗 HR Status Get** | `0x46` (70) | `getHeartRateStatus()` | 0 | Status HR | HeartRate |
 | **💗 HR Status Set** | `0x46` (70) | `setHeartRateStatus(...)` | 1,min,max,goal | Imposta limiti HR | HeartRate |
 | **📝 Single Record** | `0x49` (73) | `getHistoryOfSingleRecord(stamp)` | 4 bytes | Record singolo | History |
