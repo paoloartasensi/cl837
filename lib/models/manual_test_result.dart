@@ -63,11 +63,14 @@ class ManualTestResult {
       data: {
         'rmssd': hrvData.rmssd.isFinite ? hrvData.rmssd : 0.0,
         'sdnn': hrvData.sdnn.isFinite ? hrvData.sdnn : 0.0,
+        'pNN50': hrvData.pNN50.isFinite ? hrvData.pNN50 : 0.0,
         'meanRR': hrvData.meanRR.isFinite ? hrvData.meanRR : 0.0,
         'medianRR': hrvData.medianRR.isFinite ? hrvData.medianRR : 0.0,
         'estimatedHR': hrvData.estimatedHR.isFinite ? hrvData.estimatedHR : 0.0,
         'rrIntervalsCount': hrvData.rrIntervals.length,
-        'rrIntervals': hrvData.rrIntervals.where((interval) => interval.isFinite).toList(), // Filtra valori non finiti
+        'rrIntervals': hrvData.rrIntervals.where((interval) => interval.isFinite).toList(),
+        'samplingDurationSeconds': hrvData.samplingDurationSeconds,
+        'samplingDurationFormatted': hrvData.samplingDurationFormatted,
         'hrvQuality': hrvData.hrvQuality,
         'hrCategory': hrvData.hrCategory,
         'isDataValid': hrvData.isDataValid,
