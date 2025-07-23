@@ -12,6 +12,7 @@ class DataPersistenceManager {
   
   static const int _maxHrvSessions = 100;
   static const int _maxBatteryEntries = 1000;
+// Max test results to store
   
   SharedPreferences? _prefs;
   

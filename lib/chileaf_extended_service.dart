@@ -45,6 +45,13 @@ class ChileafExtendedService {
   StreamSubscription? _dataSubscription;
   Timer? _dataRequestTimer;
   Timer? _spo2Timer;
+  
+  // Callback per notificare il completamento automatico del test SpO2
+  void Function()? _onSpO2AutoComplete;
+  
+  void setSpO2AutoCompleteCallback(void Function()? callback) {
+    _onSpO2AutoComplete = callback;
+  }
 
   // Log throttling for high-frequency data
   int _accelerometerLogCount = 0;
@@ -452,48 +459,79 @@ class ChileafExtendedService {
   }
 
   // Public SpO2 measurement methods using OFFICIAL commands
-  /// Avvia la misurazione SpO2 usando il comando ufficiale 0x37 dal SDK
+  /// Avvia la misurazione SpO2 con timer di 30 secondi (standard)
   Future<void> measureSpO2() async {
-    debugPrint('🩸 Starting SpO2 measurement using OFFICIAL command...');
+    debugPrint('🩸 Starting SpO2 measurement with 30-second standard duration...');
     
     try {
-      // Usa il comando ufficiale 0x37 con mode=1 (start measurement)
+      // Prima prova con il comando ufficiale
       var officialCommand = OfficialChileafCommands.setBloodOxygen(1);
       
-      debugPrint('🔍 Official SpO2 command details:');
+      debugPrint('🔍 Trying official SpO2 command first:');
       debugPrint('   Command: 0x37 mode=1 (setBloodOxygen from WearManager.java)');
       debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
-      debugPrint('   Using same command as official Android app');
       
       await _sendCommand(officialCommand);
-      debugPrint('✅ Official SpO2 measurement command sent');
+      debugPrint('✅ Official SpO2 command sent');
+      
+      // Aggiungi un piccolo delay
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Se il comando ufficiale non accende il LED, usa il formato che funziona nel test
+      debugPrint('🔄 Ensuring LED activation with alternative format...');
+      await _sendCommand(CommandBuilder.buildEnableSpO2Mode());
+      debugPrint('🚨 LED SpO2 activation command sent - LED rosso acceso per 30 secondi');
+      
+      // Timer automatico di 30 secondi per spegnere il LED (standard SpO2)
+      _spo2Timer?.cancel();
+      _spo2Timer = Timer(const Duration(seconds: 30), () async {
+        debugPrint('⏰ 30-second SpO2 measurement completed - auto-stopping');
+        await stopSpO2Measurement();
+        
+        // Notifica il completamento automatico al widget
+        if (_onSpO2AutoComplete != null) {
+          _onSpO2AutoComplete!();
+        }
+      });
       
     } catch (e) {
-      debugPrint('❌ Failed to start SpO2 measurement with official command: $e');
+      debugPrint('❌ Failed to start SpO2 measurement: $e');
       // Fallback to diagnostics if available
-      if (_spo2Diagnostics != null) {
+      try {
         debugPrint('🔄 Fallback to diagnostics method...');
-        await _spo2Diagnostics!.performSpO2Measurement();
-      } else {
-        throw Exception('SpO2 measurement failed and diagnostics not initialized');
+        await _sendCommand(CommandBuilder.buildEnableSpO2Mode());
+      } catch (fallbackError) {
+        throw Exception('SpO2 measurement failed: $e, Fallback failed: $fallbackError');
       }
     }
   }
 
-  /// Ferma la misurazione SpO2 usando il comando ufficiale
+  /// Ferma la misurazione SpO2 e spegne il LED rosso
   Future<void> stopSpO2Measurement() async {
-    debugPrint('🛑 Stopping SpO2 measurement using OFFICIAL command...');
+    debugPrint('🛑 Stopping SpO2 measurement and turning off LED...');
     
     try {
-      // Usa il comando ufficiale 0x37 con mode=0 (stop measurement)  
+      // Cancella il timer automatico se attivo
+      _spo2Timer?.cancel();
+      _spo2Timer = null;
+      
+      // Prima usa il comando ufficiale per fermare
       var officialCommand = OfficialChileafCommands.setBloodOxygen(0);
       
-      debugPrint('🔍 Official SpO2 stop command details:');
+      debugPrint('🔍 Official SpO2 stop command:');
       debugPrint('   Command: 0x37 mode=0 (stop setBloodOxygen)');
       debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
       
       await _sendCommand(officialCommand);
       debugPrint('✅ Official SpO2 stop command sent');
+      
+      // Aggiungi un piccolo delay
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Assicurati che il LED sia spento usando il comando che funziona
+      debugPrint('🔄 Ensuring LED deactivation...');
+      await _sendCommand(CommandBuilder.buildDisableSpO2Mode());
+      debugPrint('🚨 LED SpO2 deactivation command sent - LED rosso spento, torna verde');
       
     } catch (e) {
       debugPrint('❌ Failed to stop SpO2 measurement with official command: $e');

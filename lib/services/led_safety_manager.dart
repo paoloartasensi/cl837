@@ -5,8 +5,8 @@ import 'dart:async';
 
 /// LED Safety and Performance Manager for SpO2 measurements
 class LedSafetyManager {
-  static const Duration _maxContinuousLedTime = Duration(minutes: 5);
-  static const Duration _ledCooldownTime = Duration(minutes: 2);
+  static const Duration _maxContinuousLedTime = Duration(seconds: 30); // Standard SpO2 measurement time
+  static const Duration _ledCooldownTime = Duration(seconds: 10); // Reduced cooldown
   static const Duration _batteryCheckInterval = Duration(seconds: 30);
   static const int _minBatteryLevel = 20;
   
@@ -54,14 +54,14 @@ class LedSafetyManager {
     // Start safety timer
     _safetyTimer = Timer(_maxContinuousLedTime, () {
       debugPrint('🔴 LED safety timeout - forcing stop');
-      _onWarning('LED automatically stopped for safety after ${_maxContinuousLedTime.inMinutes} minutes.');
+      _onWarning('SpO2 measurement completed automatically after ${_maxContinuousLedTime.inSeconds} seconds (standard duration).');
       _emergencyStop();
     });
     
     // Start battery monitoring
     _batteryCheckTimer = Timer.periodic(_batteryCheckInterval, (_) => _checkBatteryLevel());
     
-    debugPrint('🔴 LED safety started - max time: ${_maxContinuousLedTime.inMinutes} minutes');
+    debugPrint('🔴 LED safety started - max time: ${_maxContinuousLedTime.inSeconds} seconds (standard SpO2 duration)');
     return true;
   }
 

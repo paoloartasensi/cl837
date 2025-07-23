@@ -12,7 +12,6 @@ import 'widgets/battery_widget.dart';
 import 'widgets/heart_rate_widget.dart';
 import 'widgets/hrv_session_widget.dart';
 import 'widgets/spo2_widget.dart';
-import 'widgets/temperature_widget.dart';
 import 'widgets/manual_tests_widget.dart';
 import 'widgets/historical_data_widget.dart';
 import 'widgets/device_info_widget.dart';
@@ -601,19 +600,31 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         SpO2Widget(
                             spo2Data: latestSpO2Data,
                             isConnected: connectedDevice != null,
-                            onMeasureSpO2: measureSpO2,
-                            onMeasureSpO2Alternative: measureSpO2Alternative,
-                            onForceExit: forceExitSpO2Mode,
-                            onTestLED: testSpO2LED,
-                            onDiagnoseBLE: diagnoseBLE,
                         ),
-                        TemperatureWidget(
-                            temperatureData: latestTemperatureData,
-                            isConnected: connectedDevice != null,
+                        AccelerometerWidget(
+                            latestData: latestAccelData,
                         ),
-                        ManualTestsWidget(
-                            extendedService: _extendedService,
-                            hrvService: _hrvSessionService,
+                        // Spazio per un futuro widget dei risultati test
+                        Container(
+                            height: 150,
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                                color: Colors.grey.shade50,
+                            ),
+                            child: const Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                    Icon(Icons.analytics, size: 32, color: Colors.grey),
+                                    SizedBox(height: 8),
+                                    Text('Risultati Test',
+                                        style: TextStyle(fontWeight: FontWeight.w600)),
+                                    Text('I risultati dei test manuali\nappaiono qui',
+                                        textAlign: TextAlign.center,
+                                        style: TextStyle(color: Colors.grey)),
+                                ],
+                            ),
                         ),
                     ],
                 ),
@@ -656,50 +667,21 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     SpO2Widget(
                         spo2Data: latestSpO2Data,
                         isConnected: connectedDevice != null,
-                        onMeasureSpO2: measureSpO2,
-                        onMeasureSpO2Alternative: measureSpO2Alternative,
-                        onForceExit: forceExitSpO2Mode,
-                        onTestLED: testSpO2LED,
-                        onDiagnoseBLE: diagnoseBLE,
                     ),
                 ]),
                 
                 const SizedBox(height: 8),
                 
-                // Riga inferiore - Temperatura e attività
+                // Riga inferiore - Accelerometro e dati storici
                 _buildResponsiveRow([
-                    TemperatureWidget(
-                        temperatureData: latestTemperatureData,
-                        isConnected: connectedDevice != null,
+                    AccelerometerWidget(
+                        latestData: latestAccelData,
                     ),
-                    ManualTestsWidget(
-                        extendedService: _extendedService,
-                        hrvService: _hrvSessionService,
+                    HistoricalDataWidget(
+                        isConnected: connectedDevice != null,
+                        onRequestAllHistory: requestAllHistoricalData,
                     ),
                 ]),
-                
-                const SizedBox(height: 16),
-                
-                // Accelerometer a larghezza piena
-                AccelerometerWidget(latestData: latestAccelData),
-                
-                const SizedBox(height: 16),
-                
-                // Historical Data Widget
-                HistoricalDataWidget(
-                    exerciseHistory: latestExerciseHistory,
-                    hrHistoryList: latestHRHistoryList,
-                    hrHistoryData: latestHRHistoryData,
-                    isConnected: connectedDevice != null,
-                    onRequestExercise: requestExerciseHistory,
-                    onRequestHRHistory: requestHRHistory,
-                    onRequestAllHistory: requestAllHistoricalData,
-                ),
-                
-                const SizedBox(height: 16),
-                
-                // Device Information Widget
-                DeviceInfoWidget(service: _extendedService),
             ],
         );
     }
@@ -816,9 +798,42 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 children: [
                     DeviceInfoWidget(service: _extendedService),
                     const SizedBox(height: 16),
-                    ManualTestsWidget(
-                        extendedService: _extendedService,
-                        hrvService: _hrvSessionService,
+                    // Info aggiuntive sul dispositivo e la connessione
+                    Card(
+                        child: Padding(
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                    const Text(
+                                        'Stato Connessione',
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                        ),
+                                    ),
+                                    const SizedBox(height: 12),
+                                    Row(
+                                        children: [
+                                            Icon(
+                                                connectedDevice != null ? Icons.bluetooth_connected : Icons.bluetooth_disabled,
+                                                color: connectedDevice != null ? Colors.green : Colors.red,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                                connectedDevice != null 
+                                                    ? 'Connesso a ${connectedDevice!.platformName}'
+                                                    : 'Dispositivo non connesso',
+                                                style: TextStyle(
+                                                    color: connectedDevice != null ? Colors.green : Colors.red,
+                                                    fontWeight: FontWeight.w500,
+                                                ),
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ),
                     ),
                 ],
             ),
