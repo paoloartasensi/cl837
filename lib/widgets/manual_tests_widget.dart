@@ -141,8 +141,8 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           // Raccogli RR intervals durante il test HRV
           _collectedRRIntervals.addAll(heartRateData.rrIntervals!);
           
-          // Se abbiamo abbastanza dati (almeno 10 RR intervals), calcola HRV
-          if (_collectedRRIntervals.length >= 10) {
+          // Se abbiamo abbastanza dati per 1 minuto (almeno 50 RR intervals per essere sicuri)
+          if (_collectedRRIntervals.length >= 50) {
             debugPrint('🎯 Processing ${_collectedRRIntervals.length} collected RR intervals for HRV calculation');
             
             // Crea HRVData dai RR intervals raccolti
@@ -1136,10 +1136,10 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           
           final hrvResult = _manualHRVResult;
           String message;
-          if (hrvResult != null && _collectedRRIntervals.length >= 10) {
-            message = 'Test HRV completato! RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)}ms (${hrvResult.hrvQuality}) - ${_collectedRRIntervals.length} RR intervals raccolti';
+          if (hrvResult != null && _collectedRRIntervals.length >= 50) {
+            message = 'Test HRV completato! RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)}ms (${hrvResult.hrvQuality}) - ${_collectedRRIntervals.length} RR intervals (${hrvResult.samplingDurationFormatted})';
           } else if (_collectedRRIntervals.isNotEmpty) {
-            message = 'Test HRV completato con ${_collectedRRIntervals.length} RR intervals (minimo 10 richiesto). Riprova per risultati più accurati.';
+            message = 'Test HRV completato con ${_collectedRRIntervals.length} RR intervals (minimo 50 per 1 minuto clinico). Continua per risultati più accurati.';
           } else {
             message = 'Test HRV completato ma nessun RR interval ricevuto dal main stream. Verifica il posizionamento del dispositivo e riprova.';
           }
@@ -1149,7 +1149,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(message),
-                backgroundColor: (hrvResult != null && _collectedRRIntervals.length >= 10) ? Colors.green : Colors.orange,
+                backgroundColor: (hrvResult != null && _collectedRRIntervals.length >= 50) ? Colors.green : Colors.orange,
                 duration: const Duration(seconds: 6),
                 action: hrvResult != null ? SnackBarAction(
                   label: 'Dettagli',

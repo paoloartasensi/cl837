@@ -74,9 +74,13 @@ class HRVData {
   }
 
   String get hrvQuality {
+    // Debug per capire il problema della durata
+    double duration = samplingDurationSeconds;
+    
     // Prima verifica la durata del campionamento (standard clinico)
-    if (samplingDurationSeconds < 60) {
-      return 'Insufficient Duration'; // Meno di 1 minuto non è valido
+    if (duration < 60) {
+      // Aggiungo debug per capire perché la durata è insufficiente
+      return 'Insufficient Duration (${duration.toStringAsFixed(1)}s)'; 
     }
     
     // Basato sugli standard Elite HRV (media ~59.3ms RMSSD)
@@ -125,6 +129,7 @@ class HRVData {
   // Durata del campionamento in secondi
   double get samplingDurationSeconds {
     if (rrIntervals.isEmpty) return 0;
+    // La durata totale è la somma di tutti gli RR intervals (tempo totale del campionamento)
     double totalMs = rrIntervals.reduce((a, b) => a + b);
     return totalMs / 1000.0;
   }
@@ -143,7 +148,7 @@ class HRVData {
 
   @override
   String toString() {
-    return 'HRV - RMSSD: ${rmssd.toStringAsFixed(1)}ms ($hrvQuality), SDNN: ${sdnn.toStringAsFixed(1)}ms, pNN50: ${pNN50.toStringAsFixed(1)}%, Mean RR: ${meanRR.toStringAsFixed(1)}ms (${estimatedHR.toStringAsFixed(0)} BPM)';
+    return 'HRV - RMSSD: ${rmssd.toStringAsFixed(1)}ms ($hrvQuality), SDNN: ${sdnn.toStringAsFixed(1)}ms, pNN50: ${pNN50.toStringAsFixed(1)}%, Mean RR: ${meanRR.toStringAsFixed(1)}ms (${estimatedHR.toStringAsFixed(0)} BPM), Duration: $samplingDurationFormatted (${rrIntervals.length} intervals)';
   }
 }
 
