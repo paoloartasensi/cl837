@@ -122,9 +122,9 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       
       String message;
       if (spo2Value != null && spo2Value > 0) {
-        message = 'SpO2 completato automaticamente! Risultato: $spo2Value% (qualità segnale: $quality/15)';
+        message = 'SpO2 WatchFit completato! Risultato: $spo2Value% (qualità segnale: $quality/15)';
       } else {
-        message = 'SpO2 completato automaticamente dopo 30 sec. Controlla i risultati sopra.';
+        message = 'SpO2 WatchFit completato dopo 50 sec o con 2 letture valide. Controlla i risultati sopra.';
       }
       
       ScaffoldMessenger.of(context).showSnackBar(

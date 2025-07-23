@@ -464,6 +464,12 @@ class ChileafExtendedService {
 
   // Public SpO2 measurement methods using OFFICIAL commands
   /// Avvia la misurazione SpO2 WatchFit: 50 secondi max, interruzione anticipata con 2 letture valide consecutive
+  /// Criteri per lettura valida WatchFit:
+  /// - Segnale qualità > 15 (eccellente)
+  /// - Postura corretta (correctWristPosture = true)
+  /// - Dispositivo indossato (isWearing = true)
+  /// - SpO2 nel range 70-100%
+  /// Se 2 letture consecutive soddisfano questi criteri, il test termina automaticamente
   Future<void> measureSpO2() async {
     debugPrint('🩸 Starting WatchFit SpO2 measurement: 50s max, early termination with 2 valid consecutive readings...');
     
