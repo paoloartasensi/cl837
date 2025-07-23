@@ -25,6 +25,7 @@ import 'services/data_processors/device_info_processor.dart';
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
 import 'services/ble_protocol/command_builder.dart';
+import 'services/ble_protocol/official_commands_complete.dart';
 
 // Diagnostics
 import 'services/diagnostics/spo2_diagnostics.dart';
@@ -450,12 +451,53 @@ class ChileafExtendedService {
     _healthProcessor.processRRIntervalsForHRV(heartRateData);
   }
 
-  // Public SpO2 measurement methods
+  // Public SpO2 measurement methods using OFFICIAL commands
+  /// Avvia la misurazione SpO2 usando il comando ufficiale 0x37 dal SDK
   Future<void> measureSpO2() async {
-    if (_spo2Diagnostics != null) {
-      await _spo2Diagnostics!.performSpO2Measurement();
-    } else {
-      throw Exception('SpO2 diagnostics not initialized');
+    debugPrint('🩸 Starting SpO2 measurement using OFFICIAL command...');
+    
+    try {
+      // Usa il comando ufficiale 0x37 con mode=1 (start measurement)
+      var officialCommand = OfficialChileafCommands.setBloodOxygen(1);
+      
+      debugPrint('🔍 Official SpO2 command details:');
+      debugPrint('   Command: 0x37 mode=1 (setBloodOxygen from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   Using same command as official Android app');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official SpO2 measurement command sent');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to start SpO2 measurement with official command: $e');
+      // Fallback to diagnostics if available
+      if (_spo2Diagnostics != null) {
+        debugPrint('🔄 Fallback to diagnostics method...');
+        await _spo2Diagnostics!.performSpO2Measurement();
+      } else {
+        throw Exception('SpO2 measurement failed and diagnostics not initialized');
+      }
+    }
+  }
+
+  /// Ferma la misurazione SpO2 usando il comando ufficiale
+  Future<void> stopSpO2Measurement() async {
+    debugPrint('🛑 Stopping SpO2 measurement using OFFICIAL command...');
+    
+    try {
+      // Usa il comando ufficiale 0x37 con mode=0 (stop measurement)  
+      var officialCommand = OfficialChileafCommands.setBloodOxygen(0);
+      
+      debugPrint('🔍 Official SpO2 stop command details:');
+      debugPrint('   Command: 0x37 mode=0 (stop setBloodOxygen)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official SpO2 stop command sent');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to stop SpO2 measurement with official command: $e');
+      rethrow;
     }
   }
 
@@ -571,7 +613,7 @@ class ChileafExtendedService {
 
   // === Historical Data Methods ===
   
-  /// Richiede lo storico degli esercizi degli ultimi 7 giorni
+  /// Richiede lo storico degli esercizi usando comando ufficiale 0x16
   Future<void> requestExerciseHistory() async {
     // Check if we should throttle historical data requests
     if (_shouldThrottleHistoricalRequests('exercise')) {
@@ -579,16 +621,23 @@ class ChileafExtendedService {
       return;
     }
     
-    debugPrint('📊 Requesting 7 days exercise history...');
+    debugPrint('📊 Requesting exercise history using OFFICIAL command...');
     try {
-      List<int> command = CommandBuilder.buildExerciseHistoryRequest();
-      await _sendCommand(command);
+      // Usa il comando ufficiale 0x16 dal SDK (getHistoryOfSport)
+      var officialCommand = OfficialChileafCommands.getHistoryOfSport();
+      
+      debugPrint('🔍 Official exercise history command:');
+      debugPrint('   Command: 0x16 (getHistoryOfSport from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
       
       // Update throttling counters
       _exerciseHistoryRequests++;
       _lastExerciseHistoryRequest = DateTime.now();
+      debugPrint('✅ Official exercise history command sent');
     } catch (e) {
-      debugPrint('❌ Failed to request exercise history: $e');
+      debugPrint('❌ Failed to request exercise history with official command: $e');
     }
   }
   
@@ -670,20 +719,26 @@ class ChileafExtendedService {
     
     // Filter out obviously invalid timestamps to prevent infinite loops
     List<DateTime> validTimestamps = [];
+    final now = DateTime.now();
     final earliestValid = DateTime(2020, 1, 1); // Nothing before 2020
-    final latestValid = DateTime(2030, 12, 31); // Nothing after 2030
+    final latestValid = now.add(const Duration(days: 30)); // Nothing more than 30 days in the future
     
     for (var timestamp in hrHistoryList.timestamps) {
       if (timestamp.isAfter(earliestValid) && timestamp.isBefore(latestValid)) {
         validTimestamps.add(timestamp);
-      } else {
-        debugPrint('💓 ⚠️ Skipping invalid HR timestamp: $timestamp (outside valid range)');
       }
+      // SILENT - no logging for invalid timestamps to reduce spam
     }
     
     if (validTimestamps.isEmpty) {
-      debugPrint('💓 ⚠️ No valid HR timestamps found, skipping detailed requests');
+      debugPrint('💓 ⚠️ No valid HR timestamps found (all outside range 2020-${latestValid.year}), skipping detailed requests');
       return;
+    }
+    
+    // Count invalid timestamps for summary
+    int invalidCount = hrHistoryList.timestamps.length - validTimestamps.length;
+    if (invalidCount > 0) {
+      debugPrint('💓 📊 Filtered out $invalidCount invalid timestamps (keeping ${validTimestamps.length} valid)');
     }
     
     // Limit to max 5 detailed requests to prevent spam
@@ -738,34 +793,33 @@ class ChileafExtendedService {
     }
   }
 
-  /// Clears all historical data from device memory
-  /// This will attempt to clear Exercise History, HR History, and other stored data
+  /// Clears all historical data from device memory using OFFICIAL reset command
+  /// Utilizza il comando 0xF3 dal SDK ufficiale (WearManager.restoration())
   Future<void> clearAllHistoricalData() async {
-    debugPrint('🗑️🧹 CLEARING ALL HISTORICAL DATA FROM DEVICE...');
-    debugPrint('🔧 Device Model detected: CL831/CL837 (checking compatibility)');
+    debugPrint('🗑️🧹 CLEARING ALL HISTORICAL DATA FROM DEVICE (OFFICIAL COMMAND)...');
+    debugPrint('🔧 Using official SDK command 0xF3 (restoration)');
     
     try {
-      // Send clear command 0x45 (according to Chileaf Protocol v0.6) using the standard command method
-      var command = [0x45]; // Clear command from documentation
-      var frame = ChileafProtocol.buildProtocolFrame(command);
+      // Usa il comando ufficiale 0xF3 dal SDK Android
+      var officialCommand = OfficialChileafCommands.deviceReset();
       
-      debugPrint('🔍 Clear command details:');
-      debugPrint('   Command: 0x45 (Clear/Reset)');
-      debugPrint('   Frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('🔍 Official reset command details:');
+      debugPrint('   Command: 0xF3 (Official Restoration/Reset from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
       debugPrint('   RX Characteristic: ${_rxCharacteristic?.uuid}');
-      debugPrint('   RX Properties: Write=${_rxCharacteristic?.properties.write}, WriteWithoutResponse=${_rxCharacteristic?.properties.writeWithoutResponse}');
+      debugPrint('   Command valid: ${OfficialChileafCommands.isValidCommand(officialCommand)}');
       
-      await _sendCommand(frame);
+      await _sendCommand(officialCommand);
       
-      debugPrint('✅ Clear all data command sent successfully');
+      debugPrint('✅ Official reset command sent successfully');
       debugPrint('🔄 Device should now have cleared historical data');
-      debugPrint('💡 Note: You may need to use the device for a few days to see new historical data');
+      debugPrint('💡 Using same command as official Android app');
       
       // Wait a moment for the command to process
       await Future.delayed(const Duration(milliseconds: 1000));
       
     } catch (e) {
-      debugPrint('❌ Failed to clear historical data: $e');
+      debugPrint('❌ Failed to send official reset command: $e');
       debugPrint('🔍 Error details: ${e.runtimeType}');
       rethrow; // Re-throw to show error in UI
     }
@@ -940,6 +994,139 @@ class ChileafExtendedService {
       // Nota: I dati HR specifici verranno richiesti quando arriva la lista (con filtri)
     } catch (e) {
       debugPrint('❌ Failed to request all historical data: $e');
+    }
+  }
+
+  // ===== NUOVE FUNZIONI DAL REVERSE ENGINEERING =====
+
+  /// Imposta informazioni utente usando comando ufficiale (0x04)
+  /// Equivalente al metodo setUserInfo() del SDK Android
+  Future<void> setUserInfo(int age, int sex, int weight, int height, int userId) async {
+    debugPrint('👤 Setting user info using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.setUserInfo(age, sex, weight, height, userId);
+      
+      debugPrint('🔍 Official user info command:');
+      debugPrint('   Command: 0x04 (setUserInfo from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   Data: age=$age, sex=$sex, weight=$weight, height=$height, userId=$userId');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official user info command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to set user info with official command: $e');
+    }
+  }
+
+  /// Richiede informazioni utente usando comando ufficiale (0x03)
+  /// Equivalente al metodo getUserInfo() del SDK Android
+  Future<void> requestUserInfo() async {
+    debugPrint('👤 Requesting user info using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.getUserInfo();
+      
+      debugPrint('🔍 Official get user info command:');
+      debugPrint('   Command: 0x03 (getUserInfo from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official get user info command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request user info with official command: $e');
+    }
+  }
+
+  /// Imposta timestamp UTC usando comando ufficiale (0x08)
+  /// Equivalente al metodo setUTCTime() del SDK Android
+  Future<void> syncDeviceTime() async {
+    debugPrint('⏰ Syncing device time using OFFICIAL command...');
+    try {
+      int currentUtc = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      var officialCommand = OfficialChileafCommands.setUTCTime(currentUtc);
+      
+      debugPrint('🔍 Official time sync command:');
+      debugPrint('   Command: 0x08 (setUTCTime from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   UTC Timestamp: $currentUtc (${DateTime.fromMillisecondsSinceEpoch(currentUtc * 1000)})');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official time sync command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to sync device time with official command: $e');
+    }
+  }
+
+  /// Imposta allarme frequenza cardiaca usando comando ufficiale (0x57)
+  /// Equivalente al metodo setHeartRateAlarm() del SDK Android
+  Future<void> setHeartRateAlarm(bool enabled) async {
+    debugPrint('💓🔔 Setting HR alarm using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.setHeartRateAlarm(enabled);
+      
+      debugPrint('🔍 Official HR alarm command:');
+      debugPrint('   Command: 0x57 (setHeartRateAlarm from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   Enabled: $enabled');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official HR alarm command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to set HR alarm with official command: $e');
+    }
+  }
+
+  /// Richiede status allarme HR usando comando ufficiale (0x5B)
+  /// Equivalente al metodo getHeartRateAlarm() del SDK Android
+  Future<void> requestHeartRateAlarmStatus() async {
+    debugPrint('💓🔔 Requesting HR alarm status using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.getHeartRateAlarm();
+      
+      debugPrint('🔍 Official HR alarm status command:');
+      debugPrint('   Command: 0x5B (getHeartRateAlarm from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official HR alarm status command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request HR alarm status with official command: $e');
+    }
+  }
+
+  /// Richiede passi intervallari usando comando ufficiale (0x40)
+  /// Equivalente al metodo getIntervalSteps() del SDK Android
+  Future<void> requestIntervalSteps() async {
+    debugPrint('👣 Requesting interval steps using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.getIntervalSteps();
+      
+      debugPrint('🔍 Official interval steps command:');
+      debugPrint('   Command: 0x40 (getIntervalSteps from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official interval steps command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request interval steps with official command: $e');
+    }
+  }
+
+  /// Spegne il dispositivo usando comando ufficiale (0xF1)
+  /// Equivalente al metodo shutdown() del SDK Android
+  Future<void> shutdownDevice() async {
+    debugPrint('🔌 Shutting down device using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.deviceShutdown();
+      
+      debugPrint('🔍 Official shutdown command:');
+      debugPrint('   Command: 0xF1 (shutdown from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   ⚠️  Device will power off after this command!');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official shutdown command sent - device should power off');
+    } catch (e) {
+      debugPrint('❌ Failed to shutdown device with official command: $e');
     }
   }
 }

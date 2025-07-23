@@ -32,7 +32,7 @@ class TemperatureProcessor {
       final wristTemp = wristTempRaw / 10.0;
       final bodyTemp = bodyTempRaw / 10.0;
       
-      // SILENT - no debug print for temperature values
+      debugPrint('Temperature raw: ambient=$ambientTempRaw ($ambientTemp°C), wrist=$wristTempRaw ($wristTemp°C), body=$bodyTempRaw ($bodyTemp°C)');
 
       // Temperature readings are generally stable, send all valid readings
       // Similar to professional medical devices: continuous monitoring approach
@@ -45,7 +45,7 @@ class TemperatureProcessor {
           bodyTempC: bodyTemp,
         );
         _temperatureDataController.add(temperatureData);
-        // SILENT - no debug print for successful temperature data
+        debugPrint('✅ Temperature Data: ambient: $ambientTemp°C, wrist: $wristTemp°C, body: $bodyTemp°C');
       } else {
         debugPrint('⚠️ Temperature readings out of expected range');
       }

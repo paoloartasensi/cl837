@@ -599,36 +599,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
-    Future<void> clearHistoricalData() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _extendedService.clearAllHistoricalData();
-            showSuccess('Historical data cleared successfully');
-        } catch (e) {
-            debugPrint('Failed to clear historical data: $e');
-            showError('Failed to clear historical data');
-        }
-    }
-
-    Future<void> performFactoryReset() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            await _extendedService.factoryReset();
-            showSuccess('Factory reset completed successfully');
-        } catch (e) {
-            debugPrint('Failed to perform factory reset: $e');
-            showError('Failed to perform factory reset');
-        }
-    }
-
     // Responsive layout methods
     Widget _buildGridLayout() {
         return Column(
@@ -681,8 +651,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestExercise: requestExerciseHistory,
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
-                    onClearAllData: clearHistoricalData,
-                    onFactoryReset: performFactoryReset,
                 ),
             ],
         );
@@ -752,8 +720,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestExercise: requestExerciseHistory,
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
-                    onClearAllData: clearHistoricalData,
-                    onFactoryReset: performFactoryReset,
                 ),
                 
                 const SizedBox(height: 16),
