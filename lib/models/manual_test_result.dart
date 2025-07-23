@@ -67,6 +67,10 @@ class ManualTestResult {
         'medianRR': hrvData.medianRR,
         'estimatedHR': hrvData.estimatedHR,
         'rrIntervalsCount': hrvData.rrIntervals.length,
+        'rrIntervals': hrvData.rrIntervals, // ✅ Aggiunti gli RR intervals completi
+        'hrvQuality': hrvData.hrvQuality,
+        'hrCategory': hrvData.hrCategory,
+        'isDataValid': hrvData.isDataValid,
       },
       notes: notes,
     );
