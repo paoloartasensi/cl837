@@ -36,20 +36,24 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 - 💅 **Unghie**: Rimuovere smalto scuro se presente
 - 🚫 **Evitare**: Movimento durante test
 
-### 🎯 **Durante la Misurazione (Sistema WatchFit):**
-- ⏱️ **Durata**: 50 secondi massimo con terminazione intelligente
-- 🔴 **LED rosso**: Deve accendersi, indica misurazione attiva
+### 🎯 **Durante la Misurazione (Sistema WatchFit Ottimizzato):**
+- ⏱️ **Durata massima**: 50 secondi (ottimizzato per WatchFit)
+- 🔴 **LED rosso**: Si accende automaticamente, indica misurazione attiva
+- 🔚 **Terminazione intelligente**: Auto-stop con 2 letture valide consecutive
+- 📊 **Criteri validità**: SpO2 70-100%, postura corretta, device indossato
 - 📱 **Posizione**: Braccio fermo, device verso l'alto
-- ✋ **Immobilità**: Assoluta, anche respirazione controllata
-- 🔚 **Auto-stop**: Sistema termina automaticamente con 2 letture valide
+- ✋ **Immobilità**: Assoluta durante misurazione
+- � **Comando BLE**: 0x37 mode=1 (setBloodOxygen) + 0x36 per LED
 
-### 📊 **Interpretazione Risultati:**
-- **98-100%**: Saturazione ottimale
-- **95-97%**: Normale, ma monitorare se persistente
+### 📊 **Interpretazione Risultati (Soglie Cliniche Implementate):**
+- **98-100%**: Saturazione ottimale (normale)
+- **95-97%**: Normale, monitorare se persistente
 - **90-94%**: Ipossiemia lieve, consultare medico
-- **<90%**: Ipossiemia severa, intervento medico urgente
-- **Qualità segnale 12-15/15**: Misurazione affidabile
-- **Qualità segnale <8/15**: Ripetere il test
+- **70-89%**: Range validazione device (consultare medico)
+- **<70%**: Fuori range device, verifica posizionamento
+- **Qualità segnale 12-15/15**: Misurazione clinicamente affidabile
+- **Qualità segnale 8-11/15**: Accettabile, considerare ripetizione
+- **Qualità segnale <8/15**: Inaffidabile, ripetere test obbligatorio
 
 ---
 
@@ -61,12 +65,14 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 - 🛏️ **Posizione**: Seduto comodamente o sdraiato
 - ⏱️ **Pre-test**: 10 minuti di rilassamento mentale
 
-### 🎯 **Durante la Misurazione (1 Minuto Minimo):**
-- ⏰ **Durata clinica**: Minimo 60 secondi (standard internazionale)
-- 📊 **RR Intervals**: Minimo 50 battiti per validità clinica
-- 💨 **Respirazione**: Naturale, profonda e regolare
+### 🎯 **Durante la Misurazione (Standard Elite HRV):**
+- ⏰ **Durata clinica obbligatoria**: Minimo 60 secondi continuativi
+- 📊 **RR Intervals richiesti**: Minimo 50 battiti (soglia app: 50, validazione: 40)
+- 💨 **Respirazione**: Naturale, profonda e regolare (no apnea)
 - 🧘 **Concentrazione**: Focus sul respiro, mente rilassata
-- 📱 **Immobilità**: Movimento minimo, braccio rilassato
+- 📱 **Immobilità**: Movimento minimo, braccio completamente rilassato
+- 🔄 **Data Source**: Main heart rate stream (stesso dei SENSORI)
+- ⚡ **Collezione**: Real-time da `heartRateData.rrIntervals`
 
 ### 📊 **Interpretazione Risultati (Metriche Complete):**
 
@@ -87,11 +93,13 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 - **5-15%**: Variabilità normale
 - **<5%**: Bassa attività parasimpatica
 
-### 🏥 **Validazione Clinica:**
-- ✅ **Durata**: >60 secondi per validità scientifica
-- ✅ **RR Count**: >40 intervalli per analisi statistica
-- ✅ **Range fisiologico**: 300-2000ms per intervallo
-- ✅ **Variabilità**: <50% della media per coerenza
+### 🏥 **Validazione Clinica (Implementata):**
+- ✅ **Durata minima**: >60 secondi per validità scientifica Elite HRV
+- ✅ **RR Count**: >40 intervalli per analisi statistica affidabile
+- ✅ **Range fisiologico**: 300-2000ms per intervallo (30-200 BPM)
+- ✅ **Controllo variabilità**: <50% della media RR per coerenza dati
+- ✅ **Qualità insufficiente**: "Insufficient Duration (X.Xs)" se <60s
+- ✅ **Auto-calcolo**: RMSSD, SDNN, pNN50 in tempo reale
 
 ---
 
@@ -103,11 +111,13 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 - 🧼 **Pulizia**: Polso asciutto e pulito
 - 🚫 **Evitare**: Doccia calda, esercizio fisico nelle 2 ore precedenti
 
-### 🎯 **Durante la Misurazione:**
-- ⏱️ **Durata**: 10 secondi per lettura stabile
-- 📍 **Posizionamento**: Sensore a contatto con pelle
-- 🤚 **Immobilità**: Braccio fermo per lettura accurata
-- 🌡️ **Multi-sensor**: Device rileva temperatura ambiente, polso e corporea
+### 🎯 **Durante la Misurazione (Protocollo Multi-Sensor):**
+- ⏱️ **Durata acquisizione**: 10 secondi per stabilizzazione termica
+- 📍 **Posizionamento**: Sensore termico a pieno contatto con pelle
+- 🤚 **Immobilità**: Braccio fermo per lettura accurata e stabile
+- 🌡️ **Triple-sensor**: Ambiente, polso, corporea stimata simultanee
+- 🔄 **Polling automatico**: Ogni 5 secondi in background
+- 📊 **Range validazione**: Ambiente 10-50°C, Polso 20-45°C, Corpo 30-45°C
 
 ### 📊 **Interpretazione Risultati:**
 
@@ -118,49 +128,63 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 - **38.1-39.0°C** (100-102°F): Febbre moderata
 - **>39°C** (>102°F): Febbre alta, consultare medico
 
-#### **Temperatura Polso:**
+#### **Temperatura Polso (Misurazione Diretta):**
+- Precisione: ±0.1°C (risoluzione device)
 - Generalmente 1-2°C più bassa della corporea
-- Utile per trend e variazioni relative
+- Utile per trend relativi e variazioni temporali
+- Range normale polso: 32-38°C
 
-#### **Temperatura Ambiente:**
-- Riferimento per compensazione automatica
-- Range ottimale: 20-25°C per misurazioni accurate
+#### **Temperatura Ambiente (Compensazione):**
+- Misurazione simultanea per correzione termica
+- Range ottimale misure: 20-25°C ambiente
+- Usata per calibrazione automatica letture corporee
 
 ---
 
 ## 🔧 SPECIFICHE TECNICHE IMPLEMENTATE
 
-### 📱 **Architettura Software:**
-- **BLE Protocol**: Chileaf v0.6 con comandi ottimizzati
-- **Data Collection**: Stream real-time con buffer intelligente
-- **Debouncing**: Riduzione log spam (10s temp, 15s sports)
-- **JSON Export**: Dati completi con sharing nativo
+### 📱 **Architettura Software Attuale:**
+- **BLE Protocol**: Chileaf v0.6 con comandi ottimizzati WearManager.java
+- **Data Polling**: Temperatura ogni 5 secondi automatico (0x31)
+- **SpO2 Commands**: 0x37 mode=1 (setBloodOxygen) + 0x36 (LED control)  
+- **HRV Source**: Main heart rate stream (`heartRateService.dataStream`)
+- **Debouncing Log**: Temperatura max 10s, significativo >0.5°C change
+- **JSON Export**: Dati completi con `share_plus` e `path_provider`
+- **Sports Data**: Completamente rimosso (step counting inaffidabile)
 
-### 🏥 **Standard Clinici Rispettati:**
-- **HRV**: Elite HRV standard (60s minimo)
-- **SpO2**: WatchFit protocol con auto-termination
-- **HR**: Analisi RR intervals per accuratezza
-- **Temperature**: Multi-point calibration
+### 🏥 **Standard Clinici Implementati:**
+- **HRV**: Elite HRV standard rigoroso (60s minimo, 50+ RR intervals)
+- **SpO2**: WatchFit protocol ottimizzato (50s max, 2 letture consecutive)
+- **HR**: Analisi RR intervals da stream principale per accuratezza massima
+- **Temperature**: Multi-point validation (3 sensori, range fisiologici)
+- **Data Quality**: Range check, duration check, artifact removal automatici
 
-### 📊 **Validazione Dati:**
-- **Range Check**: Valori fisiologici validi
-- **Duration Check**: Durata minima per validità clinica
-- **Quality Check**: Segnale sufficiente per accuratezza
-- **Artifact Removal**: Filtri per artefatti di movimento
+### 📊 **Algoritmi di Validazione Attivi:**
+- **Range Check**: Valori fisiologici automatici (HR: 30-200 BPM, SpO2: 70-100%)
+- **Duration Check**: Durata minima clinica obbligatoria (HRV >60s)
+- **Quality Check**: Segnale sufficiente per accuratezza (SpO2 quality ≥8/15)
+- **Artifact Removal**: Filtri movimento per artefatti (HRV variazione <50% media)
+- **Consecutive Validation**: SpO2 termina con 2 letture valide consecutive
+- **Statistical Validation**: HRV con minimo 40-50 RR intervals per analisi
 
 ---
 
 ## 🎯 RACCOMANDAZIONI GENERALI
 
-### ⏰ **Timing Ottimale:**
-1. **Mattino**: HRV e HR a riposo (pre-caffè)
-2. **Giorno**: Temperatura e SpO2 (ambiente stabile)
-3. **Sera**: Controlli di routine (pre-cena)
+### ⏰ **Timing e Frequenze Implementate:**
+1. **Background Polling**: Temperatura ogni 5 secondi continuativo
+2. **HRV Collection**: Real-time da main HR stream (continuo durante test)
+3. **SpO2 Measurement**: 50 secondi max, terminazione anticipata intelligente
+4. **Log Debouncing**: Temperatura max 10s, SpO2 immediate, HRV per evento
+5. **Data Persistence**: Salvataggio automatico SharedPreferences
+6. **Export Timing**: On-demand con file sharing nativo
 
-### 📈 **Monitoraggio Longitudinale:**
-- **Daily**: HR e temperatura per trend
-- **Weekly**: HRV per recovery assessment
-- **On-demand**: SpO2 per controlli specifici
+### 📈 **Protocolli di Monitoraggio Calibrati:**
+- **Morning Routine**: HRV (1-2 min) + HR rest (2-3 min) pre-caffè
+- **Daily Monitoring**: Temperatura continua background ogni 5s  
+- **Spot Checks**: SpO2 on-demand (50s massimo per test)
+- **Trend Analysis**: Export giornaliero/completo con timestamp precisi
+- **Quality Assurance**: Validazione automatica multi-livello per ogni sensore
 
 ### 💾 **Data Management:**
 - **Export**: JSON completi con timestamp
@@ -177,11 +201,13 @@ Questa guida contiene le best practices implementate nell'app CL837 per ottenere
 
 ## 📞 SUPPORTO E TROUBLESHOOTING
 
-### 🔧 **Problemi Comuni:**
-- **"Insufficient Duration"**: Aumentare durata test HRV (>60s)
-- **Qualità SpO2 bassa**: Pulire sensore, riscaldare mani
-- **HR instabile**: Verificare posizionamento, ridurre movimento
-- **Temperatura inaccurata**: Aspettare stabilizzazione ambientale
+### 🔧 **Troubleshooting Tecnico Specifico:**
+- **"Insufficient Duration (X.Xs)"**: Test HRV fermato prima dei 60s obbligatori
+- **SpO2 quality <8/15**: Sensore sporco, mani fredde, o movimento durante test
+- **HR instabile**: Device mal posizionato, verificare stream RR intervals nei SENSORI
+- **Temperatura out of range**: Attesa 15 min acclimatazione o ambiente <18/>24°C
+- **LED rosso non si accende**: Reset BLE device, riconnettere, riprovare comando 0x36
+- **Export JSON vuoto**: Nessun test salvato in SharedPreferences, verificare permissions
 
 ### 📱 **Reset Device:**
 - Funzione integrata nell'app per reset BLE
