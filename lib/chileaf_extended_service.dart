@@ -3,7 +3,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 // Data Models
-import 'models/sports_data.dart';
 import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
 import 'models/hrv_data.dart';
@@ -15,7 +14,6 @@ import 'models/device_info.dart';
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
 import 'services/data_processors/temperature_processor.dart';
-import 'services/data_processors/sports_processor.dart';
 import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
 import 'services/data_processors/historical_data_processor.dart';
@@ -83,7 +81,6 @@ class ChileafExtendedService {
   // Data Processors
   late final SpO2Processor _spo2Processor;
   late final TemperatureProcessor _temperatureProcessor;
-  late final SportsProcessor _sportsProcessor;
   late final AccelerometerProcessor _accelerometerProcessor;
   late final HealthProcessor _healthProcessor;
 
@@ -116,13 +113,11 @@ class ChileafExtendedService {
   void _initializeProcessors() {
     _spo2Processor = SpO2Processor();
     _temperatureProcessor = TemperatureProcessor();
-    _sportsProcessor = SportsProcessor();
     _accelerometerProcessor = AccelerometerProcessor();
     _healthProcessor = HealthProcessor();
   }
 
   // Public streams - delegate to processors
-  Stream<SportsData> get sportsDataStream => _sportsProcessor.sportsDataStream;
   Stream<SpO2Data> get spo2DataStream => _spo2Processor.spo2DataStream;
   Stream<TemperatureData> get temperatureDataStream => _temperatureProcessor.temperatureDataStream;
   Stream<HRVData> get hrvDataStream => _healthProcessor.hrvDataStream;
@@ -237,15 +232,11 @@ class ChileafExtendedService {
     // Initial commands to start data flow
     await Future.delayed(const Duration(milliseconds: 500));
     await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-    await Future.delayed(const Duration(milliseconds: 500));
-    await _sendCommand(CommandBuilder.buildSportsDataRequest());
 
-    // Set up periodic data requests
+    // Set up periodic data requests (only medical-grade sensors)
     _dataRequestTimer = Timer.periodic(const Duration(seconds: 5), (timer) async {
       try {
         await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-        await Future.delayed(const Duration(milliseconds: 300));
-        await _sendCommand(CommandBuilder.buildSportsDataRequest());
       } catch (e) {
         debugPrint('Error in periodic data request: $e');
       }
@@ -383,8 +374,8 @@ class ChileafExtendedService {
         }
         break;
       case ChileafProtocol.commandSports:
-        // SILENTLY process sports data - no logging
-        _sportsProcessor.processSportsData(data);
+        // SPORTS DATA IGNORED - Focus on medical-grade sensors only
+        debugPrint('🚫 Sports data ignored (steps/calories unreliable)');
         break;
       case ChileafProtocol.commandSpo2:
         debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');
@@ -717,7 +708,6 @@ class ChileafExtendedService {
     // Dispose all processors
     _spo2Processor.dispose();
     _temperatureProcessor.dispose();
-    _sportsProcessor.dispose();
     _healthProcessor.dispose();
   }
 
@@ -1200,24 +1190,6 @@ class ChileafExtendedService {
       debugPrint('✅ Official HR alarm status command sent');
     } catch (e) {
       debugPrint('❌ Failed to request HR alarm status with official command: $e');
-    }
-  }
-
-  /// Richiede passi intervallari usando comando ufficiale (0x40)
-  /// Equivalente al metodo getIntervalSteps() del SDK Android
-  Future<void> requestIntervalSteps() async {
-    debugPrint('👣 Requesting interval steps using OFFICIAL command...');
-    try {
-      var officialCommand = OfficialChileafCommands.getIntervalSteps();
-      
-      debugPrint('🔍 Official interval steps command:');
-      debugPrint('   Command: 0x40 (getIntervalSteps from WearManager.java)');
-      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
-      
-      await _sendCommand(officialCommand);
-      debugPrint('✅ Official interval steps command sent');
-    } catch (e) {
-      debugPrint('❌ Failed to request interval steps with official command: $e');
     }
   }
 

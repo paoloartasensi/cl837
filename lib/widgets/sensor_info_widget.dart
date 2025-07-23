@@ -43,13 +43,6 @@ class SensorInfoWidget extends StatelessWidget {
                 ),
                 SizedBox(height: 12),
                 _InfoSection(
-                  title: '🏃 Activity Tracking',
-                  content: 'Real-time step counting, distance estimation, and calorie calculation. '
-                      'Uses advanced accelerometer algorithms with ±5% accuracy. '
-                      'Updates continuously during movement.',
-                ),
-                SizedBox(height: 12),
-                _InfoSection(
                   title: '🔋 Battery & Extended Data',
                   content: 'Battery level from standard BLE Battery Service (UUID: 180F). '
                       'Extended health data (0x75 command) includes sleep analysis, '

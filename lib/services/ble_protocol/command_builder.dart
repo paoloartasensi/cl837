@@ -5,11 +5,6 @@ import 'chileaf_protocol.dart';
 /// Fornisce metodi per creare comandi specifici del dispositivo
 class CommandBuilder {
   
-  /// Crea comando per richiedere dati sportivi
-  static List<int> buildSportsDataRequest() {
-    return ChileafProtocol.buildProtocolFrame([ChileafProtocol.commandSports]);
-  }
-
   /// Crea comando per richiedere dati di temperatura
   static List<int> buildTemperatureDataRequest() {
     return ChileafProtocol.buildProtocolFrame([ChileafProtocol.commandTemperature]);
@@ -85,7 +80,6 @@ class CommandBuilder {
   /// Ottiene lista di tutti i comandi disponibili per test
   static Map<String, List<int>> getAllTestCommands() {
     return {
-      'sportsData': buildSportsDataRequest(),
       'temperatureData': buildTemperatureDataRequest(),
       'enableSpO2': buildEnableSpO2Mode(),
       'disableSpO2': buildDisableSpO2Mode(),
