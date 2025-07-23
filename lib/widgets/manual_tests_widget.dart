@@ -36,6 +36,11 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   SpO2Data? _latestSpO2Result;
   TemperatureData? _latestTempResult;
   HRVData? _latestHRVResult;
+  
+  // Risultati congelati dai test manuali
+  SpO2Data? _manualSpO2Result;
+  TemperatureData? _manualTempResult;
+  HRVData? _manualHRVResult;
 
   // Subscriptions per i stream
   StreamSubscription<SpO2Data>? _spo2Subscription;
@@ -69,9 +74,13 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       if (mounted) {
         setState(() {
           _latestSpO2Result = data;
+          // Aggiorna il risultato manuale solo se il test è attivo
+          if (_isSpo2Testing) {
+            _manualSpO2Result = data;
+          }
         });
-        // Salva automaticamente se il valore SpO2 è valido
-        if (data.spo2Value != null && data.isValidMeasurement) {
+        // Salva automaticamente se il valore SpO2 è valido E il test è attivo
+        if (_isSpo2Testing && data.spo2Value != null && data.isValidMeasurement) {
           _saveTestResult(ManualTestResult.fromSpO2(data, notes: 'Test manuale SpO2'));
         }
       }
@@ -82,9 +91,15 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       if (mounted) {
         setState(() {
           _latestTempResult = data;
+          // Aggiorna il risultato manuale solo se il test è attivo
+          if (_isTempTesting) {
+            _manualTempResult = data;
+          }
         });
-        // Salva automaticamente i dati temperatura
-        _saveTestResult(ManualTestResult.fromTemperature(data, notes: 'Test manuale temperatura'));
+        // Salva automaticamente i dati temperatura solo se il test è attivo
+        if (_isTempTesting) {
+          _saveTestResult(ManualTestResult.fromTemperature(data, notes: 'Test manuale temperatura'));
+        }
       }
     });
 
@@ -94,9 +109,15 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
         debugPrint('📊 HRV Data received: RMSSD=${data.rmssd}, SDNN=${data.sdnn}, HR=${data.estimatedHR}');
         setState(() {
           _latestHRVResult = data;
+          // Aggiorna il risultato manuale solo se il test è attivo
+          if (_isHRVTesting) {
+            _manualHRVResult = data;
+          }
         });
-        // Salva automaticamente i dati HRV
-        _saveTestResult(ManualTestResult.fromHRV(data, notes: 'Test manuale HRV'));
+        // Salva automaticamente i dati HRV solo se il test è attivo
+        if (_isHRVTesting) {
+          _saveTestResult(ManualTestResult.fromHRV(data, notes: 'Test manuale HRV'));
+        }
       }
     });
   }
@@ -111,14 +132,31 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     }
   }
 
+  // Cancella i risultati congelati dei test manuali
+  void _clearTestResults() {
+    setState(() {
+      _manualSpO2Result = null;
+      _manualTempResult = null;
+      _manualHRVResult = null;
+    });
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Risultati test manuali cancellati'),
+        backgroundColor: Colors.grey,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   // Gestisce il completamento automatico del test SpO2
   void _onSpO2AutoCompleted() {
     setState(() => _isSpo2Testing = false);
     
     if (mounted) {
-      // Mostra messaggio di completamento con risultati
-      final spo2Value = _latestSpO2Result?.spo2Value;
-      final quality = _latestSpO2Result?.signalQuality ?? 0;
+      // Usa il risultato congelato del test manuale
+      final spo2Value = _manualSpO2Result?.spo2Value;
+      final quality = _manualSpO2Result?.signalQuality ?? 0;
       
       String message;
       if (spo2Value != null && spo2Value > 0) {
@@ -132,7 +170,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           content: Text(message),
           backgroundColor: Colors.green,
           duration: const Duration(seconds: 5),
-          action: _latestSpO2Result != null ? SnackBarAction(
+          action: _manualSpO2Result != null ? SnackBarAction(
             label: 'Dettagli',
             textColor: Colors.white,
             onPressed: () {
@@ -147,7 +185,8 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
 
   // Mostra i dettagli del risultato SpO2
   void _showSpO2Details() {
-    if (_latestSpO2Result == null) return;
+    final resultToShow = _manualSpO2Result ?? _latestSpO2Result;
+    if (resultToShow == null) return;
     
     showDialog(
       context: context,
@@ -157,10 +196,10 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('SpO2: ${_latestSpO2Result!.spo2Value ?? "N/A"}%'),
-            Text('Qualità Segnale: ${_latestSpO2Result!.signalQuality}/15'),
-            Text('Descrizione: ${_latestSpO2Result!.signalQualityDescription}'),
-            Text('Timestamp: ${_latestSpO2Result!.timestamp.toString().substring(0, 19)}'),
+            Text('SpO2: ${resultToShow.spo2Value ?? "N/A"}%'),
+            Text('Qualità Segnale: ${resultToShow.signalQuality}/15'),
+            Text('Descrizione: ${resultToShow.signalQualityDescription}'),
+            Text('Timestamp: ${resultToShow.timestamp.toString().substring(0, 19)}'),
           ],
         ),
         actions: [
@@ -187,8 +226,8 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           children: [
             // SpO2 Test Section
             _buildTestSection(
-              title: 'Test SpO2',
-              subtitle: 'Saturazione ossigeno',
+              title: 'Test SpO2 WatchFit',
+              subtitle: 'Saturazione ossigeno (50 sec max, early stop)',
               icon: Icons.opacity,
               color: Colors.blue,
               isRunning: _isSpo2Testing,
@@ -201,7 +240,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             // HRV Test Section
             _buildTestSection(
               title: 'Test HRV',
-              subtitle: 'Variabilità frequenza cardiaca',
+              subtitle: 'Variabilità frequenza cardiaca (15 sec)',
               icon: Icons.favorite,
               color: Colors.red,
               isRunning: _isHRVTesting,
@@ -214,7 +253,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             // Temperature Test Section
             _buildTestSection(
               title: 'Test Temperatura',
-              subtitle: 'Temperatura corporea',
+              subtitle: 'Temperatura corporea (10 sec)',
               icon: Icons.thermostat,
               color: Colors.orange,
               isRunning: _isTempTesting,
@@ -312,68 +351,130 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
                           color: Colors.green.shade700,
                         ),
                       ),
+                      const Spacer(),
+                      if (_manualSpO2Result != null || _manualTempResult != null || _manualHRVResult != null)
+                        TextButton.icon(
+                          onPressed: _clearTestResults,
+                          icon: Icon(Icons.clear, size: 16, color: Colors.grey.shade600),
+                          label: Text(
+                            'Clear',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   
-                  // Risultati SpO2
-                  if (_latestSpO2Result != null) ...[
-                    _buildResultRow(
-                      'SpO2:', 
-                      _latestSpO2Result!.spo2Value != null 
-                          ? '${_latestSpO2Result!.spo2Value}%' 
-                          : 'Misurazione in corso...',
-                      Icons.opacity,
-                      Colors.blue,
-                    ),
-                    _buildResultRow(
-                      'Segnale:', 
-                      _latestSpO2Result!.signalQualityDescription,
-                      Icons.signal_cellular_alt,
-                      _latestSpO2Result!.signalQuality >= 8 ? Colors.green : Colors.orange,
-                    ),
-                  ],
-                  
-                  // Risultati Temperatura
-                  if (_latestTempResult != null) ...[
-                    _buildResultRow(
-                      'Temperatura Ambiente:', 
-                      '${_latestTempResult!.ambientTempC.toStringAsFixed(1)}°C',
-                      Icons.thermostat,
-                      Colors.orange,
-                    ),
-                    _buildResultRow(
-                      'Temperatura Polso:', 
-                      '${_latestTempResult!.wristTempC.toStringAsFixed(1)}°C',
-                      Icons.watch,
-                      Colors.orange,
-                    ),
-                    _buildResultRow(
-                      'Temperatura Corporea:', 
-                      '${_latestTempResult!.bodyTempC.toStringAsFixed(1)}°C',
-                      Icons.person,
-                      Colors.red,
+                  // Risultati SpO2 (priorità ai risultati del test manuale)
+                  if (_manualSpO2Result != null || _latestSpO2Result != null) ...[
+                    Builder(
+                      builder: (context) {
+                        final spo2Result = _manualSpO2Result ?? _latestSpO2Result!;
+                        final isManualResult = _manualSpO2Result != null;
+                        return Column(
+                          children: [
+                            _buildResultRowWithBadge(
+                              'SpO2:', 
+                              spo2Result.spo2Value != null 
+                                  ? '${spo2Result.spo2Value}%' 
+                                  : (_isSpo2Testing ? 'Misurazione in corso...' : 'Non disponibile'),
+                              Icons.opacity,
+                              Colors.blue,
+                              showTestBadge: isManualResult,
+                            ),
+                            _buildResultRow(
+                              'Segnale:', 
+                              spo2Result.signalQualityDescription,
+                              Icons.signal_cellular_alt,
+                              spo2Result.signalQuality >= 8 ? Colors.green : Colors.orange,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                   
-                  // Risultati HRV
-                  if (_latestHRVResult != null) ...[
-                    _buildResultRow(
-                      'HRV RMSSD:', 
-                      '${_latestHRVResult!.rmssd.toStringAsFixed(1)} ms',
-                      Icons.favorite,
-                      Colors.red,
+                  // Risultati Temperatura (priorità ai risultati del test manuale)
+                  if (_manualTempResult != null || _latestTempResult != null) ...[
+                    Builder(
+                      builder: (context) {
+                        final tempResult = _manualTempResult ?? _latestTempResult!;
+                        final isManualResult = _manualTempResult != null;
+                        return Column(
+                          children: [
+                            _buildResultRowWithBadge(
+                              'Temperatura Ambiente:', 
+                              '${tempResult.ambientTempC.toStringAsFixed(1)}°C',
+                              Icons.thermostat,
+                              Colors.orange,
+                              showTestBadge: isManualResult,
+                            ),
+                            _buildResultRow(
+                              'Temperatura Polso:', 
+                              '${tempResult.wristTempC.toStringAsFixed(1)}°C',
+                              Icons.watch,
+                              Colors.orange,
+                            ),
+                            _buildResultRow(
+                              'Temperatura Corporea:', 
+                              '${tempResult.bodyTempC.toStringAsFixed(1)}°C',
+                              Icons.person,
+                              Colors.red,
+                            ),
+                          ],
+                        );
+                      },
                     ),
-                    _buildResultRow(
-                      'HRV SDNN:', 
-                      '${_latestHRVResult!.sdnn.toStringAsFixed(1)} ms',
-                      Icons.show_chart,
-                      Colors.red,
+                  ],
+                  
+                  // Risultati HRV (priorità ai risultati del test manuale)
+                  if (_manualHRVResult != null || _latestHRVResult != null) ...[
+                    Builder(
+                      builder: (context) {
+                        final hrvResult = _manualHRVResult ?? _latestHRVResult!;
+                        final isManualResult = _manualHRVResult != null;
+                        return Column(
+                          children: [
+                            _buildResultRowWithBadge(
+                              'HRV RMSSD:', 
+                              '${hrvResult.rmssd.toStringAsFixed(1)} ms (${hrvResult.hrvQuality})',
+                              Icons.favorite,
+                              Colors.red,
+                              showTestBadge: isManualResult,
+                            ),
+                            _buildResultRow(
+                              'HRV SDNN:', 
+                              '${hrvResult.sdnn.toStringAsFixed(1)} ms',
+                              Icons.show_chart,
+                              Colors.red,
+                            ),
+                            _buildResultRow(
+                              'FC Stimata:', 
+                              '${hrvResult.estimatedHR.toStringAsFixed(0)} BPM (${hrvResult.hrCategory})',
+                              Icons.monitor_heart,
+                              Colors.red,
+                            ),
+                            _buildResultRow(
+                              'RR Intervals:', 
+                              '${hrvResult.rrIntervals.length} campioni',
+                              Icons.timeline,
+                              hrvResult.isDataValid ? Colors.green : Colors.orange,
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ],
                   
                   // Messaggio se nessun risultato
-                  if (_latestSpO2Result == null && _latestTempResult == null && _latestHRVResult == null)
+                  if (_manualSpO2Result == null && _latestSpO2Result == null && 
+                      _manualTempResult == null && _latestTempResult == null && 
+                      _manualHRVResult == null && _latestHRVResult == null)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 8.0),
                       child: Text(
@@ -559,9 +660,55 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     );
   }
 
+  Widget _buildResultRowWithBadge(String label, String value, IconData icon, Color color, {bool showTestBadge = false}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w500),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: TextStyle(
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          if (showTestBadge) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.green,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'TEST',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   // Test Methods
   Future<void> _startSpO2Test() async {
-    setState(() => _isSpo2Testing = true);
+    setState(() {
+      _isSpo2Testing = true;
+      // Reset del risultato congelato per nuovo test
+      _manualSpO2Result = null;
+    });
     
     try {
       // Usa il comando che funziona per il LED rosso (come nel test LED)
@@ -616,19 +763,60 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   }
 
   Future<void> _startHRVTest() async {
-    setState(() => _isHRVTesting = true);
+    setState(() {
+      _isHRVTesting = true;
+      // Reset del risultato congelato per nuovo test
+      _manualHRVResult = null;
+    });
     
     try {
-      await widget.extendedService.requestHRVData();
+      // Sottoscrivi al flusso HRV in tempo reale invece di richiedere dati storici
+      _hrvSubscription?.cancel();
+      List<HRVData> hrvSamples = [];
+      
+      _hrvSubscription = widget.extendedService.hrvDataStream.listen((hrvData) {
+        if (_isHRVTesting && hrvData.isDataValid) {
+          hrvSamples.add(hrvData);
+          // Aggiorna l'ultimo risultato valido durante il test
+          _manualHRVResult = hrvData;
+          setState(() {});
+        }
+      });
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test HRV avviato'),
+            content: Text('Test HRV avviato - Monitoraggio variabilità cardiaca in tempo reale per 15 secondi'),
             backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
           ),
         );
       }
+      
+      // Timer per auto-completamento HRV dopo 15 secondi
+      Timer(const Duration(seconds: 15), () {
+        if (mounted && _isHRVTesting) {
+          _hrvSubscription?.cancel();
+          setState(() => _isHRVTesting = false);
+          
+          final hrvResult = _manualHRVResult;
+          String message;
+          if (hrvResult != null && hrvSamples.isNotEmpty) {
+            message = 'Test HRV completato! RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)}ms (${hrvResult.hrvQuality}) - ${hrvSamples.length} campioni';
+          } else {
+            message = 'Test HRV completato ma nessun dato valido ricevuto - verifica il posizionamento del dispositivo';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: hrvResult != null ? Colors.green : Colors.orange,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      });
+      
     } catch (e) {
       debugPrint('Error starting HRV test: $e');
       if (mounted) {
@@ -639,8 +827,6 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           ),
         );
       }
-    } finally {
-      setState(() => _isHRVTesting = false);
     }
   }
 
@@ -649,7 +835,11 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   }
 
   Future<void> _startTemperatureTest() async {
-    setState(() => _isTempTesting = true);
+    setState(() {
+      _isTempTesting = true;
+      // Reset del risultato congelato per nuovo test
+      _manualTempResult = null;
+    });
     
     try {
       await widget.extendedService.requestTemperature();
@@ -657,11 +847,36 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test temperatura avviato'),
+            content: Text('Test temperatura avviato - Lettura sensori termici in corso (10 sec)'),
             backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
           ),
         );
       }
+      
+      // Timer per auto-completamento temperatura dopo 10 secondi
+      Timer(const Duration(seconds: 10), () {
+        if (mounted && _isTempTesting) {
+          setState(() => _isTempTesting = false);
+          
+          final tempResult = _manualTempResult;
+          String message;
+          if (tempResult != null) {
+            message = 'Test temperatura completato! Corporea: ${tempResult.bodyTempC.toStringAsFixed(1)}°C';
+          } else {
+            message = 'Test temperatura completato - verifica i risultati sopra';
+          }
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      });
+      
     } catch (e) {
       debugPrint('Error starting temperature test: $e');
       if (mounted) {
@@ -672,8 +887,6 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
           ),
         );
       }
-    } finally {
-      setState(() => _isTempTesting = false);
     }
   }
 
