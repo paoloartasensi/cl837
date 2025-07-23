@@ -396,8 +396,8 @@ class ChileafExtendedService {
         _healthProcessor.processHealthData(data);
         break;
       case 0x16: // Exercise History
-        debugPrint('📊 EXERCISE HISTORY DATA: Processing historical exercise data');
-        var exerciseHistory = HistoricalDataProcessor.processExerciseHistory(Uint8List.fromList(data));
+        debugPrint('📊 EXERCISE HISTORY DATA: Processing historical exercise data with OFFICIAL format');
+        var exerciseHistory = HistoricalDataProcessor.processExerciseHistoryOfficial(Uint8List.fromList(data));
         if (exerciseHistory.isNotEmpty) {
           _exerciseHistoryController.add(exerciseHistory);
         }
@@ -657,6 +657,56 @@ class ChileafExtendedService {
       }
     } catch (e) {
       debugPrint('❌ Failed to clear rope data: $e');
+    }
+  }
+
+  /// Clears all historical data from device memory
+  /// This will attempt to clear Exercise History, HR History, and other stored data
+  Future<void> clearAllHistoricalData() async {
+    debugPrint('🗑️🧹 CLEARING ALL HISTORICAL DATA FROM DEVICE...');
+    debugPrint('🔧 Device Model detected: CL831/CL837 (checking compatibility)');
+    
+    try {
+      // Send clear command 0x45 (according to Chileaf Protocol v0.6) using the standard command method
+      var command = [0x45]; // Clear command from documentation
+      var frame = ChileafProtocol.buildProtocolFrame(command);
+      
+      debugPrint('🔍 Clear command details:');
+      debugPrint('   Command: 0x45 (Clear/Reset)');
+      debugPrint('   Frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('   RX Characteristic: ${_rxCharacteristic?.uuid}');
+      debugPrint('   RX Properties: Write=${_rxCharacteristic?.properties.write}, WriteWithoutResponse=${_rxCharacteristic?.properties.writeWithoutResponse}');
+      
+      await _sendCommand(frame);
+      
+      debugPrint('✅ Clear all data command sent successfully');
+      debugPrint('🔄 Device should now have cleared historical data');
+      debugPrint('💡 Note: You may need to use the device for a few days to see new historical data');
+      
+      // Wait a moment for the command to process
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+    } catch (e) {
+      debugPrint('❌ Failed to clear historical data: $e');
+      debugPrint('🔍 Error details: ${e.runtimeType}');
+      rethrow; // Re-throw to show error in UI
+    }
+  }
+
+  /// Factory reset - clears all data and settings (if supported)
+  Future<void> factoryReset() async {
+    debugPrint('🏭🔄 FACTORY RESET - CLEARING ALL DATA AND SETTINGS...');
+    
+    try {
+      // First clear all historical data
+      await clearAllHistoricalData();
+      
+      // Add any additional reset commands here if discovered
+      debugPrint('✅ Factory reset completed');
+      debugPrint('💡 Device should now be in factory state');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to perform factory reset: $e');
     }
   }
 

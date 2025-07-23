@@ -282,7 +282,7 @@ class HistoricalDataProcessor {
   static dynamic processHistoricalData(int command, Uint8List data) {
     switch (command) {
       case 0x16:
-        return processExerciseHistory(data);
+        return processExerciseHistoryOfficial(data);
       case 0x21:
         return processHRHistoryList(data);
       case 0x22:
@@ -291,5 +291,139 @@ class HistoricalDataProcessor {
         debugPrint('❓ Unknown historical command: 0x${command.toRadixString(16)}');
         return null;
     }
+  }
+
+  /// Processa i dati storici dell'esercizio (comando 0x16) - FORMATO UFFICIALE
+  /// FORMATO REALE osservato dal dispositivo CL837:
+  /// - UTC: 4 bytes (little endian)  
+  /// - Steps: 4 bytes (little endian) - spesso 0x00000000
+  /// - Calories: 3 bytes (little endian) - spesso 0x3de0 = 1584.0 kcal
+  /// Totale: 7 giorni × 11 bytes = 77 bytes payload (ma ricevuti 71 bytes)
+  static List<ExerciseHistoryData> processExerciseHistoryOfficial(Uint8List data) {
+    debugPrint('📋 REAL-WORLD Exercise History Processing (0x16) - ${data.length} bytes');
+    debugPrint('📋 Raw data: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    
+    List<ExerciseHistoryData> history = [];
+    
+    try {
+      if (data.length <= 3) {
+        debugPrint('📋 ❌ No payload data - only header present');
+        return history;
+      }
+      
+      int payloadLength = data.length - 3;
+      debugPrint('📋 Payload length: $payloadLength bytes');
+      
+      // FORMATO REALE osservato: Sembra essere variabile
+      // Analizziamo la struttura reale dei dati
+      debugPrint('📋 🔍 ANALYZING REAL DATA STRUCTURE:');
+      
+      // Pattern osservato: sembra che i dati abbiano UTC validi in posizioni specifiche
+      List<int> utcPositions = [];
+      
+      // Cerchiamo pattern UTC validi (> 2020 e < 2030)
+      for (int i = 3; i < data.length - 3; i++) {
+        if (i + 4 <= data.length) {
+          int testUtc = data[i] | 
+                       (data[i + 1] << 8) | 
+                       (data[i + 2] << 16) | 
+                       (data[i + 3] << 24);
+          
+          if (testUtc > 1577836800 && testUtc < 1893456000) { // 2020-2030
+            DateTime testDate = DateTime.fromMillisecondsSinceEpoch(testUtc * 1000);
+            
+            // Calcola quanti giorni fa era questa data
+            Duration difference = DateTime.now().difference(testDate);
+            int daysAgo = difference.inDays;
+            
+            debugPrint('📋 🎯 Found UTC at offset $i: $testUtc (${testDate.toString().substring(0, 10)}) - $daysAgo days ago');
+            
+            // Solo timestamp relativamente recenti (entro 1 anno)
+            if (daysAgo <= 365) {
+              utcPositions.add(i);
+            } else {
+              debugPrint('📋 ⏰ Skipping old data from ${testDate.toString().substring(0, 10)} ($daysAgo days ago)');
+            }
+          }
+        }
+      }
+      
+      if (utcPositions.isEmpty) {
+        debugPrint('📋 ❌ No valid UTC timestamps found in data');
+        return history;
+      }
+      
+      // Prova a dedurre la struttura dai pattern UTC trovati
+      for (int i = 0; i < utcPositions.length && i < 7; i++) {
+        int utcOffset = utcPositions[i];
+        
+        // UTC (4 bytes)
+        int utc = data[utcOffset] | 
+                 (data[utcOffset + 1] << 8) | 
+                 (data[utcOffset + 2] << 16) | 
+                 (data[utcOffset + 3] << 24);
+        
+        DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+        
+        // Cerca steps e calories nelle posizioni adiacenti
+        int steps = 0;
+        double calories = 0.0;
+        
+        // Prova a leggere steps (4 bytes dopo UTC)
+        if (utcOffset + 7 < data.length) {
+          steps = data[utcOffset + 4] | 
+                 (data[utcOffset + 5] << 8) | 
+                 (data[utcOffset + 6] << 16) | 
+                 (data[utcOffset + 7] << 24);
+        }
+        
+        // Prova a leggere calories (3 bytes dopo steps)
+        if (utcOffset + 10 < data.length) {
+          int caloriesRaw = data[utcOffset + 8] | 
+                           (data[utcOffset + 9] << 8) | 
+                           (data[utcOffset + 10] << 16);
+          calories = caloriesRaw / 10.0;
+          
+          // Debug aggiuntivo per capire il formato calorie
+          debugPrint('📋 🔬 Calories debug: bytes[${utcOffset + 8}-${utcOffset + 10}] = 0x${data[utcOffset + 8].toRadixString(16)} 0x${data[utcOffset + 9].toRadixString(16)} 0x${data[utcOffset + 10].toRadixString(16)} = $caloriesRaw raw = $calories kcal');
+        }
+        
+        debugPrint('📋 Day $i: UTC=$utc, steps=$steps, calories_raw=${(calories * 10).toInt()}, calories=$calories');
+        
+        // Se abbiamo almeno una data valida, aggiungi l'entry
+        if (date.year >= 2020 && date.year <= 2030) {
+          // Valida gli steps per ragionevolezza (max 100,000 steps al giorno)
+          if (steps > 100000) {
+            debugPrint('📋 ⚠️ Steps value too high ($steps), probably corrupted data - resetting to 0');
+            steps = 0;
+          }
+          
+          // Le calorie sembrano non essere presenti nei dati storici di questo dispositivo
+          // o usano un formato diverso - per ora manteniamo 0
+          calories = 0.0;
+          
+          ExerciseHistoryData entry = ExerciseHistoryData(
+            date: date,
+            steps: steps,
+            calories: calories,
+          );
+          
+          history.add(entry);
+          
+          if (steps > 0) {
+            debugPrint('📋 ✅ Valid entry: ${date.toString().substring(0, 10)}, $steps steps, $calories kcal');
+          } else {
+            debugPrint('📋 ⭕ Entry (no activity): ${date.toString().substring(0, 10)}, 0 steps, 0.0 kcal');
+          }
+        }
+      }
+      
+      debugPrint('📋 Successfully parsed ${history.length} exercise history entries from real data');
+      
+    } catch (e) {
+      debugPrint('❌ Error parsing Exercise History: $e');
+    }
+    
+    return history;
   }
 }
