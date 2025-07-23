@@ -25,7 +25,7 @@ class HealthProcessor {
     }
 
     try {
-      debugPrint('🏥 Extended health data (${data.length} bytes): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      // SILENT processing - no debug print for health data
       
       // This could contain additional metrics like:
       // - Detailed heart rate variability

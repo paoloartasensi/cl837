@@ -35,7 +35,7 @@ class SportsProcessor {
       );
 
       _sportsDataController.add(sportsData);
-      debugPrint('Sports data: steps=$steps, distance=${distanceCm}cm, calories=${caloriesKcal}kcal');
+      // SILENT - no debug print for sports data
     } catch (e) {
       debugPrint('Error parsing sports data: $e');
     }

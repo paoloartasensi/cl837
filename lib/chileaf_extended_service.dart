@@ -52,10 +52,21 @@ class ChileafExtendedService {
   int _temperatureLogCount = 0;
   int _sportsLogCount = 0;
   
-  // Debug logging control
+  // Historical data request throttling - PREVENT INFINITE LOOPS
+  int _exerciseHistoryRequests = 0;
+  int _hrHistoryRequests = 0;
+  DateTime? _lastExerciseHistoryRequest;
+  DateTime? _lastHRHistoryRequest;
+  final int _maxHistoricalRequests = 3; // Max 3 requests per session
+  static const Duration _historicalRequestCooldown = Duration(minutes: 5); // 5 min cooldown
+  
+  // Debug logging control - VERY AGGRESSIVE THROTTLING
   final bool _enableVerboseLogging = false; // Set to true for detailed logs
-  final int _logThrottleInterval = 50; // Log every N packets
-  final int _healthDataThrottleInterval = 10; // Log health data every N occurrences
+  final int _logThrottleInterval = 500; // Log every 500 packets (was 50)
+  final int _healthDataThrottleInterval = 100; // Log health data every 100 occurrences (was 10)
+  final int _temperatureThrottleInterval = 50; // Log every 50th temperature (was 5)
+  final int _sportsThrottleInterval = 50; // Log every 50th sports data (was 5)
+  final int _accelerometerThrottleInterval = 200; // Log every 200th accelerometer batch
 
   // Data Processors
   late final SpO2Processor _spo2Processor;
@@ -245,17 +256,21 @@ class ChileafExtendedService {
         if (_enableVerboseLogging) {
           debugPrint('🔄 _processIncomingData called with ${data.length} bytes');
         } else {
-          debugPrint('🔄 Processed $_totalDataPackets packets (batch update)');
+          // Log batch updates much less frequently
+          if (_totalDataPackets % _logThrottleInterval == 0) {
+            debugPrint('🔄 Processed $_totalDataPackets packets (batch update)');
+          }
         }
       }
 
-      // Log frame details with smart filtering
+      // Log frame details ONLY for important commands or errors
       bool isHighFrequency = command == ChileafProtocol.commandAccelerometer || 
                             command == ChileafProtocol.commandHealthData ||
                             command == ChileafProtocol.commandTemperature ||
                             command == ChileafProtocol.commandSports;
       
-      if (_enableVerboseLogging || !isHighFrequency || shouldLog) {
+      // NEVER log frame details for high frequency data
+      if (_enableVerboseLogging && !isHighFrequency) {
         ChileafProtocol.logFrameDetails(data);
       }
 
@@ -263,23 +278,20 @@ class ChileafExtendedService {
       if (ChileafProtocol.isValidChileafFrame(data)) {
         if (command == null) return;
 
-        // Only log command processing with smart throttling
-        if (_enableVerboseLogging || !isHighFrequency || shouldLog) {
+        // Only log command processing for NON-high frequency commands
+        if (_enableVerboseLogging || !isHighFrequency) {
           debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
         }
         
-        // 🎯 TARGETED SpO2 SEARCH: Only search in packets that actually contain SpO2 data with throttling
+        // 🎯 TARGETED SpO2 SEARCH: Only for important SpO2 analysis - completely silent
         if (ChileafProtocol.commandContainsSpO2Data(command)) {
           if (command == ChileafProtocol.commandHealthData) {
             _healthDataLogCount++;
-            bool shouldLogSpO2Search = _enableVerboseLogging || _healthDataLogCount % _healthDataThrottleInterval == 0;
-            if (shouldLogSpO2Search) {
-              debugPrint('🎯 Command 0x75: Searching for REAL SpO2 data (analysis #$_healthDataLogCount)');
-            }
-            _spo2Processor.aggressiveSpO2Search(data, shouldLogDetails: shouldLogSpO2Search);
+            // Always silent - no SpO2 search logging
+            _spo2Processor.aggressiveSpO2Search(data, shouldLogDetails: false);
           }
-          // Pass the shouldLog flag to the enhanced analysis to control verbose output
-          _spo2Processor.enhancedSpO2Analysis(data, shouldLogDetails: shouldLog);
+          // Enhanced analysis is always silent now
+          _spo2Processor.enhancedSpO2Analysis(data, shouldLogDetails: false);
         }
         
         // Route to appropriate processor
@@ -298,18 +310,19 @@ class ChileafExtendedService {
     
     switch (command) {
       case ChileafProtocol.commandAccelerometer:
-        return _totalDataPackets % _logThrottleInterval == 0;
+        _accelerometerLogCount++;
+        return _accelerometerLogCount % _accelerometerThrottleInterval == 0;
       case ChileafProtocol.commandHealthData:
         _healthDataLogCount++;
         return _healthDataLogCount % _healthDataThrottleInterval == 0;
       case ChileafProtocol.commandTemperature:
         _temperatureLogCount++;
-        return _temperatureLogCount % 5 == 0; // Log every 5th temperature reading
+        return _temperatureLogCount % _temperatureThrottleInterval == 0;
       case ChileafProtocol.commandSports:
         _sportsLogCount++;
-        return _sportsLogCount % 5 == 0; // Log every 5th sports data
+        return _sportsLogCount % _sportsThrottleInterval == 0;
       default:
-        return true; // Always log other commands (device info, etc.)
+        return true; // Always log other commands (device info, historical data, etc.)
     }
   }
 
@@ -358,41 +371,23 @@ class ChileafExtendedService {
         }
         break;
       case ChileafProtocol.commandSports:
-        // Only log sports data occasionally to reduce spam
-        if (shouldLog) {
-          debugPrint('🏃 SPORTS DATA: Processing sports statistics (#$_sportsLogCount)');
-        }
+        // SILENTLY process sports data - no logging
         _sportsProcessor.processSportsData(data);
-        
-        // Auto-save to diary if enabled (rimuovi per ora)
-        // if (_autoSaveEnabled && data.length >= 13) {
-        //   _saveSportsDataToDiary(sportsData);
-        // }
         break;
       case ChileafProtocol.commandSpo2:
         debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');
         _spo2Processor.processSPO2Data(data);
         break;
       case ChileafProtocol.commandTemperature:
-        // Only log temperature data occasionally to reduce spam
-        if (shouldLog) {
-          debugPrint('🌡️ TEMPERATURE DATA: Processing temperature reading (#$_temperatureLogCount)');
-        }
+        // SILENTLY process temperature data - no logging
         _temperatureProcessor.processTemperatureData(data);
         break;
       case ChileafProtocol.commandAccelerometer:
-        // Only log accelerometer data occasionally to reduce spam
-        if (shouldLog) {
-          _accelerometerLogCount++;
-          debugPrint('📊 ACCELEROMETER DATA: Processing motion data (batch #$_accelerometerLogCount)');
-        }
+        // SILENTLY process accelerometer data - no logging
         _accelerometerProcessor.processAccelerometerData(data);
         break;
       case ChileafProtocol.commandHealthData:
-        // Only log health data occasionally to reduce spam
-        if (shouldLog) {
-          debugPrint('🏥 HEALTH DATA: Processing extended health data (#$_healthDataLogCount)');
-        }
+        // SILENTLY process health data - no logging
         _healthProcessor.processHealthData(data);
         break;
       case 0x16: // Exercise History
@@ -578,10 +573,20 @@ class ChileafExtendedService {
   
   /// Richiede lo storico degli esercizi degli ultimi 7 giorni
   Future<void> requestExerciseHistory() async {
+    // Check if we should throttle historical data requests
+    if (_shouldThrottleHistoricalRequests('exercise')) {
+      debugPrint('📊 ⏸️ Exercise history request throttled (too many recent requests)');
+      return;
+    }
+    
     debugPrint('📊 Requesting 7 days exercise history...');
     try {
       List<int> command = CommandBuilder.buildExerciseHistoryRequest();
       await _sendCommand(command);
+      
+      // Update throttling counters
+      _exerciseHistoryRequests++;
+      _lastExerciseHistoryRequest = DateTime.now();
     } catch (e) {
       debugPrint('❌ Failed to request exercise history: $e');
     }
@@ -589,13 +594,62 @@ class ChileafExtendedService {
   
   /// Richiede la lista degli storici della frequenza cardiaca
   Future<void> requestHRHistoryList() async {
+    // Check if we should throttle historical data requests
+    if (_shouldThrottleHistoricalRequests('hr')) {
+      debugPrint('💓 ⏸️ HR history request throttled (too many recent requests)');
+      return;
+    }
+    
     debugPrint('💓 Requesting HR history list...');
     try {
       List<int> command = CommandBuilder.buildHRHistoryListRequest();
       await _sendCommand(command);
+      
+      // Update throttling counters
+      _hrHistoryRequests++;
+      _lastHRHistoryRequest = DateTime.now();
     } catch (e) {
       debugPrint('❌ Failed to request HR history list: $e');
     }
+  }
+  
+  /// Check if historical data requests should be throttled to prevent infinite loops
+  bool _shouldThrottleHistoricalRequests(String type) {
+    final now = DateTime.now();
+    
+    if (type == 'exercise') {
+      // Check request count
+      if (_exerciseHistoryRequests >= _maxHistoricalRequests) {
+        // Check cooldown period
+        if (_lastExerciseHistoryRequest != null) {
+          final timeSinceLastRequest = now.difference(_lastExerciseHistoryRequest!);
+          if (timeSinceLastRequest < _historicalRequestCooldown) {
+            return true; // Still in cooldown
+          } else {
+            // Reset counters after cooldown
+            _exerciseHistoryRequests = 0;
+            _lastExerciseHistoryRequest = null;
+          }
+        }
+      }
+    } else if (type == 'hr') {
+      // Check request count
+      if (_hrHistoryRequests >= _maxHistoricalRequests) {
+        // Check cooldown period
+        if (_lastHRHistoryRequest != null) {
+          final timeSinceLastRequest = now.difference(_lastHRHistoryRequest!);
+          if (timeSinceLastRequest < _historicalRequestCooldown) {
+            return true; // Still in cooldown
+          } else {
+            // Reset counters after cooldown
+            _hrHistoryRequests = 0;
+            _lastHRHistoryRequest = null;
+          }
+        }
+      }
+    }
+    
+    return false; // Allow request
   }
   
   /// Richiede i dati storici HR per un timestamp specifico
@@ -614,12 +668,36 @@ class ChileafExtendedService {
   Future<void> _requestDetailedHRData(HeartRateHistoryList hrHistoryList) async {
     debugPrint('💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
     
-    for (int i = 0; i < hrHistoryList.timestamps.length; i++) {
+    // Filter out obviously invalid timestamps to prevent infinite loops
+    List<DateTime> validTimestamps = [];
+    final earliestValid = DateTime(2020, 1, 1); // Nothing before 2020
+    final latestValid = DateTime(2030, 12, 31); // Nothing after 2030
+    
+    for (var timestamp in hrHistoryList.timestamps) {
+      if (timestamp.isAfter(earliestValid) && timestamp.isBefore(latestValid)) {
+        validTimestamps.add(timestamp);
+      } else {
+        debugPrint('💓 ⚠️ Skipping invalid HR timestamp: $timestamp (outside valid range)');
+      }
+    }
+    
+    if (validTimestamps.isEmpty) {
+      debugPrint('💓 ⚠️ No valid HR timestamps found, skipping detailed requests');
+      return;
+    }
+    
+    // Limit to max 5 detailed requests to prevent spam
+    const maxRequests = 5;
+    final requestTimestamps = validTimestamps.take(maxRequests).toList();
+    
+    debugPrint('💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} valid timestamps');
+    
+    for (int i = 0; i < requestTimestamps.length; i++) {
       try {
-        await Future.delayed(Duration(milliseconds: 300 * i)); // Delay between requests
-        await requestHRHistoryData(hrHistoryList.timestamps[i]);
+        await Future.delayed(Duration(milliseconds: 500 * i)); // Longer delay between requests
+        await requestHRHistoryData(requestTimestamps[i]);
       } catch (e) {
-        debugPrint('❌ Failed to request HR data for timestamp ${hrHistoryList.timestamps[i]}: $e');
+        debugPrint('❌ Failed to request HR data for timestamp ${requestTimestamps[i]}: $e');
       }
     }
   }
@@ -839,16 +917,27 @@ class ChileafExtendedService {
   /// Richiede tutti i dati storici disponibili (sequenza completa)
   Future<void> requestAllHistoricalData() async {
     debugPrint('📚 Requesting all historical data...');
+    
+    // Check if we should throttle requests
+    if (_shouldThrottleHistoricalRequests('exercise') && _shouldThrottleHistoricalRequests('hr')) {
+      debugPrint('📚 ⏸️ All historical data requests throttled (too many recent requests)');
+      return;
+    }
+    
     try {
-      // 1. Prima richiedi lo storico esercizi
-      await requestExerciseHistory();
-      await Future.delayed(const Duration(milliseconds: 500));
+      // 1. Prima richiedi lo storico esercizi (se non throttled)
+      if (!_shouldThrottleHistoricalRequests('exercise')) {
+        await requestExerciseHistory();
+        await Future.delayed(const Duration(milliseconds: 1000)); // Longer delay
+      }
       
-      // 2. Poi richiedi la lista HR
-      await requestHRHistoryList();
-      await Future.delayed(const Duration(milliseconds: 500));
+      // 2. Poi richiedi la lista HR (se non throttled)
+      if (!_shouldThrottleHistoricalRequests('hr')) {
+        await requestHRHistoryList();
+        await Future.delayed(const Duration(milliseconds: 1000)); // Longer delay
+      }
       
-      // Nota: I dati HR specifici verranno richiesti quando arriva la lista
+      // Nota: I dati HR specifici verranno richiesti quando arriva la lista (con filtri)
     } catch (e) {
       debugPrint('❌ Failed to request all historical data: $e');
     }

@@ -14,10 +14,7 @@ class AccelerometerProcessor {
     
     _accelerometerLogCounter++;
     
-    // Only log occasionally to reduce spam, but still analyze data patterns
-    if (_accelerometerLogCounter % _accelerometerLogInterval == 0) {
-      debugPrint('📊 Accelerometer 0x0C sample (packet #$_accelerometerLogCounter): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
-    }
+    // SILENT processing - no debug print for accelerometer data
     
     if (data.length < 10) {
       return; // Invalid packet length
