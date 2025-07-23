@@ -1,23 +1,29 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../hrv_session_service.dart';
 import '../models/spo2_data.dart';
 import '../models/temperature_data.dart';
 import '../models/hrv_data.dart';
+import '../models/heart_rate_data.dart';
 import '../models/manual_test_result.dart';
 import '../services/manual_test_storage.dart';
 
 class ManualTestsWidget extends StatefulWidget {
   final ChileafExtendedService extendedService;
   final HRVSessionService? hrvService;
+  final Stream<HeartRateData?>? heartRateStream; // Stream principale per RR intervals
 
   const ManualTestsWidget({
     Key? key,
     required this.extendedService,
     this.hrvService,
+    this.heartRateStream, // Accesso diretto al stream del heart rate
   }) : super(key: key);
 
   @override
@@ -46,6 +52,10 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   StreamSubscription<SpO2Data>? _spo2Subscription;
   StreamSubscription<TemperatureData>? _tempSubscription;
   StreamSubscription<HRVData>? _hrvSubscription;
+  StreamSubscription<HeartRateData?>? _heartRateSubscription; // Subscription al main heart rate stream
+
+  // Ultimi dati raccolti per HRV dal main heart rate stream
+  final List<double> _collectedRRIntervals = [];
 
   @override
   void initState() {
@@ -65,6 +75,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     _spo2Subscription?.cancel();
     _tempSubscription?.cancel();
     _hrvSubscription?.cancel();
+    _heartRateSubscription?.cancel();
     super.dispose();
   }
 
@@ -103,7 +114,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       }
     });
 
-    // Ascolta i risultati HRV
+    // Ascolta i risultati HRV dal servizio esteso (legacy)
     _hrvSubscription = widget.extendedService.hrvDataStream.listen((data) {
       if (mounted) {
         debugPrint('📊 HRV Data received: RMSSD=${data.rmssd}, SDNN=${data.sdnn}, HR=${data.estimatedHR}');
@@ -120,6 +131,39 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
         }
       }
     });
+
+    // Ascolta il main heart rate stream per accesso diretto ai RR intervals
+    if (widget.heartRateStream != null) {
+      _heartRateSubscription = widget.heartRateStream!.listen((heartRateData) {
+        if (mounted && _isHRVTesting && heartRateData != null && heartRateData.rrIntervals != null) {
+          debugPrint('💓 Main HR Stream - RR intervals: ${heartRateData.rrIntervals!.length} found');
+          
+          // Raccogli RR intervals durante il test HRV
+          _collectedRRIntervals.addAll(heartRateData.rrIntervals!);
+          
+          // Se abbiamo abbastanza dati (almeno 10 RR intervals), calcola HRV
+          if (_collectedRRIntervals.length >= 10) {
+            debugPrint('🎯 Processing ${_collectedRRIntervals.length} collected RR intervals for HRV calculation');
+            
+            // Crea HRVData dai RR intervals raccolti
+            final hrvData = HRVData(
+              rrIntervals: List.from(_collectedRRIntervals),
+              timestamp: DateTime.now(),
+            );
+            
+            setState(() {
+              _latestHRVResult = hrvData;
+              _manualHRVResult = hrvData;
+            });
+            
+            // Salva il risultato
+            _saveTestResult(ManualTestResult.fromHRV(hrvData, notes: 'Test manuale HRV da main HR stream'));
+            
+            debugPrint('✅ HRV calculated from main stream: RMSSD=${hrvData.rmssd.toStringAsFixed(1)}ms, SDNN=${hrvData.sdnn.toStringAsFixed(1)}ms');
+          }
+        }
+      });
+    }
   }
 
   // Salva il risultato del test
@@ -212,6 +256,272 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     );
   }
 
+  // Mostra le istruzioni per il test HRV guidato
+  Future<bool> _showHRVInstructions() async {
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.favorite, color: Colors.red.shade600),
+            const SizedBox(width: 8),
+            const Text('Test HRV Guidato'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Condizioni Ottimali per HRV:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('• Preferibilmente al mattino dopo il risveglio'),
+                    const Text('• Posizione seduta o sdraiata, rilassata'),
+                    const Text('• Respirazione naturale e tranquilla'),
+                    const Text('• Evitare movimenti bruschi'),
+                    const Text('• Dispositivo ben posizionato al polso'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.orange.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Durante il Test (15 secondi):',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.orange.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('• Rimani fermo e rilassato'),
+                    const Text('• Respira normalmente'),
+                    const Text('• Non parlare o muoverti'),
+                    const Text('• Concentrati su un respiro tranquillo'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Interpretazione Risultati:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    const Text('• RMSSD >50ms: Buona forma fisica'),
+                    const Text('• RMSSD 30-50ms: Nella media'),
+                    const Text('• RMSSD <30ms: Possibile stress/fatica'),
+                    const Text('• Meglio al mattino per valutazione recovery'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Annulla'),
+          ),
+          ElevatedButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Inizia Test'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+          ),
+        ],
+      ),
+    );
+    
+    return result ?? false;
+  }
+
+  // Mostra l'interpretazione dettagliata dei risultati HRV
+  void _showHRVInterpretation(HRVData hrvResult) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(Icons.analytics, color: Colors.red.shade600),
+            const SizedBox(width: 8),
+            const Text('Analisi HRV Completa'),
+          ],
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Risultati principali
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Metriche HRV:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text('RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)} ms (${hrvResult.hrvQuality})'),
+                    Text('SDNN: ${hrvResult.sdnn.toStringAsFixed(1)} ms'),
+                    Text('FC Media: ${hrvResult.estimatedHR.toStringAsFixed(0)} BPM (${hrvResult.hrCategory})'),
+                    Text('RR Intervals: ${hrvResult.rrIntervals.length} campioni'),
+                    Text('Dati validi: ${hrvResult.isDataValid ? "Sì" : "No"}'),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Interpretazione clinica
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: _getHRVInterpretationColor(hrvResult.rmssd).withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _getHRVInterpretationColor(hrvResult.rmssd).withOpacity(0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Interpretazione Clinica:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _getHRVInterpretationColor(hrvResult.rmssd),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_getHRVDetailedInterpretation(hrvResult.rmssd)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Raccomandazioni
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Raccomandazioni:',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(_getHRVRecommendations(hrvResult.rmssd)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Colore basato sul valore RMSSD
+  Color _getHRVInterpretationColor(double rmssd) {
+    if (rmssd < 15) return Colors.red;
+    if (rmssd < 30) return Colors.orange;
+    if (rmssd < 50) return Colors.yellow.shade700;
+    if (rmssd < 70) return Colors.green;
+    return Colors.blue;
+  }
+
+  // Interpretazione dettagliata basata su RMSSD
+  String _getHRVDetailedInterpretation(double rmssd) {
+    if (rmssd < 15) {
+      return 'Variabilità cardiaca molto bassa. Potrebbe indicare stress severo, sovrallenamento, malattia o recupero insufficiente. Considera una valutazione medica.';
+    } else if (rmssd < 30) {
+      return 'Variabilità cardiaca sotto la media. Possibile presenza di stress, affaticamento o necessità di maggior recupero. Monitora nei prossimi giorni.';
+    } else if (rmssd < 50) {
+      return 'Variabilità cardiaca nella media normale. Buono stato generale, ma c\'è margine per miglioramenti attraverso tecniche di rilassamento.';
+    } else if (rmssd < 70) {
+      return 'Ottima variabilità cardiaca! Indica buona forma fisica, basso stress e buon recupero. Continua con le attuali abitudini.';
+    } else {
+      return 'Eccellente variabilità cardiaca! Indica forma fisica eccellente, sistema nervoso molto ben equilibrato. Ideale per atleti ben allenati.';
+    }
+  }
+
+  // Raccomandazioni basate su RMSSD
+  String _getHRVRecommendations(double rmssd) {
+    if (rmssd < 15) {
+      return '• Riposo e recupero prioritari\n• Evitare allenamenti intensi\n• Considerare tecniche di rilassamento\n• Valutazione medica consigliata';
+    } else if (rmssd < 30) {
+      return '• Aumentare il riposo\n• Allenamento leggero/moderato\n• Tecniche di respirazione\n• Monitoraggio quotidiano';
+    } else if (rmssd < 50) {
+      return '• Mantenere routine attuale\n• Aggiungere meditazione/yoga\n• Allenamento regolare\n• Test HRV mattutini';
+    } else if (rmssd < 70) {
+      return '• Ottimo stato: mantieni le abitudini\n• Allenamento intenso OK\n• Continua monitoraggio HRV\n• Ottimizza il sonno';
+    } else {
+      return '• Eccellente! Mantieni il livello\n• Allenamento ad alta intensità OK\n• Condividi la tua routine\n• Monitoraggio per performance';
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -227,7 +537,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             // SpO2 Test Section
             _buildTestSection(
               title: 'Test SpO2 WatchFit',
-              subtitle: 'Saturazione ossigeno (50 sec max, early stop)',
+              subtitle: 'Saturazione ossigeno (50s max)',
               icon: Icons.opacity,
               color: Colors.blue,
               isRunning: _isSpo2Testing,
@@ -239,8 +549,8 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             
             // HRV Test Section
             _buildTestSection(
-              title: 'Test HRV',
-              subtitle: 'Variabilità frequenza cardiaca (15 sec)',
+              title: 'Test HRV Guidato',
+              subtitle: 'Variabilità cardiaca (15 sec)',
               icon: Icons.favorite,
               color: Colors.red,
               isRunning: _isHRVTesting,
@@ -253,7 +563,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             // Temperature Test Section
             _buildTestSection(
               title: 'Test Temperatura',
-              subtitle: 'Temperatura corporea (10 sec)',
+              subtitle: 'Temperatura corporea (10s)',
               icon: Icons.thermostat,
               color: Colors.orange,
               isRunning: _isTempTesting,
@@ -579,54 +889,71 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             children: [
               Icon(icon, color: color),
               const SizedBox(width: 8),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: color,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: color.withOpacity(0.8),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: color.withOpacity(0.8),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              ElevatedButton.icon(
-                onPressed: isRunning ? null : onStart,
-                icon: isRunning 
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.play_arrow),
-                label: Text(isRunning ? 'Running...' : 'Start'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: color,
-                  foregroundColor: Colors.white,
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isRunning ? null : onStart,
+                  icon: isRunning 
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.play_arrow, size: 16),
+                  label: Text(
+                    isRunning ? 'Running...' : 'Start',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: color,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
-              ElevatedButton.icon(
-                onPressed: isRunning ? onStop : null,
-                icon: const Icon(Icons.stop),
-                label: const Text('Stop'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.grey,
-                  foregroundColor: Colors.white,
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: isRunning ? onStop : null,
+                  icon: const Icon(Icons.stop, size: 16),
+                  label: const Text(
+                    'Stop',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
                 ),
               ),
             ],
@@ -763,30 +1090,33 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   }
 
   Future<void> _startHRVTest() async {
+    // Mostra prima le istruzioni guidate per il test HRV
+    final shouldProceed = await _showHRVInstructions();
+    if (!shouldProceed) return;
+    
     setState(() {
       _isHRVTesting = true;
       // Reset del risultato congelato per nuovo test
       _manualHRVResult = null;
     });
     
+    // RESET della collezione RR intervals per nuovo test
+    _collectedRRIntervals.clear();
+    
     try {
-      // Sottoscrivi al flusso HRV in tempo reale invece di richiedere dati storici
-      _hrvSubscription?.cancel();
-      List<HRVData> hrvSamples = [];
+      // Attiva l'allarme heart rate per il monitoraggio continuo (assicura che i dati fluiscano)
+      await widget.extendedService.setHeartRateAlarm(true);
       
-      _hrvSubscription = widget.extendedService.hrvDataStream.listen((hrvData) {
-        if (_isHRVTesting && hrvData.isDataValid) {
-          hrvSamples.add(hrvData);
-          // Aggiorna l'ultimo risultato valido durante il test
-          _manualHRVResult = hrvData;
-          setState(() {});
-        }
-      });
+      // Attendi che il dispositivo inizi il monitoraggio
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      debugPrint('🔍 Starting HRV test - monitoring main HR stream for RR intervals...');
+      debugPrint('� RR intervals saranno raccolti dal main stream (stesso usato in SENSORI)');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test HRV avviato - Monitoraggio variabilità cardiaca in tempo reale per 15 secondi'),
+            content: Text('Test HRV avviato - Raccogliendo RR intervals dal main stream... Rimani rilassato'),
             backgroundColor: Colors.red,
             duration: Duration(seconds: 4),
           ),
@@ -794,26 +1124,36 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       }
       
       // Timer per auto-completamento HRV dopo 15 secondi
-      Timer(const Duration(seconds: 15), () {
+      Timer(const Duration(seconds: 15), () async {
         if (mounted && _isHRVTesting) {
-          _hrvSubscription?.cancel();
+          await widget.extendedService.setHeartRateAlarm(false);
           setState(() => _isHRVTesting = false);
           
           final hrvResult = _manualHRVResult;
           String message;
-          if (hrvResult != null && hrvSamples.isNotEmpty) {
-            message = 'Test HRV completato! RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)}ms (${hrvResult.hrvQuality}) - ${hrvSamples.length} campioni';
+          if (hrvResult != null && _collectedRRIntervals.length >= 10) {
+            message = 'Test HRV completato! RMSSD: ${hrvResult.rmssd.toStringAsFixed(1)}ms (${hrvResult.hrvQuality}) - ${_collectedRRIntervals.length} RR intervals raccolti';
+          } else if (_collectedRRIntervals.isNotEmpty) {
+            message = 'Test HRV completato con ${_collectedRRIntervals.length} RR intervals (minimo 10 richiesto). Riprova per risultati più accurati.';
           } else {
-            message = 'Test HRV completato ma nessun dato valido ricevuto - verifica il posizionamento del dispositivo';
+            message = 'Test HRV completato ma nessun RR interval ricevuto dal main stream. Verifica il posizionamento del dispositivo e riprova.';
           }
           
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(message),
-              backgroundColor: hrvResult != null ? Colors.green : Colors.orange,
-              duration: const Duration(seconds: 4),
-            ),
-          );
+          if (mounted) {
+            ScaffoldMessenger.of(context).clearSnackBars();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(message),
+                backgroundColor: (hrvResult != null && _collectedRRIntervals.length >= 10) ? Colors.green : Colors.orange,
+                duration: const Duration(seconds: 6),
+                action: hrvResult != null ? SnackBarAction(
+                  label: 'Dettagli',
+                  textColor: Colors.white,
+                  onPressed: () => _showHRVInterpretation(hrvResult),
+                ) : null,
+              ),
+            );
+          }
         }
       });
       
@@ -977,13 +1317,53 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       );
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(dailyData.toJson());
-      debugPrint('📤 Export oggi (${todayResults.length} risultati):\n$jsonString');
+      
+      // Salva il file JSON nel filesystem
+      final directory = await getApplicationDocumentsDirectory();
+      final fileName = 'CL837_Test_Results_$dateStr.json';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsString(jsonString);
+      
+      debugPrint('📤 Export oggi salvato in: ${file.path}');
+      debugPrint('📊 Dati (${todayResults.length} risultati):\n$jsonString');
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export completato: ${todayResults.length} risultati'),
-            backgroundColor: Colors.green,
+        // Mostra dialog con opzioni
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Export Completato'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('File salvato: $fileName'),
+                Text('Risultati: ${todayResults.length}'),
+                const SizedBox(height: 16),
+                const Text('Cosa vuoi fare?'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await Share.shareXFiles(
+                    [XFile(file.path)],
+                    text: 'Risultati test CL837 del $dateStr (${todayResults.length} test)',
+                  );
+                },
+                icon: const Icon(Icons.share),
+                label: const Text('Condividi'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.blue,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         );
       }
@@ -1026,13 +1406,55 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       };
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
-      debugPrint('📤 Export completo (${allResults.length} risultati):\n$jsonString');
+      
+      // Salva il file JSON nel filesystem
+      final directory = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
+      final fileName = 'CL837_All_Test_Results_$timestamp.json';
+      final file = File('${directory.path}/$fileName');
+      await file.writeAsString(jsonString);
+      
+      debugPrint('📤 Export completo salvato in: ${file.path}');
+      debugPrint('📊 Dati (${allResults.length} risultati):\n$jsonString');
       
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export completato: ${allResults.length} risultati'),
-            backgroundColor: Colors.green,
+        // Mostra dialog con opzioni
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Export Completato'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('File salvato: $fileName'),
+                Text('Risultati totali: ${allResults.length}'),
+                Text('Giorni: ${dailyGroups.length}'),
+                const SizedBox(height: 16),
+                const Text('Cosa vuoi fare?'),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('OK'),
+              ),
+              ElevatedButton.icon(
+                onPressed: () async {
+                  Navigator.of(context).pop();
+                  await Share.shareXFiles(
+                    [XFile(file.path)],
+                    text: 'Tutti i risultati test CL837 (${allResults.length} test in ${dailyGroups.length} giorni)',
+                  );
+                },
+                icon: const Icon(Icons.share),
+                label: const Text('Condividi'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+            ],
           ),
         );
       }

@@ -889,6 +889,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         child: ManualTestsWidget(
                             extendedService: _extendedService,
                             hrvService: _hrvSessionService,
+                            heartRateStream: _heartRateService.dataStream, // Passa il main heart rate stream
                         ),
                     ),
                     // Tab 3: Info dispositivo
