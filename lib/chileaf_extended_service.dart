@@ -49,6 +49,10 @@ class ChileafExtendedService {
   // Callback per notificare il completamento automatico del test SpO2
   void Function()? _onSpO2AutoComplete;
   
+  // Tracciamento letture consecutive valide per WatchFit
+  int _consecutiveValidReadings = 0;
+  bool _spo2MeasurementActive = false;
+  
   void setSpO2AutoCompleteCallback(void Function()? callback) {
     _onSpO2AutoComplete = callback;
   }
@@ -459,9 +463,13 @@ class ChileafExtendedService {
   }
 
   // Public SpO2 measurement methods using OFFICIAL commands
-  /// Avvia la misurazione SpO2 con timer di 30 secondi (standard)
+  /// Avvia la misurazione SpO2 WatchFit: 50 secondi max, interruzione anticipata con 2 letture valide consecutive
   Future<void> measureSpO2() async {
-    debugPrint('🩸 Starting SpO2 measurement with 30-second standard duration...');
+    debugPrint('🩸 Starting WatchFit SpO2 measurement: 50s max, early termination with 2 valid consecutive readings...');
+    
+    // Reset contatori per nuova misurazione
+    _consecutiveValidReadings = 0;
+    _spo2MeasurementActive = true;
     
     try {
       // Prima prova con il comando ufficiale
@@ -480,12 +488,12 @@ class ChileafExtendedService {
       // Se il comando ufficiale non accende il LED, usa il formato che funziona nel test
       debugPrint('🔄 Ensuring LED activation with alternative format...');
       await _sendCommand(CommandBuilder.buildEnableSpO2Mode());
-      debugPrint('🚨 LED SpO2 activation command sent - LED rosso acceso per 30 secondi');
+      debugPrint('🚨 LED SpO2 activation command sent - LED rosso acceso per 50 secondi max');
       
-      // Timer automatico di 30 secondi per spegnere il LED (standard SpO2)
+      // Timer automatico di 50 secondi per spegnere il LED (WatchFit ottimizzato)
       _spo2Timer?.cancel();
-      _spo2Timer = Timer(const Duration(seconds: 30), () async {
-        debugPrint('⏰ 30-second SpO2 measurement completed - auto-stopping');
+      _spo2Timer = Timer(const Duration(seconds: 50), () async {
+        debugPrint('⏰ 50-second WatchFit SpO2 measurement completed - auto-stopping');
         await stopSpO2Measurement();
         
         // Notifica il completamento automatico al widget
@@ -493,6 +501,9 @@ class ChileafExtendedService {
           _onSpO2AutoComplete!();
         }
       });
+      
+      // Setup stream listener per rilevare terminazione anticipata
+      _setupSpO2EarlyTermination();
       
     } catch (e) {
       debugPrint('❌ Failed to start SpO2 measurement: $e');
@@ -506,9 +517,64 @@ class ChileafExtendedService {
     }
   }
 
+  /// Setup listener per terminazione anticipata WatchFit
+  void _setupSpO2EarlyTermination() {
+    if (!_spo2MeasurementActive) return;
+    
+    // Ascolta le letture SpO2 per rilevare 2 consecutive valide
+    _spo2Processor.spo2DataStream.listen((data) {
+      if (!_spo2MeasurementActive) return;
+      
+      // Controlla se la lettura è valida per WatchFit (segnale >15, postura corretta)
+      if (_isWatchFitValidReading(data)) {
+        _consecutiveValidReadings++;
+        debugPrint('📊 WatchFit valid reading #$_consecutiveValidReadings: SpO2=${data.spo2Value}%, signal=${data.signalQuality}/15');
+        
+        // Se abbiamo 2 letture consecutive valide, termina anticipatamente
+        if (_consecutiveValidReadings >= 2) {
+          debugPrint('🎯 WatchFit EARLY TERMINATION: 2 consecutive valid readings achieved!');
+          _triggerEarlyCompletion();
+        }
+      } else {
+        // Reset contatore se la lettura non è valida
+        if (_consecutiveValidReadings > 0) {
+          debugPrint('🔄 WatchFit: Invalid reading, resetting counter (signal=${data.signalQuality}, posture=${data.correctWristPosture})');
+          _consecutiveValidReadings = 0;
+        }
+      }
+    });
+  }
+
+  /// Controlla se una lettura SpO2 è valida per WatchFit (segnale >15, postura corretta)
+  bool _isWatchFitValidReading(SpO2Data data) {
+    return data.signalQuality > 15 && 
+           data.correctWristPosture && 
+           data.isWearing && 
+           data.spo2Value != null && 
+           data.spo2Value! >= 70 && 
+           data.spo2Value! <= 100;
+  }
+
+  /// Attiva la terminazione anticipata del test SpO2
+  Future<void> _triggerEarlyCompletion() async {
+    if (!_spo2MeasurementActive) return;
+    
+    debugPrint('🏁 WatchFit early completion triggered - stopping measurement');
+    await stopSpO2Measurement();
+    
+    // Notifica il completamento automatico al widget
+    if (_onSpO2AutoComplete != null) {
+      _onSpO2AutoComplete!();
+    }
+  }
+
   /// Ferma la misurazione SpO2 e spegne il LED rosso
   Future<void> stopSpO2Measurement() async {
-    debugPrint('🛑 Stopping SpO2 measurement and turning off LED...');
+    debugPrint('🛑 Stopping WatchFit SpO2 measurement and turning off LED...');
+    
+    // Reset stati WatchFit
+    _spo2MeasurementActive = false;
+    _consecutiveValidReadings = 0;
     
     try {
       // Cancella il timer automatico se attivo

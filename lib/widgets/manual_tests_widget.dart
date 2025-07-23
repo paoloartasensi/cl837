@@ -122,7 +122,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       
       String message;
       if (spo2Value != null && spo2Value > 0) {
-        message = 'SpO2 completato automaticamente! Risultato: ${spo2Value}% (qualità segnale: $quality/15)';
+        message = 'SpO2 completato automaticamente! Risultato: $spo2Value% (qualità segnale: $quality/15)';
       } else {
         message = 'SpO2 completato automaticamente dopo 30 sec. Controlla i risultati sopra.';
       }
@@ -571,9 +571,9 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test SpO2 avviato - LED ROSSO acceso per 30 sec. Posiziona il dito sul sensore'),
+            content: Text('Test SpO2 WatchFit avviato - LED ROSSO acceso (50 sec max, stop anticipato con 2 letture valide)'),
             backgroundColor: Colors.blue,
-            duration: Duration(seconds: 4),
+            duration: Duration(seconds: 5),
           ),
         );
       }
