@@ -1129,4 +1129,63 @@ class ChileafExtendedService {
       debugPrint('❌ Failed to shutdown device with official command: $e');
     }
   }
+
+  // === MANUAL TEST WRAPPER METHODS ===
+
+  /// Reset device usando comando ufficiale 0xF3
+  Future<void> deviceReset() async {
+    debugPrint('🔄 Resetting device using OFFICIAL command...');
+    try {
+      var officialCommand = OfficialChileafCommands.deviceReset();
+      
+      debugPrint('🔍 Official reset command:');
+      debugPrint('   Command: 0xF3 (restoration from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ Official reset command sent');
+    } catch (e) {
+      debugPrint('❌ Failed to reset device with official command: $e');
+      rethrow;
+    }
+  }
+
+  /// Richiesta temperatura usando comando personalizzato
+  /// Non presente negli SDK ufficiali - comando sperimentale
+  Future<void> requestTemperature() async {
+    debugPrint('🌡️ Requesting temperature using experimental command...');
+    try {
+      List<int> command = [0xFF, 0x04, 0x38, 0x00, 0x3D]; // Temperature request command (sperimentale)
+      
+      debugPrint('🔍 Experimental temperature command:');
+      debugPrint('   Command: 0x38 (experimental - not in official SDK)');
+      debugPrint('   Frame: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Temperature request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request temperature: $e');
+      rethrow;
+    }
+  }
+
+  /// Richiesta HR esteso con RR intervals per HRV
+  /// Utilizza comando ufficiale 0x22 (getHistoryOfHRRecord)
+  Future<void> requestHRVData() async {
+    debugPrint('💓 Requesting HRV data using OFFICIAL HR command...');
+    try {
+      var officialCommand = OfficialChileafCommands.getHistoryOfHRRecord();
+      
+      debugPrint('🔍 Official HR record command for HRV:');
+      debugPrint('   Command: 0x22 (getHistoryOfHRRecord from WearManager.java)');
+      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+      debugPrint('   Note: RR intervals will be processed for HRV calculation');
+      
+      await _sendCommand(officialCommand);
+      debugPrint('✅ HRV data request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request HRV data: $e');
+      rethrow;
+    }
+  }
 }

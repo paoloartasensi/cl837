@@ -13,18 +13,14 @@ import 'widgets/heart_rate_widget.dart';
 import 'widgets/hrv_session_widget.dart';
 import 'widgets/spo2_widget.dart';
 import 'widgets/temperature_widget.dart';
-import 'widgets/sports_widget.dart';
-import 'widgets/sensor_info_widget.dart';
+import 'widgets/manual_tests_widget.dart';
 import 'widgets/historical_data_widget.dart';
-import 'widgets/rope_skipping_widget.dart';
 import 'widgets/device_info_widget.dart';
-import 'widgets/test_diary_widget.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
 import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
-import 'models/sports_data.dart';
 import 'models/historical_data.dart';
 import 'services/error_handler.dart';
 import 'services/performance_monitor.dart';
@@ -84,7 +80,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     HRVData? latestHRVData;
     SpO2Data? latestSpO2Data;  
     TemperatureData? latestTemperatureData;
-    SportsData? latestSportsData;
     
     // Historical data
     List<ExerciseHistoryData>? latestExerciseHistory;
@@ -100,7 +95,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     StreamSubscription<HRVData?>? _hrvDataSubscription;
     StreamSubscription<SpO2Data?>? _spo2DataSubscription;
     StreamSubscription<TemperatureData?>? _temperatureDataSubscription;
-    StreamSubscription<SportsData?>? _sportsDataSubscription;
     
     // Historical data subscriptions
     StreamSubscription<List<ExerciseHistoryData>>? _exerciseHistorySubscription;
@@ -322,17 +316,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             },
         );
         
-        _sportsDataSubscription = _extendedService.sportsDataStream.listen(
-            (sportsData) {
-                setState(() {
-                    latestSportsData = sportsData;
-                });
-            },
-            onError: (error) {
-                debugPrint('Sports stream error: $error');
-            },
-        );
-        
         // Subscribe to historical data streams
         _exerciseHistorySubscription = _extendedService.exerciseHistoryStream.listen(
             (exerciseHistory) {
@@ -380,7 +363,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
             await _hrvDataSubscription?.cancel();
             await _spo2DataSubscription?.cancel();
             await _temperatureDataSubscription?.cancel();
-            await _sportsDataSubscription?.cancel();
             await _exerciseHistorySubscription?.cancel();
             await _hrHistoryListSubscription?.cancel();
             await _hrHistoryDataSubscription?.cancel();
@@ -403,7 +385,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 latestHRVData = null;
                 latestSpO2Data = null;
                 latestTemperatureData = null;
-                latestSportsData = null;
                 latestExerciseHistory = null;
                 latestHRHistoryList = null;
                 latestHRHistoryData = null;
@@ -420,12 +401,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         _hrvDataSubscription?.cancel();
         _spo2DataSubscription?.cancel();
         _temperatureDataSubscription?.cancel();
-        _sportsDataSubscription?.cancel();
         _exerciseHistorySubscription?.cancel();
         _hrHistoryListSubscription?.cancel();
         _hrHistoryDataSubscription?.cancel();
         _temperatureDataSubscription?.cancel();
-        _sportsDataSubscription?.cancel();
         _sensorService.dispose();
         _heartRateService.dispose();
         _batteryService.dispose();
@@ -632,9 +611,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             temperatureData: latestTemperatureData,
                             isConnected: connectedDevice != null,
                         ),
-                        SportsWidget(
-                            sportsData: latestSportsData,
-                            isConnected: connectedDevice != null,
+                        ManualTestsWidget(
+                            extendedService: _extendedService,
+                            hrvService: _hrvSessionService,
                         ),
                     ],
                 ),
@@ -693,9 +672,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         temperatureData: latestTemperatureData,
                         isConnected: connectedDevice != null,
                     ),
-                    SportsWidget(
-                        sportsData: latestSportsData,
-                        isConnected: connectedDevice != null,
+                    ManualTestsWidget(
+                        extendedService: _extendedService,
+                        hrvService: _hrvSessionService,
                     ),
                 ]),
                 
@@ -703,11 +682,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 
                 // Accelerometer a larghezza piena
                 AccelerometerWidget(latestData: latestAccelData),
-                
-                const SizedBox(height: 16),
-                
-                // Sensor Information Widget
-                const SensorInfoWidget(),
                 
                 const SizedBox(height: 16),
                 
@@ -721,11 +695,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
                 ),
-                
-                const SizedBox(height: 16),
-                
-                // Rope Skipping Widget
-                RopeSkippingWidget(service: _extendedService),
                 
                 const SizedBox(height: 16),
                 
@@ -847,7 +816,10 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 children: [
                     DeviceInfoWidget(service: _extendedService),
                     const SizedBox(height: 16),
-                    const SensorInfoWidget(),
+                    ManualTestsWidget(
+                        extendedService: _extendedService,
+                        hrvService: _hrvSessionService,
+                    ),
                 ],
             ),
         );
@@ -886,7 +858,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     controller: _tabController,
                     tabs: const [
                         Tab(icon: Icon(Icons.sensors), text: 'Sensori'),
-                        Tab(icon: Icon(Icons.book), text: 'Diario'),
+                        Tab(icon: Icon(Icons.build), text: 'Test Manuali'),
                         Tab(icon: Icon(Icons.info), text: 'Info'),
                     ],
                 ),
@@ -896,8 +868,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 children: [
                     // Tab 1: Sensori
                     _buildSensorTab(),
-                    // Tab 2: Diario  
-                    const TestDiaryWidget(),
+                    // Tab 2: Test Manuali
+                    Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: ManualTestsWidget(
+                            extendedService: _extendedService,
+                            hrvService: _hrvSessionService,
+                        ),
+                    ),
                     // Tab 3: Info dispositivo
                     _buildInfoTab(),
                 ],
