@@ -1,10 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../hrv_session_service.dart';
 import '../models/spo2_data.dart';
@@ -1317,53 +1314,13 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       );
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(dailyData.toJson());
-      
-      // Salva il file JSON nel filesystem
-      final directory = await getApplicationDocumentsDirectory();
-      final fileName = 'CL837_Test_Results_$dateStr.json';
-      final file = File('${directory.path}/$fileName');
-      await file.writeAsString(jsonString);
-      
-      debugPrint('📤 Export oggi salvato in: ${file.path}');
-      debugPrint('📊 Dati (${todayResults.length} risultati):\n$jsonString');
+      debugPrint('📤 Export oggi (${todayResults.length} risultati):\n$jsonString');
       
       if (mounted) {
-        // Mostra dialog con opzioni
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Export Completato'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('File salvato: $fileName'),
-                Text('Risultati: ${todayResults.length}'),
-                const SizedBox(height: 16),
-                const Text('Cosa vuoi fare?'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await Share.shareXFiles(
-                    [XFile(file.path)],
-                    text: 'Risultati test CL837 del $dateStr (${todayResults.length} test)',
-                  );
-                },
-                icon: const Icon(Icons.share),
-                label: const Text('Condividi'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export completato: ${todayResults.length} risultati'),
+            backgroundColor: Colors.green,
           ),
         );
       }
@@ -1406,55 +1363,13 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       };
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
-      
-      // Salva il file JSON nel filesystem
-      final directory = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().toIso8601String().replaceAll(':', '-').split('.')[0];
-      final fileName = 'CL837_All_Test_Results_$timestamp.json';
-      final file = File('${directory.path}/$fileName');
-      await file.writeAsString(jsonString);
-      
-      debugPrint('📤 Export completo salvato in: ${file.path}');
-      debugPrint('📊 Dati (${allResults.length} risultati):\n$jsonString');
+      debugPrint('📤 Export completo (${allResults.length} risultati):\n$jsonString');
       
       if (mounted) {
-        // Mostra dialog con opzioni
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Export Completato'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('File salvato: $fileName'),
-                Text('Risultati totali: ${allResults.length}'),
-                Text('Giorni: ${dailyGroups.length}'),
-                const SizedBox(height: 16),
-                const Text('Cosa vuoi fare?'),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(),
-                child: const Text('OK'),
-              ),
-              ElevatedButton.icon(
-                onPressed: () async {
-                  Navigator.of(context).pop();
-                  await Share.shareXFiles(
-                    [XFile(file.path)],
-                    text: 'Tutti i risultati test CL837 (${allResults.length} test in ${dailyGroups.length} giorni)',
-                  );
-                },
-                icon: const Icon(Icons.share),
-                label: const Text('Condividi'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ],
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export completato: ${allResults.length} risultati'),
+            backgroundColor: Colors.green,
           ),
         );
       }
