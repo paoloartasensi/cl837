@@ -61,13 +61,13 @@ class ManualTestResult {
       testType: TestType.hrv,
       timestamp: hrvData.timestamp,
       data: {
-        'rmssd': hrvData.rmssd,
-        'sdnn': hrvData.sdnn,
-        'meanRR': hrvData.meanRR,
-        'medianRR': hrvData.medianRR,
-        'estimatedHR': hrvData.estimatedHR,
+        'rmssd': hrvData.rmssd.isFinite ? hrvData.rmssd : 0.0,
+        'sdnn': hrvData.sdnn.isFinite ? hrvData.sdnn : 0.0,
+        'meanRR': hrvData.meanRR.isFinite ? hrvData.meanRR : 0.0,
+        'medianRR': hrvData.medianRR.isFinite ? hrvData.medianRR : 0.0,
+        'estimatedHR': hrvData.estimatedHR.isFinite ? hrvData.estimatedHR : 0.0,
         'rrIntervalsCount': hrvData.rrIntervals.length,
-        'rrIntervals': hrvData.rrIntervals, // ✅ Aggiunti gli RR intervals completi
+        'rrIntervals': hrvData.rrIntervals.where((interval) => interval.isFinite).toList(), // Filtra valori non finiti
         'hrvQuality': hrvData.hrvQuality,
         'hrCategory': hrvData.hrCategory,
         'isDataValid': hrvData.isDataValid,
