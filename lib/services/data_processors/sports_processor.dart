@@ -7,6 +7,11 @@ import '../../models/sports_data.dart';
 class SportsProcessor {
   final StreamController<SportsData> _sportsDataController = StreamController<SportsData>.broadcast();
   
+  // Debouncing per ridurre log ripetitivi
+  SportsData? _lastSportsData;
+  DateTime? _lastLogTime;
+  static const Duration _logInterval = Duration(seconds: 15); // Log ogni 15 secondi max
+  
   /// Stream dei dati sportivi processati
   Stream<SportsData> get sportsDataStream => _sportsDataController.stream;
 
@@ -35,7 +40,20 @@ class SportsProcessor {
       );
 
       _sportsDataController.add(sportsData);
-      debugPrint('Sports data: steps=$steps, distance=${distanceCm}cm, calories=${caloriesKcal}kcal');
+      
+      // Log solo se i valori sono cambiati significativamente o è passato tempo
+      final now = DateTime.now();
+      final shouldLog = _lastLogTime == null || now.difference(_lastLogTime!) > _logInterval;
+      
+      final hasSignificantChange = _lastSportsData == null ||
+          (steps - _lastSportsData!.steps).abs() > 5 || // Almeno 5 passi di differenza
+          (caloriesKcal - _lastSportsData!.caloriesKcal).abs() > 1.0; // Almeno 1 kcal di differenza
+          
+      if (hasSignificantChange || shouldLog) {
+        debugPrint('Sports data: steps=$steps, distance=${distanceCm}cm, calories=${caloriesKcal}kcal');
+        _lastSportsData = sportsData;
+        _lastLogTime = now;
+      }
     } catch (e) {
       debugPrint('Error parsing sports data: $e');
     }

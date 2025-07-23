@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../chileaf_extended_service.dart';
 import '../hrv_session_service.dart';
 import '../models/spo2_data.dart';
@@ -1290,6 +1293,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   }
 
   // Export dei dati di oggi
+  // Export dei dati di oggi con salvataggio e condivisione
   Future<void> _exportTodayData() async {
     try {
       final today = DateTime.now();
@@ -1314,15 +1318,43 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       );
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(dailyData.toJson());
-      debugPrint('📤 Export oggi (${todayResults.length} risultati):\n$jsonString');
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export completato: ${todayResults.length} risultati'),
-            backgroundColor: Colors.green,
-          ),
+      // Salva file JSON
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = 'CL837_Daily_Export_$dateStr.json';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(jsonString);
+        
+        debugPrint('� File salvato: ${file.path}');
+        
+        // Condividi il file
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'Export dati CL837 del $dateStr - ${todayResults.length} test',
+          subject: 'CL837 Export Giornaliero $dateStr',
         );
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export salvato e condiviso: ${todayResults.length} risultati'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      } catch (e) {
+        // Fallback: solo log se la condivisione fallisce
+        debugPrint('�📤 Export oggi (${todayResults.length} risultati):\n$jsonString');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export nei log: ${todayResults.length} risultati'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('❌ Error exporting today data: $e');
@@ -1337,7 +1369,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     }
   }
 
-  // Export di tutti i dati
+  // Export di tutti i dati con salvataggio e condivisione
   Future<void> _exportAllData() async {
     try {
       final allResults = await ManualTestStorage.getAllResults();
@@ -1356,22 +1388,55 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
       
       // Raggruppa per giorno
       final dailyGroups = DailyTestResults.groupByDay(allResults);
+      final now = DateTime.now();
+      final timestampStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}-${now.minute.toString().padLeft(2, '0')}';
+      
       final exportData = {
-        'exportDate': DateTime.now().toIso8601String(),
+        'exportDate': now.toIso8601String(),
+        'exportTimestamp': timestampStr,
         'totalResults': allResults.length,
+        'totalDays': dailyGroups.length,
         'dailyData': dailyGroups.map((daily) => daily.toJson()).toList(),
       };
       
       final jsonString = const JsonEncoder.withIndent('  ').convert(exportData);
-      debugPrint('📤 Export completo (${allResults.length} risultati):\n$jsonString');
       
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Export completato: ${allResults.length} risultati'),
-            backgroundColor: Colors.green,
-          ),
+      // Salva file JSON
+      try {
+        final directory = await getApplicationDocumentsDirectory();
+        final fileName = 'CL837_Complete_Export_$timestampStr.json';
+        final file = File('${directory.path}/$fileName');
+        await file.writeAsString(jsonString);
+        
+        debugPrint('� File completo salvato: ${file.path}');
+        
+        // Condividi il file
+        await Share.shareXFiles(
+          [XFile(file.path)],
+          text: 'Export completo dati CL837 - ${allResults.length} test totali in ${dailyGroups.length} giorni',
+          subject: 'CL837 Export Completo $timestampStr',
         );
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export completo salvato e condiviso:\n${allResults.length} risultati, ${dailyGroups.length} giorni'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }
+      } catch (e) {
+        // Fallback: solo log se la condivisione fallisce
+        debugPrint('📤 Export completo (${allResults.length} risultati):\n$jsonString');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Export nei log: ${allResults.length} risultati'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('❌ Error exporting all data: $e');
