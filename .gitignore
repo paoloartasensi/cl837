@@ -55,6 +55,7 @@ android/app/.cxx/RelWithDebInfo/
 # Project specific directories to ignore
 
 /tools/
+/REVERSE/CL831_DECOMPILED/
 
 # Lock files that can cause merge conflicts
 pubspec.lock
