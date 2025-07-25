@@ -1,3 +1,5 @@
+// ignore_for_file: empty_catches
+
 import 'dart:typed_data';
 
 import 'ble_protocol/official_commands.dart';
@@ -19,22 +21,17 @@ class HistoricalDataService {
   /// Utilizza comando 0x21 (getHistoryOfHRRecord)
   Future<void> requestHRRecordList() async {
     if (_shouldThrottleRequest('hr_record_list')) {
-      print('⏳ HR Record List request throttled');
       return;
     }
     
     try {
       var command = OfficialChileafCommands.getHistoryOfHRRecord();
       
-      print('💓📋 Requesting HR Record List with optimized checksum...');
-      print('📡 Sending: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
       
       await _sendCommand(command);
       _updateRequestTime('hr_record_list');
       
-      print('✅ HR Record List request sent successfully');
     } catch (e) {
-      print('❌ Failed to request HR Record List: $e');
     }
   }
 
@@ -117,23 +114,17 @@ class HistoricalDataService {
   /// Utilizza comando 0x16 (getHistoryOfSport) con parsing dell'app originale
   Future<void> requestExerciseHistoryEnhanced() async {
     if (_shouldThrottleRequest('exercise_history_enhanced')) {
-      print('⏳ Enhanced Exercise History request throttled');
       return;
     }
     
     try {
       var command = OfficialChileafCommands.getHistoryOfSport();
       
-      print('🏃📊 Requesting Enhanced Exercise History (reverse-engineered parser)...');
-      print('🔧 Using exact parsing from original app WearReceivedDataCallback.java');
-      print('📡 Sending: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
       
       await _sendCommand(command);
       _updateRequestTime('exercise_history_enhanced');
       
-      print('✅ Enhanced Exercise History request sent successfully');
     } catch (e) {
-      print('❌ Failed to request Enhanced Exercise History: $e');
     }
   }
 
@@ -141,23 +132,17 @@ class HistoricalDataService {
   /// Utilizza comando 0x05 (getHistoryOfSleep) con parsing dell'app originale
   Future<void> requestSleepHistoryEnhanced() async {
     if (_shouldThrottleRequest('sleep_history_enhanced')) {
-      print('⏳ Enhanced Sleep History request throttled');
       return;
     }
     
     try {
       var command = OfficialChileafCommands.getHistoryOfSleep();
       
-      print('😴📊 Requesting Enhanced Sleep History (reverse-engineered parser)...');
-      print('🔧 Using exact parsing from original app WearReceivedDataCallback.java');
-      print('📡 Sending: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
       
       await _sendCommand(command);
       _updateRequestTime('sleep_history_enhanced');
       
-      print('✅ Enhanced Sleep History request sent successfully');
     } catch (e) {
-      print('❌ Failed to request Enhanced Sleep History: $e');
     }
   }
 
@@ -165,23 +150,17 @@ class HistoricalDataService {
   /// Utilizza comando 0x40 (getIntervalSteps) con parsing dell'app originale
   Future<void> requestIntervalStepsEnhanced() async {
     if (_shouldThrottleRequest('interval_steps_enhanced')) {
-      print('⏳ Enhanced Interval Steps request throttled');
       return;
     }
     
     try {
       var command = OfficialChileafCommands.getIntervalSteps();
       
-      print('🚶📊 Requesting Enhanced Interval Steps (reverse-engineered parser)...');
-      print('🔧 Using exact parsing from original app WearReceivedDataCallback.java');
-      print('📡 Sending: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
       
       await _sendCommand(command);
       _updateRequestTime('interval_steps_enhanced');
       
-      print('✅ Enhanced Interval Steps request sent successfully');
     } catch (e) {
-      print('❌ Failed to request Enhanced Interval Steps: $e');
     }
   }
 
@@ -277,7 +256,6 @@ class HistoricalDataService {
 
   /// Workflow completo per recuperare tutti i dati HR di un periodo
   Future<void> requestCompleteHRHistory() async {
-    print('🔄 Starting Complete HR History Workflow with optimized checksum...');
     
     // 1. Prima richiedi la lista dei record disponibili
     await requestHRRecordList();
@@ -286,12 +264,10 @@ class HistoricalDataService {
     await Future.delayed(const Duration(seconds: 2));
     
     // 2. Le richieste di dettaglio verranno fatte quando riceveremo la lista
-    print('📋 HR Record List requested. Detail requests will be made after receiving the list.');
   }
 
   /// Workflow completo per recuperare tutti i dati RR/HRV di un periodo
   Future<void> requestCompleteRRHistory() async {
-    print('🔄 Starting Complete RR/HRV History Workflow with optimized checksum...');
     
     // 1. Prima richiedi la lista dei record RR disponibili
     await requestRRRecordList();
@@ -300,13 +276,10 @@ class HistoricalDataService {
     await Future.delayed(const Duration(seconds: 2));
     
     // 2. Le richieste di dettaglio verranno fatte quando riceveremo la lista
-    print('📋 RR Record List requested. Detail requests will be made after receiving the list.');
   }
 
   /// Workflow per recuperare tutti i tipi di dati storici con parser enhanced
   Future<void> requestAllHistoricalDataEnhanced() async {
-    print('🔄 Starting COMPLETE Enhanced Historical Data Workflow...');
-    print('🔧 Using reverse-engineered parsers from original app for maximum accuracy');
     
     try {
       // Recupera dati di base con parser enhanced
@@ -329,9 +302,7 @@ class HistoricalDataService {
       // Recupera dati RR/HRV completi
       await requestCompleteRRHistory();
       
-      print('✅ All enhanced historical data requests completed with original app compatibility!');
     } catch (e) {
-      print('❌ Error in enhanced historical data workflow: $e');
     }
   }
 
@@ -351,7 +322,6 @@ class HistoricalDataService {
   /// Pulisce la cache delle richieste
   void clearRequestCache() {
     _lastRequestTime.clear();
-    print('🧹 Historical data request cache cleared');
   }
 
   /// Formatta timestamp in data leggibile

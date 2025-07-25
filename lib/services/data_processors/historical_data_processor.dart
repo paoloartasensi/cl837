@@ -435,15 +435,15 @@ class HistoricalDataProcessor {
     debugPrint('🧬 ENHANCED Exercise History Processing (reverse-engineered)');
     
     // Usa il parser enhanced basato sull'app originale
-    List<ExerciseHistoryEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseExerciseHistory(data);
+    List<enhanced.ExerciseHistoryEntry> enhancedEntries = enhanced.EnhancedHistoricalDataProcessor.parseSportHistory(data);
     
     // Converti al formato esistente
     List<ExerciseHistoryData> history = [];
     for (var entry in enhancedEntries) {
       history.add(ExerciseHistoryData(
-        date: entry.dateTime,
+        date: entry.timestamp,
         steps: entry.steps,
-        calories: entry.calories,
+        calories: entry.calories.toDouble(),
         distanceCm: 0, // Non disponibile nel formato originale
       ));
     }
@@ -456,11 +456,11 @@ class HistoricalDataProcessor {
   static void processSleepHistoryEnhanced(Uint8List data) {
     debugPrint('🧬 ENHANCED Sleep History Processing (reverse-engineered)');
     
-    List<SleepHistoryEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseSleepHistory(data);
+    List<enhanced.SleepHistoryEntry> enhancedEntries = enhanced.EnhancedHistoricalDataProcessor.parseSleepHistory(data);
     
     debugPrint('🧬 Enhanced parser found ${enhancedEntries.length} sleep entries');
     for (var entry in enhancedEntries) {
-      debugPrint('😴 Sleep: ${entry.dateTime} - ${entry.actions.length} actions');
+      debugPrint('😴 Sleep: ${entry.timestamp} - ${entry.actions.length} actions');
     }
   }
 
@@ -468,11 +468,11 @@ class HistoricalDataProcessor {
   static void processIntervalStepsEnhanced(Uint8List data) {
     debugPrint('🧬 ENHANCED Interval Steps Processing (reverse-engineered)');
     
-    List<IntervalStepEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseIntervalSteps(data);
+    List<enhanced.IntervalStepEntry> enhancedEntries = enhanced.EnhancedHistoricalDataProcessor.parseIntervalSteps(data);
     
     debugPrint('🧬 Enhanced parser found ${enhancedEntries.length} interval step entries');
     for (var entry in enhancedEntries) {
-      debugPrint('🚶 Steps: ${entry.dateTime} - ${entry.steps} steps');
+      debugPrint('🚶 Steps: ${entry.timestamp} - ${entry.steps} steps');
     }
   }
 }
