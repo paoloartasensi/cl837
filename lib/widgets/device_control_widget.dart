@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 import '../chileaf_extended_service.dart';
 import '../models/rope_data.dart';
+import '../services/device_status_led_controller.dart';
 
 /// Widget centrale per il controllo completo del dispositivo CL837
 /// Implementa tutti i 34 comandi ufficiali con feedback real-time
@@ -48,6 +49,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   bool _historyCommandsExpanded = false;
   bool _ropeCommandsExpanded = false;
   bool _powerCommandsExpanded = false;
+  bool _ledStatusCommandsExpanded = false;
+  
+  // LED Status Controller
+  late DeviceStatusLedController _ledController;
   
   // DFU specific state
   bool _isDFUMode = false;
@@ -85,7 +90,14 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   void initState() {
     super.initState();
     _initializeAnimations();
+    _initializeLEDController();
     _setupStreams();
+  }
+  
+  void _initializeLEDController() {
+    _ledController = DeviceStatusLedController(
+      sendCommand: widget.extendedService.sendRawCommand,
+    );
   }
   
   @override
@@ -93,6 +105,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     _pulseController.dispose();
     _spo2LEDTimer?.cancel();
     _temperatureDebounceTimer?.cancel();
+    _ledController.dispose();
     
     // Cancel all stream subscriptions to prevent memory leaks
     for (final subscription in _streamSubscriptions) {
@@ -122,8 +135,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     _streamSubscriptions.add(
       widget.extendedService.deviceInfoStream.listen((info) {
         if (mounted) {
-          _updateCommandStatus('✅ Device Info: Name: ${info.deviceName ?? "Unknown"}');
-          _addToHistory('Device Info', true);
+          final message = '✅ Device Info: Name: ${info.deviceName ?? "Unknown"}';
+          _updateCommandStatus(message);
+          _addToHistory('📱 Device Info Received', true, 
+              details: 'Name: ${info.deviceName ?? "N/A"}, Firmware: ${info.firmwareVersion ?? "N/A"}, Hardware: ${info.hardwareVersion ?? "N/A"}');
         }
       })
     );
@@ -131,8 +146,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     _streamSubscriptions.add(
       widget.extendedService.batteryInfoStream.listen((battery) {
         if (mounted) {
-          _updateCommandStatus('🔋 Battery: ${battery.level}% | Status: ${battery.isCharging ? "Charging" : "Discharging"}');
-          _addToHistory('Battery: ${battery.level}%', true);
+          final message = '🔋 Battery: ${battery.level}% | Status: ${battery.isCharging ? "Charging" : "Discharging"}';
+          _updateCommandStatus(message);
+          _addToHistory('🔋 Battery Data Received', true, 
+              details: 'Level: ${battery.level}%, Charging: ${battery.isCharging ? "Yes" : "No"}');
         }
       })
     );
@@ -140,8 +157,9 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     _streamSubscriptions.add(
       widget.extendedService.firmwareVersionStream.listen((version) {
         if (mounted) {
-          _updateCommandStatus('💾 Firmware Version: $version');
-          _addToHistory('Firmware: $version', true);
+          final message = '💾 Firmware Version: $version';
+          _updateCommandStatus(message);
+          _addToHistory('💾 Firmware Info Received', true, details: 'Version: $version');
         }
       })
     );
@@ -152,7 +170,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           final spo2Text = data.spo2Value?.toString() ?? 'Measuring...';
           _updateCommandStatus('🩸 SpO2: $spo2Text% | Signal: ${data.signalQualityDescription} | Posture: ${data.correctWristPosture ? "Correct" : "Adjust"} | LED Active');
           if (data.spo2Value != null) {
-            _addToHistory('SpO2: ${data.spo2Value}%', true);
+            _addToHistory('🩸 SpO2 Data Received', true, 
+                details: 'SpO2: ${data.spo2Value}%, Signal: ${data.signalQualityDescription}, Posture: ${data.correctWristPosture ? "Correct" : "Adjust"}');
           }
         }
       })
@@ -162,7 +181,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       widget.extendedService.temperatureDataStream.listen((data) {
         if (mounted) {
           _updateCommandStatus('🌡️ Temperature: Body ${data.bodyTempC.toStringAsFixed(1)}°C | Wrist ${data.wristTempC.toStringAsFixed(1)}°C | Ambient ${data.ambientTempC.toStringAsFixed(1)}°C');
-          _addToHistory('Temp: Body ${data.bodyTempC.toStringAsFixed(1)}°C', true);
+          _addToHistory('🌡️ Temperature Data Received', true, 
+              details: 'Body: ${data.bodyTempC.toStringAsFixed(1)}°C, Wrist: ${data.wristTempC.toStringAsFixed(1)}°C, Ambient: ${data.ambientTempC.toStringAsFixed(1)}°C');
         }
       })
     );
@@ -171,7 +191,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       widget.extendedService.hrvDataStream.listen((data) {
         if (mounted) {
           _updateCommandStatus('💓 HRV: Est. HR ${data.estimatedHR.toStringAsFixed(0)} BPM | RMSSD: ${data.rmssd.toStringAsFixed(1)}ms');
-          _addToHistory('HRV: ${data.estimatedHR.toStringAsFixed(0)} BPM', true);
+          _addToHistory('💓 HRV Data Received', true, 
+              details: 'HR: ${data.estimatedHR.toStringAsFixed(0)} BPM, RMSSD: ${data.rmssd.toStringAsFixed(1)}ms');
         }
       })
     );
@@ -180,7 +201,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       widget.extendedService.exerciseHistoryStream.listen((history) {
         if (mounted) {
           _updateCommandStatus('🏃 Exercise History: ${history.length} activities received');
-          _addToHistory('Exercise History (${history.length} items)', true);
+          _addToHistory('🏃 Exercise History Received', true, 
+              details: '${history.length} exercise records loaded');
         }
       })
     );
@@ -189,7 +211,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       widget.extendedService.hrHistoryListStream.listen((hrList) {
         if (mounted) {
           _updateCommandStatus('❤️ HR History List: ${hrList.timestamps.length} records available');
-          _addToHistory('HR History (${hrList.timestamps.length} records)', true);
+          _addToHistory('❤️ HR History Received', true, 
+              details: '${hrList.timestamps.length} heart rate records available');
         }
       })
     );
@@ -198,7 +221,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       widget.extendedService.ropeStatusStream.listen((rope) {
         if (mounted) {
           _updateCommandStatus('🪢 Rope: ${rope.mode.name} | Jumps: ${rope.jumps} | Time: ${rope.timeSeconds}s');
-          _addToHistory('Rope: ${rope.jumps} jumps', true);
+          _addToHistory('🪢 Rope Data Received', true, 
+              details: 'Mode: ${rope.mode.name}, Jumps: ${rope.jumps}, Time: ${rope.timeSeconds}s');
         }
       })
     );
@@ -225,7 +249,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       if (mounted) {
         final message = successMessage ?? '✅ $commandName sent successfully';
         _updateCommandStatus(message);
-        _addToHistory(commandName, true);
+        _addToHistory('📤 $commandName Command Sent', true, 
+            details: 'Command sent successfully at ${DateTime.now().toString().substring(11, 19)}. Wait for device response data.');
         
         // Show specific success message if provided
         if (successMessage != null) {
@@ -235,7 +260,9 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     } catch (e) {
       if (mounted) {
         _updateCommandStatus('❌ $commandName failed: $e');
-        _addToHistory(commandName, false, error: e.toString());
+        _addToHistory('❌ $commandName Command Failed', false, 
+            error: e.toString(), 
+            details: 'Command execution failed. Check device connection and try again.');
         _showError('Command failed: $e');
       }
     } finally {
@@ -257,7 +284,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     }
   }
   
-  void _addToHistory(String command, bool success, {String? error}) {
+  void _addToHistory(String command, bool success, {String? error, String? details}) {
     if (mounted) {
       setState(() {
         _commandHistory.insert(0, CommandHistoryEntry(
@@ -265,6 +292,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           timestamp: DateTime.now(),
           success: success,
           error: error,
+          details: details,
         ));
         
         // Keep only last 20 commands
@@ -332,6 +360,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
                 _buildCoreCommands(),
                 _buildHealthCommands(),
                 _buildSensorsCommands(),
+                _buildLEDStatusCommands(),
                 _buildHistoryCommands(),
                 _buildRopeCommands(),
                 _buildPowerCommands(),
@@ -594,6 +623,108 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     );
   }
 
+  Widget _buildLEDStatusCommands() {
+    return _buildCommandSection(
+      title: '💡 LED Status Control',
+      icon: Icons.lightbulb,
+      expanded: _ledStatusCommandsExpanded,
+      onToggle: () => setState(() => _ledStatusCommandsExpanded = !_ledStatusCommandsExpanded),
+      commands: [
+        _buildCommandTile(
+          title: '🟢 Green Blinking LED',
+          subtitle: 'Activate green blinking status LED (3D Sensor @ 400HZ)',
+          icon: Icons.circle,
+          color: Colors.green,
+          onTap: () => _executeCommand(
+            'Green LED',
+            () => _ledController.setGreenBlinkingLED(),
+            successMessage: '🟢 Green LED activated! Device status LED should be blinking green.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🟡 Yellow Blinking LED',
+          subtitle: 'Activate yellow blinking status LED (3D Sensor @ 100HZ)',
+          icon: Icons.circle,
+          color: Colors.amber,
+          onTap: () => _executeCommand(
+            'Yellow LED',
+            () => _ledController.setYellowBlinkingLED(),
+            successMessage: '🟡 Yellow LED activated! Device status LED should be blinking yellow.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🔴 Red Solid LED',
+          subtitle: 'Activate red solid status LED (HR Alarm mode)',
+          icon: Icons.circle,
+          color: Colors.red,
+          onTap: () => _executeCommand(
+            'Red LED',
+            () => _ledController.setRedSolidLED(),
+            successMessage: '🔴 Red LED activated! Device status LED should be solid red.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🔵 Blue Blinking LED',
+          subtitle: 'Activate blue blinking status LED (3D @ 25HZ + HR Alarm)',
+          icon: Icons.circle,
+          color: Colors.blue,
+          onTap: () => _executeCommand(
+            'Blue LED',
+            () => _ledController.setBlueBlinkingLED(),
+            successMessage: '🔵 Blue LED activated! Device status LED should be blinking blue.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🟢🔴 Alternating LED',
+          subtitle: 'Green-Red alternating pattern (2s intervals)',
+          icon: Icons.swap_horiz,
+          color: Colors.purple,
+          onTap: () => _executeCommand(
+            'Alternating LED',
+            () => _ledController.setAlternatingGreenRedLED(),
+            successMessage: '🟢🔴 Alternating LED pattern started! Green and red every 2 seconds.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🌈 Rainbow Pattern',
+          subtitle: 'Cycle through all LED colors (3s intervals)',
+          icon: Icons.gradient,
+          color: Colors.pink,
+          onTap: () => _executeCommand(
+            'Rainbow LED',
+            () => _ledController.setRainbowLEDPattern(),
+            successMessage: '🌈 Rainbow LED pattern started! Cycling through all colors.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '⚪ Turn Off All LEDs',
+          subtitle: 'Disable all status LEDs and return to normal state',
+          icon: Icons.power_off,
+          color: Colors.grey,
+          onTap: () => _executeCommand(
+            'LED Off',
+            () => _ledController.turnOffAllStatusLEDs(),
+            successMessage: '⚪ All status LEDs turned off. Device returned to normal state.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🛑 Stop All Patterns',
+          subtitle: 'Stop all blinking/alternating patterns',
+          icon: Icons.stop,
+          color: Colors.orange,
+          onTap: () {
+            _ledController.stopAllPatterns();
+            if (mounted) {
+              _showSuccess('🛑 All LED patterns stopped.');
+              _addToHistory('🛑 LED Patterns Stopped', true, 
+                  details: 'All blinking and alternating LED patterns have been stopped.');
+            }
+          },
+        ),
+      ],
+    );
+  }
+
   Widget _buildSensorsCommands() {
     return _buildCommandSection(
       title: '📡 Sensors Control',
@@ -736,9 +867,20 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           icon: Icons.power_off,
           color: Colors.red,
           onTap: () => _executeCommand(
-            'Shutdown',
-            () => widget.extendedService.shutdownDevice(),
-            successMessage: '⚡ Shutdown command sent! Device will power off in a few seconds.',
+            'Shutdown Device',
+            () async {
+              await widget.extendedService.shutdownDevice();
+              // Aggiungiamo un check per vedere se il dispositivo si disconnette
+              await Future.delayed(const Duration(seconds: 3));
+              if (!widget.isConnected) {
+                _addToHistory('🔌 Device Disconnected', true, 
+                    details: 'Device successfully powered off and disconnected');
+              } else {
+                _addToHistory('⚠️ Shutdown Command Sent', true, 
+                    details: 'Command sent but device still connected - may require manual power off');
+              }
+            },
+            successMessage: '⚡ Shutdown command sent 3 times! Device should power off within 5 seconds. Check connection status.',
           ),
         ),
         _buildCommandTile(
@@ -770,7 +912,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
         title: const Text('Command History'),
         subtitle: Text('${_commandHistory.length} commands executed'),
         children: _commandHistory.take(10).map((entry) {
-          return ListTile(
+          return ExpansionTile(
             dense: true,
             leading: Icon(
               entry.success ? Icons.check_circle : Icons.error,
@@ -785,6 +927,26 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
               '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}:${entry.timestamp.second.toString().padLeft(2, '0')}${entry.error != null ? ' - ${entry.error}' : ''}',
               style: const TextStyle(fontSize: 12),
             ),
+            children: entry.details != null ? [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    entry.details!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+            ] : [],
           );
         }).toList(),
       ),
@@ -1228,11 +1390,13 @@ class CommandHistoryEntry {
   final DateTime timestamp;
   final bool success;
   final String? error;
+  final String? details;
 
   CommandHistoryEntry({
     required this.command,
     required this.timestamp,
     required this.success,
     this.error,
+    this.details,
   });
 }

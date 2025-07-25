@@ -646,6 +646,11 @@ class ChileafExtendedService {
   }
 
   // Command sending
+  /// Invia un comando BLE raw al dispositivo (metodo pubblico per controller esterni)
+  Future<void> sendRawCommand(List<int> command) async {
+    await _sendCommand(command);
+  }
+
   Future<void> _sendCommand(List<int> frame) async {
     if (_rxCharacteristic == null) {
       throw Exception('RX characteristic not available');
@@ -1205,10 +1210,21 @@ class ChileafExtendedService {
       debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
       debugPrint('   ⚠️  Device will power off after this command!');
       
+      // Invia il comando multiple volte per garantire che venga ricevuto
       await _sendCommand(officialCommand);
-      debugPrint('✅ Official shutdown command sent - device should power off');
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _sendCommand(officialCommand);
+      await Future.delayed(const Duration(milliseconds: 100));
+      await _sendCommand(officialCommand);
+      
+      debugPrint('✅ Official shutdown command sent 3 times - device should power off within 5 seconds');
+      
+      // Attendiamo un po' per vedere se il dispositivo si disconnette
+      await Future.delayed(const Duration(seconds: 2));
+      
     } catch (e) {
       debugPrint('❌ Failed to shutdown device with official command: $e');
+      rethrow;
     }
   }
 
