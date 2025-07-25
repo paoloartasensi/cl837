@@ -375,7 +375,7 @@ class ChileafExtendedService {
         break;
       case ChileafProtocol.commandSports:
         // SPORTS DATA IGNORED - Focus on medical-grade sensors only
-        // Silently ignore sports data (steps/calories unreliable)
+        debugPrint('🚫 Sports data ignored (steps/calories unreliable)');
         break;
       case ChileafProtocol.commandSpo2:
         debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');
@@ -646,11 +646,6 @@ class ChileafExtendedService {
   }
 
   // Command sending
-  /// Invia un comando BLE raw al dispositivo (metodo pubblico per controller esterni)
-  Future<void> sendRawCommand(List<int> command) async {
-    await _sendCommand(command);
-  }
-
   Future<void> _sendCommand(List<int> frame) async {
     if (_rxCharacteristic == null) {
       throw Exception('RX characteristic not available');
@@ -1210,21 +1205,10 @@ class ChileafExtendedService {
       debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
       debugPrint('   ⚠️  Device will power off after this command!');
       
-      // Invia il comando multiple volte per garantire che venga ricevuto
       await _sendCommand(officialCommand);
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _sendCommand(officialCommand);
-      await Future.delayed(const Duration(milliseconds: 100));
-      await _sendCommand(officialCommand);
-      
-      debugPrint('✅ Official shutdown command sent 3 times - device should power off within 5 seconds');
-      
-      // Attendiamo un po' per vedere se il dispositivo si disconnette
-      await Future.delayed(const Duration(seconds: 2));
-      
+      debugPrint('✅ Official shutdown command sent - device should power off');
     } catch (e) {
       debugPrint('❌ Failed to shutdown device with official command: $e');
-      rethrow;
     }
   }
 
@@ -1283,6 +1267,17 @@ class ChileafExtendedService {
       debugPrint('✅ HRV data request sent');
     } catch (e) {
       debugPrint('❌ Failed to request HRV data: $e');
+      rethrow;
+    }
+  }
+
+  /// Send raw command bytes directly to the device
+  /// Espone il metodo _sendCommand per permettere comandi raw personalizzati
+  Future<void> sendRawCommand(List<int> commandBytes) async {
+    try {
+      await _sendCommand(commandBytes);
+    } catch (e) {
+      debugPrint('❌ Failed to send raw command: $e');
       rethrow;
     }
   }

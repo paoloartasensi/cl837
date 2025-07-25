@@ -27,20 +27,47 @@ class DeviceStatusLedController {
     await _sendCommand(OfficialChileafCommands.setUTCTime(currentTime));
     await Future.delayed(const Duration(milliseconds: 300));
     
-    // Step 1: Disabilita prima tutto (clean slate)
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(false));
-    await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
-    await Future.delayed(const Duration(milliseconds: 500));
-    
-    // Step 2: Abilita il sensore 3D
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
-    await Future.delayed(const Duration(milliseconds: 300));
-    
-    // Step 3: Imposta frequenza alta per farlo lampeggiare
-    await _sendCommand(OfficialChileafCommands.set3DFrequency(4)); // 400HZ = max freq
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    debugPrint('✅ LED Verde Lampeggiante attivo! (3D Sensor abilitato a 400HZ)');
+    try {
+      // Step 1: Prova prima con comandi ufficiali
+      debugPrint('🔧 Trying official commands first...');
+      
+      // Disabilita prima tutto (clean slate)
+      await _sendCommand(OfficialChileafCommands.set3DEnabled(false));
+      await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      // Abilita il sensore 3D
+      await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Imposta frequenza alta per farlo lampeggiare
+      await _sendCommand(OfficialChileafCommands.set3DFrequency(4)); // 400HZ = max freq
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      debugPrint('✅ LED Verde Lampeggiante attivo! (3D Sensor abilitato a 400HZ con comandi ufficiali)');
+      
+    } catch (e) {
+      debugPrint('⚠️ Official commands failed: $e');
+      debugPrint('🔄 Falling back to raw commands from puglia_java11_branch...');
+      
+      try {
+        // Fallback: Usa i comandi raw che funzionavano nel branch puglia_java11_branch
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0C, 0x00, 0x86]); // set3DEnabled(false)
+        await Future.delayed(const Duration(milliseconds: 300));
+        
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0C, 0x01, 0x87]); // set3DEnabled(true)
+        await Future.delayed(const Duration(milliseconds: 300));
+        
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0B, 0x04, 0x83]); // set3DFrequency(4) = 400HZ
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        debugPrint('✅ LED Verde Lampeggiante attivo! (3D Sensor abilitato a 400HZ con comandi raw fallback)');
+        
+      } catch (fallbackError) {
+        debugPrint('❌ Both official and raw commands failed: $fallbackError');
+        rethrow;
+      }
+    }
   }
 
   /// 🟡 LED Giallo Lampeggiante - Stato intermedio con frequenza media
@@ -48,14 +75,34 @@ class DeviceStatusLedController {
   Future<void> setYellowBlinkingLED() async {
     debugPrint('🟡 Attivazione LED Giallo Lampeggiante...');
     
-    // Step 1: Abilita il sensore 3D
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Step 2: Imposta frequenza media per colore giallo
-    await _sendCommand(OfficialChileafCommands.set3DFrequency(2)); // 100HZ = freq media
-    
-    debugPrint('✅ LED Giallo Lampeggiante attivo! (3D Sensor abilitato a 100HZ)');
+    try {
+      // Step 1: Prova prima con comandi ufficiali
+      debugPrint('🔧 Trying official commands first...');
+      await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Step 2: Imposta frequenza media per colore giallo
+      await _sendCommand(OfficialChileafCommands.set3DFrequency(2)); // 100HZ = freq media
+      
+      debugPrint('✅ LED Giallo Lampeggiante attivo! (3D Sensor abilitato a 100HZ con comandi ufficiali)');
+      
+    } catch (e) {
+      debugPrint('⚠️ Official commands failed: $e, trying raw fallback...');
+      
+      try {
+        // Fallback: Usa i comandi raw
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0C, 0x01, 0x87]); // set3DEnabled(true)
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0B, 0x02, 0x85]); // set3DFrequency(2) = 100HZ
+        
+        debugPrint('✅ LED Giallo Lampeggiante attivo! (3D Sensor abilitato a 100HZ con comandi raw fallback)');
+        
+      } catch (fallbackError) {
+        debugPrint('❌ Both official and raw commands failed: $fallbackError');
+        rethrow;
+      }
+    }
   }
 
   /// 🔴 LED Rosso Fisso - Attiva HR alarm per stato di allarme
@@ -74,18 +121,42 @@ class DeviceStatusLedController {
   Future<void> setBlueBlinkingLED() async {
     debugPrint('🔵 Attivazione LED Blu Lampeggiante...');
     
-    // Step 1: Abilita sensore 3D
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Step 2: Imposta frequenza bassa per blu
-    await _sendCommand(OfficialChileafCommands.set3DFrequency(0)); // 25HZ = freq bassa
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Step 3: Abilita anche allarme HR per effetto combinato
-    await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(true));
-    
-    debugPrint('✅ LED Blu Lampeggiante attivo! (3D + HR Alarm combinati)');
+    try {
+      // Step 1: Prova prima con comandi ufficiali
+      debugPrint('🔧 Trying official commands first...');
+      
+      await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Step 2: Imposta frequenza bassa per blu
+      await _sendCommand(OfficialChileafCommands.set3DFrequency(0)); // 25HZ = freq bassa
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Step 3: Abilita anche allarme HR per effetto combinato
+      await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(true));
+      
+      debugPrint('✅ LED Blu Lampeggiante attivo! (3D + HR Alarm combinati con comandi ufficiali)');
+      
+    } catch (e) {
+      debugPrint('⚠️ Official commands failed: $e, trying raw fallback...');
+      
+      try {
+        // Fallback: Usa i comandi raw
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0C, 0x01, 0x87]); // set3DEnabled(true)
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0B, 0x00, 0x83]); // set3DFrequency(0) = 25HZ
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(true));
+        
+        debugPrint('✅ LED Blu Lampeggiante attivo! (3D + HR Alarm combinati con comandi raw fallback)');
+        
+      } catch (fallbackError) {
+        debugPrint('❌ Both official and raw commands failed: $fallbackError');
+        rethrow;
+      }
+    }
   }
 
   /// 🧪 Test diretto LED del dispositivo - Metodo diagnostico
@@ -119,20 +190,45 @@ class DeviceStatusLedController {
   Future<void> turnOffAllStatusLEDs() async {
     debugPrint('⚪ Spegnimento tutti i LED di status...');
     
-    // Step 1: Disabilita sensore 3D
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(false));
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Step 2: Disabilita allarme HR
-    await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
-    await Future.delayed(const Duration(milliseconds: 200));
-    
-    // Step 3: Reset frequenza a default
-    await _sendCommand(OfficialChileafCommands.set3DFrequency(2)); // 100HZ default
+    try {
+      // Step 1: Prova prima con comandi ufficiali
+      debugPrint('🔧 Trying official commands first...');
+      
+      // Disabilita sensore 3D
+      await _sendCommand(OfficialChileafCommands.set3DEnabled(false));
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Disabilita allarme HR
+      await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Reset frequenza a default
+      await _sendCommand(OfficialChileafCommands.set3DFrequency(2)); // 100HZ default
+      
+      debugPrint('✅ Tutti i LED di status spenti! Dispositivo in stato normale con comandi ufficiali.');
+      
+    } catch (e) {
+      debugPrint('⚠️ Official commands failed: $e, trying raw fallback...');
+      
+      try {
+        // Fallback: Usa i comandi raw
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0C, 0x00, 0x86]); // set3DEnabled(false)
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
+        await Future.delayed(const Duration(milliseconds: 200));
+        
+        await _sendCommand([0xFF, 0x06, 0x74, 0x00, 0x0B, 0x02, 0x85]); // set3DFrequency(2) = 100HZ default
+        
+        debugPrint('✅ Tutti i LED di status spenti! Dispositivo in stato normale con comandi raw fallback.');
+        
+      } catch (fallbackError) {
+        debugPrint('❌ Both official and raw commands failed: $fallbackError');
+        rethrow;
+      }
+    }
     
     _stopBlinkTimer();
-    
-    debugPrint('✅ Tutti i LED di status spenti! Dispositivo in stato normale.');
   }
 
   /// 🟢🔴 LED Alternato Verde-Rosso - Pattern speciale per test
