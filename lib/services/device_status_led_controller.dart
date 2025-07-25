@@ -21,12 +21,24 @@ class DeviceStatusLedController {
   Future<void> setGreenBlinkingLED() async {
     debugPrint('🟢 Attivazione LED Verde Lampeggiante...');
     
-    // Step 1: Abilita il sensore 3D
-    await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
-    await Future.delayed(const Duration(milliseconds: 200));
+    // Step 0: Wake up device e sincronizza stato
+    debugPrint('🔄 Waking up device and syncing state...');
+    final currentTime = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    await _sendCommand(OfficialChileafCommands.setUTCTime(currentTime));
+    await Future.delayed(const Duration(milliseconds: 300));
     
-    // Step 2: Imposta frequenza alta per farlo lampeggiare
+    // Step 1: Disabilita prima tutto (clean slate)
+    await _sendCommand(OfficialChileafCommands.set3DEnabled(false));
+    await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(false));
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Step 2: Abilita il sensore 3D
+    await _sendCommand(OfficialChileafCommands.set3DEnabled(true));
+    await Future.delayed(const Duration(milliseconds: 300));
+    
+    // Step 3: Imposta frequenza alta per farlo lampeggiare
     await _sendCommand(OfficialChileafCommands.set3DFrequency(4)); // 400HZ = max freq
+    await Future.delayed(const Duration(milliseconds: 200));
     
     debugPrint('✅ LED Verde Lampeggiante attivo! (3D Sensor abilitato a 400HZ)');
   }
@@ -74,6 +86,33 @@ class DeviceStatusLedController {
     await _sendCommand(OfficialChileafCommands.setHeartRateAlarm(true));
     
     debugPrint('✅ LED Blu Lampeggiante attivo! (3D + HR Alarm combinati)');
+  }
+
+  /// 🧪 Test diretto LED del dispositivo - Metodo diagnostico
+  /// Usa il LED SpO2 per verificare se il dispositivo risponde ai comandi LED
+  Future<void> testDeviceLEDResponse() async {
+    debugPrint('🧪 Testing device LED response...');
+    
+    try {
+      // Test 1: Attiva LED SpO2 (dovrebbe essere rosso e visibile)
+      debugPrint('🔴 Test 1: Activating SpO2 LED (should be red and visible)');
+      await _sendCommand(OfficialChileafCommands.setBloodOxygen(1));
+      await Future.delayed(const Duration(seconds: 3));
+      
+      // Test 2: Spegni LED SpO2
+      debugPrint('⚫ Test 2: Turning off SpO2 LED');
+      await _sendCommand(OfficialChileafCommands.setBloodOxygen(0));
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Test 3: Ora prova LED di status
+      debugPrint('🟢 Test 3: Trying status LED via 3D sensor');
+      await setGreenBlinkingLED();
+      
+      debugPrint('✅ LED test sequence completed. Check device visually.');
+      
+    } catch (e) {
+      debugPrint('❌ LED test failed: $e');
+    }
   }
 
   /// ⚪ Spegni tutti i LED di status - Ripristina stato normale

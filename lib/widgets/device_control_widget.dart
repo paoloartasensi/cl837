@@ -661,6 +661,17 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       onToggle: () => setState(() => _ledStatusCommandsExpanded = !_ledStatusCommandsExpanded),
       commands: [
         _buildCommandTile(
+          title: '🧪 Test LED Response',
+          subtitle: 'Test device LED functionality (SpO2 + Status)',
+          icon: Icons.science,
+          color: Colors.purple,
+          onTap: () => _executeCommand(
+            'Test LED Response',
+            () => _ledController.testDeviceLEDResponse(),
+            successMessage: '🧪 LED test sequence started! Watch the device: Red LED (3s) → Off → Green status LED.',
+          ),
+        ),
+        _buildCommandTile(
           title: '🟢 Green Blinking LED',
           subtitle: 'Activate green blinking status LED (3D Sensor @ 400HZ)',
           icon: Icons.circle,
