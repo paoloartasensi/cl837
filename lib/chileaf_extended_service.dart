@@ -1196,19 +1196,34 @@ class ChileafExtendedService {
   /// Spegne il dispositivo usando comando ufficiale (0xF1)
   /// Equivalente al metodo shutdown() del SDK Android
   Future<void> shutdownDevice() async {
-    debugPrint('🔌 Shutting down device using OFFICIAL command...');
+    debugPrint('🔌 Shutting down device using OPTIMIZED Java-style command...');
     try {
-      var officialCommand = OfficialChileafCommands.deviceShutdown();
+      // Frame corretto basato sull'analisi: [0xFF, 0x04, 0xF1, checksum_java]
+      // Questo è identico al comando dell'app decompilata che funziona immediatamente
+      List<int> frame = [0xFF, 4, 0xF1];
       
-      debugPrint('🔍 Official shutdown command:');
+      // Calcola checksum Java come nell'app decompilata
+      int sum = 0;
+      for (int byte in frame) {
+        sum += byte;
+      }
+      int javaChecksum = (-sum) & 0xFF;
+      javaChecksum ^= 0x3A;
+      javaChecksum &= 0xFF;
+      
+      frame.add(javaChecksum);
+      
+      debugPrint('🔍 Shutdown command (Java-style - IMMEDIATE):');
       debugPrint('   Command: 0xF1 (shutdown from WearManager.java)');
-      debugPrint('   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
-      debugPrint('   ⚠️  Device will power off after this command!');
+      debugPrint('   Frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('   Checksum: 0x${javaChecksum.toRadixString(16).padLeft(2, '0')}');
+      debugPrint('   ⚡ Device will power off IMMEDIATELY after this command!');
       
-      await _sendCommand(officialCommand);
-      debugPrint('✅ Official shutdown command sent - device should power off');
+      await _sendCommand(frame);
+      debugPrint('✅ Immediate shutdown command sent - device should power off now');
+      
     } catch (e) {
-      debugPrint('❌ Failed to shutdown device with official command: $e');
+      debugPrint('❌ Failed to shutdown device: $e');
     }
   }
 
