@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:layout_width="fill_parent" android:layout_height="fill_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <include layout="@layout/layout_toolbar" />
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Ambient temperature:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_environment" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Wrist temperature:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_wrist_temperature" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Body temperature:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_temperature" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+</LinearLayout>

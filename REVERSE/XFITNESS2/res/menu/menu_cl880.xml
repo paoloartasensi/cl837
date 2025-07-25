@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu
+  xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:icon="@drawable/left_help" android:id="@id/menu_cl880_history" android:title="@string/history_record" />
+    <item android:icon="@drawable/left_devices_list" android:id="@id/menu_cl880_sport" android:title="@string/sport_mode" />
+    <item android:icon="@drawable/left_statistics" android:id="@id/menu_cl880_sleep" android:title="@string/sleep_record" />
+    <item android:icon="@drawable/left_setting" android:id="@id/menu_cl880_setting" android:title="@string/other_setting" />
+</menu>

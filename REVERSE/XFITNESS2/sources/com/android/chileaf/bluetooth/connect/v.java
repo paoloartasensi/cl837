@@ -1,0 +1,20 @@
+package com.android.chileaf.bluetooth.connect;
+
+import android.bluetooth.BluetoothDevice;
+
+/* compiled from: lambda */
+public final /* synthetic */ class v implements Runnable {
+    private final /* synthetic */ Request e;
+
+    /* renamed from: f  reason: collision with root package name */
+    private final /* synthetic */ BluetoothDevice f1084f;
+
+    public /* synthetic */ v(Request request, BluetoothDevice bluetoothDevice) {
+        this.e = request;
+        this.f1084f = bluetoothDevice;
+    }
+
+    public final void run() {
+        this.e.b(this.f1084f);
+    }
+}

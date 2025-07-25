@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout android:orientation="vertical" android:layout_width="fill_parent" android:layout_height="fill_parent"
+  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
+    <include layout="@layout/layout_toolbar" />
+    <Switch android:id="@id/sh_blood" android:layout_width="fill_parent" android:layout_height="wrap_content" android:layout_marginLeft="15.0dip" android:layout_marginTop="20.0dip" android:checked="false" android:text="Blood oxygen mode" android:switchMinWidth="60.0dip" />
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Blood oxygen value:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_blood" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Wrist posture:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_wrist" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="PI value of red light:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_pi" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+    <LinearLayout android:orientation="horizontal" android:layout_width="fill_parent" android:layout_height="wrap_content">
+        <com.google.android.material.textview.MaterialTextView android:textAppearance="@style/TextAppearance.MaterialComponents.Body2" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:text="Onwrist:" android:textAllCaps="true" android:paddingStart="16.0dip" android:paddingEnd="2.0dip" />
+        <androidx.appcompat.widget.AppCompatTextView android:enabled="false" android:textColor="@color/white" android:id="@id/tv_onwrist" android:background="@color/colorAccent" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="8.0dip" android:digits="\ 0123456789" />
+    </LinearLayout>
+</LinearLayout>
