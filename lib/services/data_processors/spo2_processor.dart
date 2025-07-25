@@ -1,3 +1,12 @@
+// ⚠️ DEPRECATO: Questo file usa il modello SpO2Data obsoleto
+// 
+// Utilizzare invece il nuovo SpO2Service che implementa:
+// 1. Validazione qualità segnale basata su PI, gesture, onWrist  
+// 2. Filtri per letture affidabili
+// 3. Monitoraggio trend e allarmi intelligenti
+//
+// Per migrare: sostituire con SpO2Service.parseSpO2Data()
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../models/spo2_data.dart';
@@ -43,10 +52,12 @@ class SpO2Processor {
         
         // Send status to UI with clear indication this is not a measurement
         final spo2Data = SpO2Data(
-          spo2Value: null, // Use null to indicate no measurement available
-          correctWristPosture: correctPosture,
-          signalQuality: signalQuality,
-          isWearing: isWearing,
+          value: 0, // Non-measurement value
+          piValue: signalQuality,
+          gesture: correctPosture ? 1 : 0,
+          onWrist: isWearing ? 1 : 0,
+          isReliable: false, // Status messages are not reliable readings
+          quality: "Status Update",
         );
         _spo2DataController.add(spo2Data);
         debugPrint('📤 STATUS sent to UI: device ready=${isWearing && correctPosture && signalQuality >= 8}');
@@ -56,10 +67,12 @@ class SpO2Processor {
         
         // SEMPRE invia i dati al UI per feedback in tempo reale
         final spo2Data = SpO2Data(
-          spo2Value: spo2Value,
-          correctWristPosture: correctPosture,
-          signalQuality: signalQuality,
-          isWearing: isWearing,
+          value: spo2Value,
+          piValue: signalQuality,
+          gesture: correctPosture ? 1 : 0,
+          onWrist: isWearing ? 1 : 0,
+          isReliable: isWearing && correctPosture && signalQuality >= 8,
+          quality: _getQualityText(signalQuality),
         );
         _spo2DataController.add(spo2Data);
 
@@ -83,10 +96,12 @@ class SpO2Processor {
         
         // Still send to UI but with null value to indicate error
         final spo2Data = SpO2Data(
-          spo2Value: null,
-          correctWristPosture: correctPosture,
-          signalQuality: signalQuality,
-          isWearing: isWearing,
+          value: 0, // Use 0 instead of null
+          piValue: signalQuality,
+          gesture: correctPosture ? 1 : 0,
+          onWrist: isWearing ? 1 : 0,
+          isReliable: false,
+          quality: "Dati non validi",
         );
         _spo2DataController.add(spo2Data);
       }
@@ -132,10 +147,12 @@ class SpO2Processor {
         
         // This is very likely real SpO2 data from health command!
         final spo2Data = SpO2Data(
-          spo2Value: spo2Candidate,
-          correctWristPosture: true, // Assume good conditions if we get valid data
-          signalQuality: 95, // Assume good signal quality
-          isWearing: true,
+          value: spo2Candidate,
+          piValue: 95, // Assume good signal quality
+          gesture: 1, // Assume good conditions if we get valid data
+          onWrist: 1,
+          isReliable: true,
+          quality: _getQualityText(95),
         );
         
         _spo2DataController.add(spo2Data);
@@ -160,10 +177,12 @@ class SpO2Processor {
         // Only use secondary if we didn't find primary SpO2 at index 1
         if (i != 1) {
           final spo2Data = SpO2Data(
-            spo2Value: byte,
-            correctWristPosture: true,
-            signalQuality: 80, // Lower confidence for secondary detection
-            isWearing: true,
+            value: byte,
+            piValue: 80, // Lower confidence for secondary detection
+            gesture: 1,
+            onWrist: 1,
+            isReliable: true,
+            quality: _getQualityText(80),
           );
           
           _spo2DataController.add(spo2Data);
@@ -254,10 +273,12 @@ class SpO2Processor {
           
           // Push this as a real SpO2 reading
           final spo2Data = SpO2Data(
-            spo2Value: preferredValue,
-            correctWristPosture: true, // Assume good conditions if we get data
-            signalQuality: 100, // Assume good signal
-            isWearing: true,
+            value: preferredValue,
+            piValue: 100, // Assume good signal
+            gesture: 1, // Assume good conditions if we get data
+            onWrist: 1,
+            isReliable: true,
+            quality: _getQualityText(100),
           );
           
           _spo2DataController.add(spo2Data);
@@ -284,15 +305,24 @@ class SpO2Processor {
       final possibleSpO2 = data[0];
       if (possibleSpO2 >= 70 && possibleSpO2 <= 100) {
         final spo2Data = SpO2Data(
-          spo2Value: possibleSpO2,
-          correctWristPosture: data.length > 1 ? data[1] == 1 : true,
-          signalQuality: data.length > 2 ? data[2] : 100,
-          isWearing: data.length > 3 ? data[3] == 1 : true,
+          value: possibleSpO2,
+          piValue: data.length > 2 ? data[2] : 100,
+          gesture: data.length > 1 ? (data[1] == 1 ? 1 : 0) : 1,
+          onWrist: data.length > 3 ? (data[3] == 1 ? 1 : 0) : 1,
+          isReliable: true,
+          quality: _getQualityText(data.length > 2 ? data[2] : 100),
         );
         _spo2DataController.add(spo2Data);
         debugPrint('Detected SpO2 pattern: $spo2Data');
       }
     }
+  }
+
+  String _getQualityText(int piValue) {
+    if (piValue == 0) return "Nessun battito rilevato";
+    if (piValue < 8) return "Segnale debole";
+    if (piValue < 15) return "Segnale buono";
+    return "Segnale eccellente";
   }
 
   void dispose() {
