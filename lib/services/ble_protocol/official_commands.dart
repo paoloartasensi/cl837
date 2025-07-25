@@ -14,13 +14,15 @@ class OfficialChileafCommands {
     ];
   }
 
-  /// Calcola checksum (implementazione da verificare - nel SDK usa checkSum())
+  /// Calcola checksum con algoritmo Java corretto (dal WearManager.java decompilato)
   static int calculateChecksum(List<int> data) {
     int sum = 0;
     for (int byte in data) {
       sum += byte;
     }
-    return (~sum + 1) & 0xFF; // Two's complement
+    int checksum = (-sum) & 0xFF; // Negazione + mask 8-bit
+    checksum ^= 0x3A;              // XOR con costante 0x3A
+    return checksum & 0xFF;        // Final mask
   }
 
   /// Costruisce un comando secondo il formato ufficiale: [0xFF][length][command][parameters...][checksum]
@@ -100,6 +102,14 @@ class OfficialChileafCommands {
     List<int> params = [1]; // Sempre 1 come primo parametro
     params.addAll(utcToBytes(timestamp));
     return buildOfficialCommand(0x22, params);
+  }
+
+  /// Richiede dati HR estesi con intervalli RR (0x23 = 35 nel SDK)
+  /// Equivalente a getHistoryOfHRDataExtended(long stamp) nel WearManager.java
+  static List<int> getHistoryOfHRDataExtended(int timestamp) {
+    List<int> params = [1]; // Sempre 1 come primo parametro
+    params.addAll(utcToBytes(timestamp));
+    return buildOfficialCommand(0x23, params);
   }
 
   /// Richiede record RR (0x24 = 36 nel SDK)

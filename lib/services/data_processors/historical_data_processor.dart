@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import '../../models/historical_data.dart';
+import 'enhanced_historical_data_processor.dart' as enhanced;
 
 /// Processore specializzato per i dati storici del dispositivo Chileaf
 /// Gestisce comandi 0x16 (Exercise History), 0x21 (HR History List), 0x22 (HR History Data)
+/// ENHANCED: Ora include parser reverse-engineered dall'app originale
 /// 
 /// ANALISI MEMORIA DISPOSITIVO CL837:
 /// - Capacità stimata: 1MB (8 Megabit) di memoria flash
@@ -425,5 +427,52 @@ class HistoricalDataProcessor {
     }
     
     return history;
+  }
+
+  /// ENHANCED: Process Exercise History usando il parser reverse-engineered
+  /// Basato sul codice Java originale del WearReceivedDataCallback
+  static List<ExerciseHistoryData> processExerciseHistoryEnhanced(Uint8List data) {
+    debugPrint('🧬 ENHANCED Exercise History Processing (reverse-engineered)');
+    
+    // Usa il parser enhanced basato sull'app originale
+    List<ExerciseHistoryEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseExerciseHistory(data);
+    
+    // Converti al formato esistente
+    List<ExerciseHistoryData> history = [];
+    for (var entry in enhancedEntries) {
+      history.add(ExerciseHistoryData(
+        date: entry.dateTime,
+        steps: entry.steps,
+        calories: entry.calories,
+        distanceCm: 0, // Non disponibile nel formato originale
+      ));
+    }
+    
+    debugPrint('🧬 Enhanced parser found ${history.length} exercise entries');
+    return history;
+  }
+
+  /// ENHANCED: Process Sleep History usando il parser reverse-engineered
+  static void processSleepHistoryEnhanced(Uint8List data) {
+    debugPrint('🧬 ENHANCED Sleep History Processing (reverse-engineered)');
+    
+    List<SleepHistoryEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseSleepHistory(data);
+    
+    debugPrint('🧬 Enhanced parser found ${enhancedEntries.length} sleep entries');
+    for (var entry in enhancedEntries) {
+      debugPrint('😴 Sleep: ${entry.dateTime} - ${entry.actions.length} actions');
+    }
+  }
+
+  /// ENHANCED: Process Interval Steps usando il parser reverse-engineered
+  static void processIntervalStepsEnhanced(Uint8List data) {
+    debugPrint('🧬 ENHANCED Interval Steps Processing (reverse-engineered)');
+    
+    List<IntervalStepEntry> enhancedEntries = EnhancedHistoricalDataProcessor.parseIntervalSteps(data);
+    
+    debugPrint('🧬 Enhanced parser found ${enhancedEntries.length} interval step entries');
+    for (var entry in enhancedEntries) {
+      debugPrint('🚶 Steps: ${entry.dateTime} - ${entry.steps} steps');
+    }
   }
 }

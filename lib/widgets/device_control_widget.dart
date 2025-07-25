@@ -813,38 +813,80 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       onToggle: () => setState(() => _historyCommandsExpanded = !_historyCommandsExpanded),
       commands: [
         _buildCommandTile(
+          title: 'Complete HR History',
+          subtitle: 'Get all HR records + details (optimized)',
+          icon: Icons.favorite,
+          color: Colors.red,
+          onTap: () => _executeCommand(
+            'Complete HR History',
+            () => widget.extendedService.requestCompleteHRHistory(),
+            successMessage: '❤️ Complete HR history request sent with optimized checksum! Loading all heart rate records...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'Complete RR/HRV History',
+          subtitle: 'Get RR intervals for HRV analysis (optimized)',
+          icon: Icons.monitor_heart,
+          color: Colors.pink,
+          onTap: () => _executeCommand(
+            'Complete RR/HRV History',
+            () => widget.extendedService.requestCompleteRRHistory(),
+            successMessage: '📊 Complete RR/HRV history request sent with optimized checksum! Loading HRV data...',
+          ),
+        ),
+        _buildCommandTile(
           title: 'Exercise History',
-          subtitle: 'Get 7-day exercise history (0x16)',
+          subtitle: 'Get 7-day exercise history (optimized)',
           icon: Icons.fitness_center,
           color: Colors.deepOrange,
           onTap: () => _executeCommand(
             'Exercise History',
-            () => widget.extendedService.requestExerciseHistory(),
-            successMessage: '🏃 Exercise history request sent! Loading 7-day activity data...',
-          ),
-        ),
-        _buildCommandTile(
-          title: 'HR History List',
-          subtitle: 'Get heart rate history list (0x21)',
-          icon: Icons.favorite,
-          color: Colors.red,
-          onTap: () => _executeCommand(
-            'HR History List',
-            () => widget.extendedService.requestHRHistoryList(),
-            successMessage: '❤️ HR history request sent! Loading heart rate records...',
+            () => widget.extendedService.requestOptimizedExerciseHistory(),
+            successMessage: '🏃 Exercise history request sent with optimized checksum! Loading 7-day activity data...',
           ),
         ),
         _buildCommandTile(
           title: 'Sleep History',
-          subtitle: 'Get sleep analysis data (0x05)',
+          subtitle: 'Get sleep analysis data (optimized)',
           icon: Icons.bedtime,
           color: Colors.deepPurple,
           onTap: () => _executeCommand(
             'Sleep History',
-            () async {
-              // Sleep history implementation
-            },
-            successMessage: '😴 Sleep history request sent! Loading sleep analysis data...',
+            () => widget.extendedService.requestOptimizedSleepHistory(),
+            successMessage: '😴 Sleep history request sent with optimized checksum! Loading sleep analysis data...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'Interval Steps',
+          subtitle: 'Get step intervals data (optimized)',
+          icon: Icons.directions_walk,
+          color: Colors.green,
+          onTap: () => _executeCommand(
+            'Interval Steps',
+            () => widget.extendedService.requestOptimizedIntervalSteps(),
+            successMessage: '� Interval steps request sent with optimized checksum! Loading step data...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'ALL Historical Data',
+          subtitle: 'Complete workflow - all data types (optimized)',
+          icon: Icons.download_for_offline,
+          color: Colors.indigo,
+          onTap: () => _executeCommand(
+            'ALL Historical Data',
+            () => widget.extendedService.requestAllOptimizedHistoricalData(),
+            successMessage: '🚀 Complete historical data workflow started! Using optimized checksum for maximum reliability...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'ENHANCED Historical Data',
+          subtitle: 'Reverse-engineered parsers from original app (ULTIMATE)',
+          icon: Icons.science,
+          color: Colors.deepPurple,
+          onTap: () => _executeCommand(
+            'ENHANCED Historical Data',
+            () => widget.extendedService.requestAllEnhancedHistoricalData(),
+            successMessage: '🧬 ENHANCED historical data workflow started! Using reverse-engineered parsers for maximum accuracy...',
           ),
         ),
       ],

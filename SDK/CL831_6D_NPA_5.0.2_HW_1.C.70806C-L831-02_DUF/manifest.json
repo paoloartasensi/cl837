@@ -1,8 +1,0 @@
-{
-    "manifest": {
-        "application": {
-            "bin_file": "s332_ble_ant_app.bin",
-            "dat_file": "s332_ble_ant_app.dat"
-        }
-    }
-}

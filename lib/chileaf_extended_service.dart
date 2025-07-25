@@ -17,6 +17,7 @@ import 'services/data_processors/temperature_processor.dart';
 import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
 import 'services/data_processors/historical_data_processor.dart';
+import 'services/historical_data_service.dart';
 import 'services/data_processors/rope_processor.dart';
 import 'services/data_processors/device_info_processor.dart';
 
@@ -43,6 +44,9 @@ class ChileafExtendedService {
   StreamSubscription? _dataSubscription;
   Timer? _dataRequestTimer;
   Timer? _spo2Timer;
+  
+  // Historical data service with optimized checksum
+  late final HistoricalDataService _historicalDataService;
   
   // Callback per notificare il completamento automatico del test SpO2
   void Function()? _onSpO2AutoComplete;
@@ -73,10 +77,10 @@ class ChileafExtendedService {
   // Debug logging control - VERY AGGRESSIVE THROTTLING
   final bool _enableVerboseLogging = false; // Set to true for detailed logs
   final int _logThrottleInterval = 500; // Log every 500 packets (was 50)
-  final int _healthDataThrottleInterval = 100; // Log health data every 100 occurrences (was 10)
-  final int _temperatureThrottleInterval = 50; // Log every 50th temperature (was 5)
-  final int _sportsThrottleInterval = 50; // Log every 50th sports data (was 5)
-  final int _accelerometerThrottleInterval = 200; // Log every 200th accelerometer batch
+  final int _healthDataThrottleInterval = 200; // Log health data every 200 occurrences (was 100)
+  final int _temperatureThrottleInterval = 100; // Log every 100th temperature (was 50) 
+  final int _sportsThrottleInterval = 500; // Log every 500th sports data (was 50) - MUCH LESS NOISE
+  final int _accelerometerThrottleInterval = 500; // Log every 500th accelerometer batch (was 200)
 
   // Data Processors
   late final SpO2Processor _spo2Processor;
@@ -115,6 +119,9 @@ class ChileafExtendedService {
     _temperatureProcessor = TemperatureProcessor();
     _accelerometerProcessor = AccelerometerProcessor();
     _healthProcessor = HealthProcessor();
+    
+    // Initialize historical data service with optimized checksum
+    _historicalDataService = HistoricalDataService(_sendCommand);
   }
 
   // Public streams - delegate to processors
@@ -375,7 +382,10 @@ class ChileafExtendedService {
         break;
       case ChileafProtocol.commandSports:
         // SPORTS DATA IGNORED - Focus on medical-grade sensors only
-        debugPrint('🚫 Sports data ignored (steps/calories unreliable)');
+        _sportsLogCount++;
+        if (_sportsLogCount % _sportsThrottleInterval == 0) {
+          debugPrint('🚫 Sports data ignored ($_sportsLogCount packets, steps/calories unreliable)');
+        }
         break;
       case ChileafProtocol.commandSpo2:
         debugPrint('🫁 RECEIVED SPO2 DATA! Processing...');
@@ -1295,5 +1305,91 @@ class ChileafExtendedService {
       debugPrint('❌ Failed to send raw command: $e');
       rethrow;
     }
+  }
+
+  // === OPTIMIZED HISTORICAL DATA METHODS ===
+  
+  /// Recupera tutti i dati HR storici (lista + dettagli)
+  /// Utilizza i comandi 0x21, 0x22, 0x23 con checksum Java ottimizzato
+  Future<void> requestCompleteHRHistory() async {
+    debugPrint('🔄💓 Requesting COMPLETE HR History with optimized checksum...');
+    await _historicalDataService.requestCompleteHRHistory();
+  }
+
+  /// Recupera tutti i dati RR/HRV storici (per analisi Elite HRV)
+  /// Utilizza i comandi 0x24, 0x25 con checksum Java ottimizzato
+  Future<void> requestCompleteRRHistory() async {
+    debugPrint('🔄📊 Requesting COMPLETE RR/HRV History with optimized checksum...');
+    await _historicalDataService.requestCompleteRRHistory();
+  }
+
+  /// Recupera dati di esercizio storici ottimizzati
+  /// Utilizza comando 0x16 con checksum Java ottimizzato
+  Future<void> requestOptimizedExerciseHistory() async {
+    debugPrint('🔄🏃 Requesting Exercise History with optimized checksum...');
+    await _historicalDataService.requestExerciseHistoryEnhanced();
+  }
+
+  /// Recupera dati di sonno storici ottimizzati
+  /// Utilizza comando 0x05 con checksum Java ottimizzato
+  Future<void> requestOptimizedSleepHistory() async {
+    debugPrint('🔄😴 Requesting Sleep History with optimized checksum...');
+    await _historicalDataService.requestSleepHistoryEnhanced();
+  }
+
+  /// Recupera passi intervallari ottimizzati
+  /// Utilizza comando 0x40 con checksum Java ottimizzato
+  Future<void> requestOptimizedIntervalSteps() async {
+    debugPrint('🔄🚶 Requesting Interval Steps with optimized checksum...');
+    await _historicalDataService.requestIntervalStepsEnhanced();
+  }
+
+  /// Recupera TUTTI i dati storici in un workflow ottimizzato
+  /// Sequenza coordinata di tutti i comandi con timing ottimale
+  Future<void> requestAllOptimizedHistoricalData() async {
+    debugPrint('🚀📊 Starting COMPLETE Optimized Historical Data Workflow...');
+    debugPrint('🔧 Using Java checksum algorithm for maximum reliability');
+    await _historicalDataService.requestAllHistoricalDataEnhanced();
+  }
+
+  /// Recupera TUTTI i dati storici con parser reverse-engineered dall'app originale
+  /// Massima compatibilità e accuratezza nel parsing dei dati
+  Future<void> requestAllEnhancedHistoricalData() async {
+    debugPrint('🔬📊 Starting ENHANCED Historical Data Workflow...');
+    debugPrint('🧬 Using reverse-engineered parsers from original app for maximum accuracy');
+    await _historicalDataService.requestAllHistoricalDataEnhanced();
+  }
+
+  /// Recupera HR dettagliato per timestamp specifico
+  Future<void> requestHRDetailForTimestamp(int timestamp) async {
+    debugPrint('💓🔍 Requesting HR Detail for timestamp: $timestamp');
+    await _historicalDataService.requestHRDetailData(timestamp);
+  }
+
+  /// Recupera HR esteso (con RR intervals) per timestamp specifico
+  Future<void> requestHRExtendedForTimestamp(int timestamp) async {
+    debugPrint('💓🔬 Requesting HR Extended (RR intervals) for timestamp: $timestamp');
+    await _historicalDataService.requestHRExtendedData(timestamp);
+  }
+
+  /// Recupera RR detail per timestamp specifico
+  Future<void> requestRRDetailForTimestamp(int timestamp) async {
+    debugPrint('📊🔍 Requesting RR Detail for timestamp: $timestamp');
+    await _historicalDataService.requestRRDetailData(timestamp);
+  }
+
+  /// Formatta timestamp in formato leggibile
+  String formatTimestamp(int timestamp) {
+    return HistoricalDataService.formatTimestamp(timestamp);
+  }
+
+  /// Verifica se un timestamp è valido
+  bool isValidTimestamp(int timestamp) {
+    return HistoricalDataService.isValidTimestamp(timestamp);
+  }
+
+  /// Pulisce la cache delle richieste dati storici
+  void clearHistoricalDataCache() {
+    _historicalDataService.clearRequestCache();
   }
 }
