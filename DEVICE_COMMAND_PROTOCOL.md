@@ -24,6 +24,365 @@ class DeviceProtocolConstants {
 
 ## Comandi BLE per ricevere dati (intValue dal byte[2])
 
+### � Comandi di Configurazione Device
+
+#### **Comando 3 - User Information**
+- **Formato BLE Ricevuto**: `[length, 0x??, 0x03, ??, ??, age, sex, height, weight, phone_number[5]]`
+- **Formato BLE da Inviare**: `[length, cmd, 0x03, age, sex, height[2], weight[2], phone_number[5]]`
+- **Flutter Implementation**:
+```dart
+// lib/services/ble_protocol/user_info_service.dart
+class UserInfoService {
+  // Ricevi informazioni utente dal device
+  void parseUserInfo(List<int> data) {
+    if (data.length >= 14 && data[2] == 0x03) {
+      int age = data[5];
+      int sex = data[6];        // 0 = Male, 1 = Female
+      int height = data[7];     // cm
+      int weight = data[8];     // kg
+      List<int> phoneNumber = data.sublist(9, 14); // 5 bytes
+      
+      onUserInfoReceived(age, sex, height, weight, phoneNumber);
+    }
+  }
+  
+  // Imposta informazioni utente sul device
+  Future<List<int>> createSetUserInfoCommand({
+    required int age,           // 18 years
+    required int sex,           // 0 = Male, 1 = Female
+    required int height,        // 170 cm
+    required int weight,        // 55 kg
+    required String phoneNumber // Max 11 digits
+  }) async {
+    List<int> command = [];
+    
+    // Header
+    command.add(0x0F);  // Length (15 bytes total)
+    command.add(0x01);  // Command type (write)
+    command.add(0x03);  // User info command
+    
+    // User data
+    command.add(age & 0xFF);
+    command.add(sex & 0xFF);
+    
+    // Height (2 bytes)
+    command.add((height >> 8) & 0xFF);
+    command.add(height & 0xFF);
+    
+    // Weight (2 bytes) 
+    command.add((weight >> 8) & 0xFF);
+    command.add(weight & 0xFF);
+    
+    // Phone number (5 bytes, pad with 0x00 if shorter)
+    List<int> phoneBytes = _phoneToBytes(phoneNumber);
+    command.addAll(phoneBytes);
+    
+    return command;
+  }
+  
+  // Get user info from device
+  List<int> createGetUserInfoCommand() {
+    return [0x03, 0x02, 0x03]; // length=3, read=0x02, command=0x03
+  }
+  
+  void onUserInfoReceived(int age, int sex, int height, int weight, List<int> phoneNumber) {
+    String sexStr = sex == 0 ? "Male" : "Female";
+    String phone = _bytesToPhone(phoneNumber);
+    print('User Info - Age: $age, Sex: $sexStr, Height: ${height}cm, Weight: ${weight}kg, Phone: $phone');
+  }
+  
+  List<int> _phoneToBytes(String phone) {
+    List<int> bytes = List.filled(5, 0);
+    List<int> digits = phone.replaceAll(RegExp(r'[^0-9]'), '').codeUnits
+        .map((c) => c - 48).take(10).toList(); // Max 10 digits
+    
+    // Pack digits into 5 bytes (2 digits per byte)
+    for (int i = 0; i < digits.length && i < 10; i += 2) {
+      int byteIndex = i ~/ 2;
+      bytes[byteIndex] = (digits[i] << 4);
+      if (i + 1 < digits.length) {
+        bytes[byteIndex] |= digits[i + 1];
+      }
+    }
+    return bytes;
+  }
+  
+  String _bytesToPhone(List<int> bytes) {
+    String phone = '';
+    for (int byte in bytes) {
+      int digit1 = (byte >> 4) & 0x0F;
+      int digit2 = byte & 0x0F;
+      if (digit1 != 0) phone += digit1.toString();
+      if (digit2 != 0) phone += digit2.toString();
+    }
+    return phone;
+  }
+}
+```
+
+#### **Comandi Heart Rate Settings & Alarms**
+Dall'app originale vediamo questi controlli HR:
+
+**Set HR Thresholds (Min/Max HR, HR Goal)**
+```dart
+// lib/services/ble_protocol/hr_settings_service.dart
+class HeartRateSettingsService {
+  
+  // Imposta soglie HR (Min, Max, Goal)
+  List<int> createSetHRThresholdsCommand({
+    required int minHR,    // es. 60 bpm
+    required int maxHR,    // es. 180 bpm  
+    required int goalHR,   // es. 150 bpm
+  }) {
+    return [
+      0x08,           // Length
+      0x01,           // Write command
+      0x46,           // HR Status command (0x46 = 70)
+      0x01,           // Sub-command: set thresholds
+      minHR & 0xFF,
+      maxHR & 0xFF, 
+      goalHR & 0xFF,
+      0x00            // Padding
+    ];
+  }
+  
+  // Get HR Status/Settings
+  List<int> createGetHRStatusCommand() {
+    return [0x03, 0x02, 0x46]; // Read HR status
+  }
+  
+  // Set Heart Rate Max (dal comando 117 sub-comando 6)
+  List<int> createSetHRMaxCommand(int maxHR) {
+    return [
+      0x06,           // Length
+      0x01,           // Write command
+      0x75,           // Multi-function command (0x75 = 117)
+      0x00,           // Padding
+      0x06,           // Sub-command: HR Max
+      maxHR & 0xFF
+    ];
+  }
+  
+  // Get Heart Rate Max
+  List<int> createGetHRMaxCommand() {
+    return [
+      0x05,           // Length
+      0x02,           // Read command
+      0x75,           // Multi-function command
+      0x00,           // Padding
+      0x06            // Sub-command: HR Max
+    ];
+  }
+  
+  // Enable/Disable HR Alarm
+  List<int> createSetHRAlarmCommand(bool enable) {
+    return [
+      0x04,           // Length
+      0x01,           // Write command
+      0x5B,           // HR Alarm command (0x5B = 91)
+      enable ? 0x01 : 0x00
+    ];
+  }
+  
+  // Parse HR Settings Response
+  void parseHRSettings(List<int> data) {
+    if (data.length >= 7 && data[2] == 0x46) { // HR Status
+      int minHR = data[4];
+      int maxHR = data[5]; 
+      int goalHR = data[6];
+      onHRSettingsReceived(minHR, maxHR, goalHR);
+    }
+    
+    if (data.length >= 6 && data[2] == 0x75 && data[4] == 0x06) { // HR Max
+      int maxHR = data[5];
+      onHRMaxReceived(maxHR);
+    }
+  }
+  
+  void onHRSettingsReceived(int minHR, int maxHR, int goalHR) {
+    print('HR Settings - Min: ${minHR}bpm, Max: ${maxHR}bpm, Goal: ${goalHR}bpm');
+  }
+  
+  void onHRMaxReceived(int maxHR) {
+    print('HR Max: ${maxHR}bpm');
+  }
+}
+```
+
+#### **Comandi 3D/6D Sensor Settings**
+Dall'app vediamo le impostazioni frequenza sensori:
+
+```dart
+// lib/services/ble_protocol/sensor_settings_service.dart
+class SensorSettingsService {
+  
+  // Set 3D Frequency (25Hz, 50Hz, 100Hz, 200Hz, 400Hz)
+  List<int> createSet3DFrequencyCommand(int frequency) {
+    return [
+      0x06,           // Length
+      0x01,           // Write command
+      0x75,           // Multi-function command (117)
+      0x00,           // Padding
+      0x0B,           // Sub-command: 3D Frequency (11)
+      _frequencyToByte(frequency)
+    ];
+  }
+  
+  // Get 3D Frequency
+  List<int> createGet3DFrequencyCommand() {
+    return [0x05, 0x02, 0x75, 0x00, 0x0B];
+  }
+  
+  // Set 3D Status (Enable/Disable)
+  List<int> createSet3DStatusCommand(bool enable) {
+    return [
+      0x06,           // Length
+      0x01,           // Write command
+      0x75,           // Multi-function command
+      0x00,           // Padding
+      0x0C,           // Sub-command: 3D Status (12)
+      enable ? 0x01 : 0x00
+    ];
+  }
+  
+  // Get 3D Status
+  List<int> createGet3DStatusCommand() {
+    return [0x05, 0x02, 0x75, 0x00, 0x0C];
+  }
+  
+  // Set 6D Frequency (26Hz, 52Hz, 104Hz, 208Hz)
+  List<int> createSet6DFrequencyCommand(int frequency) {
+    return [
+      0x04,           // Length
+      0x01,           // Write command
+      0x61,           // 6D Frequency command (0x61 = 97)
+      _frequency6DToByte(frequency)
+    ];
+  }
+  
+  // Get 6D Frequency
+  List<int> createGet6DFrequencyCommand() {
+    return [0x03, 0x02, 0x61];
+  }
+  
+  int _frequencyToByte(int frequency) {
+    switch (frequency) {
+      case 25: return 0x01;
+      case 50: return 0x02;
+      case 100: return 0x03;
+      case 200: return 0x04;
+      case 400: return 0x05;
+      default: return 0x02; // Default to 50Hz
+    }
+  }
+  
+  int _frequency6DToByte(int frequency) {
+    switch (frequency) {
+      case 26: return 0x01;
+      case 52: return 0x02;
+      case 104: return 0x03;
+      case 208: return 0x04;
+      default: return 0x02; // Default to 52Hz
+    }
+  }
+  
+  void parseSensorSettings(List<int> data) {
+    if (data.length >= 6 && data[2] == 0x75) {
+      int subCommand = data[4];
+      
+      if (subCommand == 0x0B) { // 3D Frequency
+        int freq = _byteToFrequency(data[5]);
+        on3DFrequencyReceived(freq);
+      } else if (subCommand == 0x0C) { // 3D Status
+        bool status = data[5] == 1;
+        on3DStatusReceived(status);
+      }
+    }
+    
+    if (data.length >= 4 && data[2] == 0x61) { // 6D Frequency
+      int freq = _byteTo6DFrequency(data[3]);
+      on6DFrequencyReceived(freq);
+    }
+  }
+  
+  int _byteToFrequency(int byte) {
+    switch (byte) {
+      case 0x01: return 25;
+      case 0x02: return 50;
+      case 0x03: return 100;
+      case 0x04: return 200;
+      case 0x05: return 400;
+      default: return 50;
+    }
+  }
+  
+  int _byteTo6DFrequency(int byte) {
+    switch (byte) {
+      case 0x01: return 26;
+      case 0x02: return 52;
+      case 0x03: return 104;
+      case 0x04: return 208;
+      default: return 52;
+    }
+  }
+  
+  void on3DFrequencyReceived(int frequency) {
+    print('3D Sensor Frequency: ${frequency}Hz');
+  }
+  
+  void on3DStatusReceived(bool status) {
+    print('3D Sensor Status: ${status ? "Enabled" : "Disabled"}');
+  }
+  
+  void on6DFrequencyReceived(int frequency) {
+    print('6D Sensor Frequency: ${frequency}Hz');
+  }
+}
+```
+
+#### **Altri Comandi di Controllo**
+
+```dart
+// lib/services/ble_protocol/device_control_service.dart
+class DeviceControlService {
+  
+  // Get Historical Data for 3D (dal bottone nell'app)
+  List<int> createGetHistorical3DCommand() {
+    return [0x03, 0x02, 0x77]; // Get 3D Accelerometer history
+  }
+  
+  List<int> createGetHistorical3DGyroCommand() {
+    return [0x03, 0x02, 0x78]; // Get 3D Gyroscope history  
+  }
+  
+  // Get Sleep Data
+  List<int> createGetSleepDataCommand() {
+    return [0x03, 0x02, 0x05]; // Get sleep history
+  }
+  
+  // Get HeartRate Alarm Data
+  List<int> createGetHRAlarmCommand() {
+    return [0x03, 0x02, 0x5B]; // Get HR alarm records
+  }
+  
+  // Shutdown Device
+  List<int> createShutdownCommand() {
+    return [0x03, 0x01, 0xFF]; // Shutdown command (ipotetico)
+  }
+  
+  // Clear specific data type
+  List<int> createClearDataCommand(int dataType) {
+    return [
+      0x05,           // Length
+      0x01,           // Write command
+      0xF0,           // Clear command (ipotetico)
+      0x00,           // Padding
+      dataType & 0xFF // Data type to clear
+    ];
+  }
+}
+```
+
 ### 🔴 Dati Real-time
 
 #### **Comando 4 - Heart Rate**
@@ -1363,6 +1722,242 @@ class DeviceDataDispatcher {
 characteristic.value.listen((value) {
   dispatcher.processDeviceData(value);
 });
+```
+
+## Esempio di Uso Completo - Setup Device CL837
+
+```dart
+// lib/services/cl837_device_manager.dart
+class CL837DeviceManager {
+  final DeviceDataDispatcher _dispatcher = DeviceDataDispatcher();
+  final UserInfoService _userInfoService = UserInfoService();
+  final HeartRateSettingsService _hrSettingsService = HeartRateSettingsService();
+  final SensorSettingsService _sensorSettingsService = SensorSettingsService();
+  final DeviceControlService _deviceControlService = DeviceControlService();
+  
+  BluetoothCharacteristic? _writeCharacteristic;
+  BluetoothCharacteristic? _notifyCharacteristic;
+  
+  /// Setup completo del device come nell'app originale Chileaf
+  Future<void> setupDevice() async {
+    print('🔧 Setting up CL837 Device...');
+    
+    // 1. Set User Information
+    await _setUserInformation();
+    await Future.delayed(Duration(milliseconds: 500));
+    
+    // 2. Configure HR Settings
+    await _configureHRSettings();
+    await Future.delayed(Duration(milliseconds: 500));
+    
+    // 3. Configure Sensor Settings
+    await _configureSensorSettings();
+    await Future.delayed(Duration(milliseconds: 500));
+    
+    // 4. Enable Data Streaming
+    await _enableDataStreaming();
+    
+    print('✅ CL837 Device setup completed!');
+  }
+  
+  Future<void> _setUserInformation() async {
+    print('👤 Setting user information...');
+    
+    // Come nell'app originale: Age 18, Female, 170cm, 55kg
+    List<int> command = await _userInfoService.createSetUserInfoCommand(
+      age: 18,
+      sex: 1,              // Female
+      height: 170,         // cm
+      weight: 55,          // kg
+      phoneNumber: "1234567890"
+    );
+    
+    await _writeCommand(command);
+    
+    // Verifica lettura
+    await Future.delayed(Duration(milliseconds: 200));
+    List<int> getCommand = _userInfoService.createGetUserInfoCommand();
+    await _writeCommand(getCommand);
+  }
+  
+  Future<void> _configureHRSettings() async {
+    print('❤️ Configuring HR settings...');
+    
+    // Set HR Thresholds (come nell'app originale)
+    List<int> thresholdsCmd = _hrSettingsService.createSetHRThresholdsCommand(
+      minHR: 60,           // Min HR
+      maxHR: 180,          // Max HR  
+      goalHR: 150          // HR Goal
+    );
+    await _writeCommand(thresholdsCmd);
+    
+    await Future.delayed(Duration(milliseconds: 200));
+    
+    // Set HR Max (separato)
+    List<int> maxCmd = _hrSettingsService.createSetHRMaxCommand(180);
+    await _writeCommand(maxCmd);
+    
+    await Future.delayed(Duration(milliseconds: 200));
+    
+    // Enable HR Alarm
+    List<int> alarmCmd = _hrSettingsService.createSetHRAlarmCommand(true);
+    await _writeCommand(alarmCmd);
+  }
+  
+  Future<void> _configureSensorSettings() async {
+    print('📱 Configuring sensor settings...');
+    
+    // Set 3D Frequency to 50Hz (come nell'app originale)
+    List<int> freq3DCmd = _sensorSettingsService.createSet3DFrequencyCommand(50);
+    await _writeCommand(freq3DCmd);
+    
+    await Future.delayed(Duration(milliseconds: 200));
+    
+    // Enable 3D Sensor
+    List<int> status3DCmd = _sensorSettingsService.createSet3DStatusCommand(true);
+    await _writeCommand(status3DCmd);
+    
+    await Future.delayed(Duration(milliseconds: 200));
+    
+    // Set 6D Frequency to 52Hz
+    List<int> freq6DCmd = _sensorSettingsService.createSet6DFrequencyCommand(52);
+    await _writeCommand(freq6DCmd);
+  }
+  
+  Future<void> _enableDataStreaming() async {
+    print('📡 Enabling data streaming...');
+    
+    // Setup notification listener per ricevere dati
+    await _notifyCharacteristic?.setNotifyValue(true);
+    _notifyCharacteristic?.value.listen((data) {
+      _dispatcher.processDeviceData(data);
+    });
+  }
+  
+  /// Funzioni per ottenere dati storici (dai bottoni nell'app)
+  Future<void> getHistoricalData3D() async {
+    List<int> cmd = _deviceControlService.createGetHistorical3DCommand();
+    await _writeCommand(cmd);
+  }
+  
+  Future<void> getSleepData() async {
+    List<int> cmd = _deviceControlService.createGetSleepDataCommand();
+    await _writeCommand(cmd);
+  }
+  
+  Future<void> getHRAlarmData() async {
+    List<int> cmd = _deviceControlService.createGetHRAlarmCommand();
+    await _writeCommand(cmd);
+  }
+  
+  /// Funzioni utility
+  Future<void> _writeCommand(List<int> command) async {
+    if (_writeCharacteristic != null) {
+      print('📤 Sending: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      await _writeCharacteristic!.write(command);
+    }
+  }
+  
+  void shutdown() async {
+    List<int> cmd = _deviceControlService.createShutdownCommand();
+    await _writeCommand(cmd);
+  }
+  
+  /// Clear data per tipo (come nell'app originale)
+  void clearSportData() async {
+    List<int> cmd = _deviceControlService.createClearDataCommand(
+        DeviceProtocolConstants.TYPE_SPORT);
+    await _writeCommand(cmd);
+  }
+  
+  void clearHeartRateData() async {
+    List<int> cmd = _deviceControlService.createClearDataCommand(
+        DeviceProtocolConstants.TYPE_HEART);
+    await _writeCommand(cmd);
+  }
+}
+```
+
+## Integrazione con Flutter BLE
+
+```dart
+// lib/services/ble_connection_manager.dart
+class BLEConnectionManager {
+  static const String DEVICE_NAME = "CL837";
+  static const String SERVICE_UUID = "your-service-uuid";
+  static const String WRITE_CHAR_UUID = "your-write-characteristic-uuid";
+  static const String NOTIFY_CHAR_UUID = "your-notify-characteristic-uuid";
+  
+  FlutterBluePlus flutterBlue = FlutterBluePlus.instance;
+  BluetoothDevice? connectedDevice;
+  CL837DeviceManager? deviceManager;
+  
+  Future<void> connectAndSetup() async {
+    try {
+      // 1. Scan for device
+      BluetoothDevice? device = await _scanForDevice();
+      if (device == null) {
+        throw Exception('CL837 device not found');
+      }
+      
+      // 2. Connect
+      await device.connect();
+      connectedDevice = device;
+      
+      // 3. Discover services
+      List<BluetoothService> services = await device.discoverServices();
+      BluetoothService? targetService = services.firstWhere(
+        (s) => s.uuid.toString() == SERVICE_UUID,
+        orElse: () => throw Exception('Service not found')
+      );
+      
+      // 4. Get characteristics
+      BluetoothCharacteristic? writeChar = targetService.characteristics.firstWhere(
+        (c) => c.uuid.toString() == WRITE_CHAR_UUID,
+        orElse: () => throw Exception('Write characteristic not found')
+      );
+      
+      BluetoothCharacteristic? notifyChar = targetService.characteristics.firstWhere(
+        (c) => c.uuid.toString() == NOTIFY_CHAR_UUID,
+        orElse: () => throw Exception('Notify characteristic not found')
+      );
+      
+      // 5. Setup device manager
+      deviceManager = CL837DeviceManager();
+      deviceManager!._writeCharacteristic = writeChar;
+      deviceManager!._notifyCharacteristic = notifyChar;
+      
+      // 6. Complete setup (come nell'app Chileaf originale)
+      await deviceManager!.setupDevice();
+      
+    } catch (e) {
+      print('❌ Connection error: $e');
+      rethrow;
+    }
+  }
+  
+  Future<BluetoothDevice?> _scanForDevice() async {
+    Completer<BluetoothDevice?> completer = Completer();
+    
+    flutterBlue.scanResults.listen((results) {
+      for (ScanResult result in results) {
+        if (result.device.name == DEVICE_NAME) {
+          flutterBlue.stopScan();
+          completer.complete(result.device);
+          return;
+        }
+      }
+    });
+    
+    await flutterBlue.startScan(timeout: Duration(seconds: 10));
+    
+    if (!completer.isCompleted) {
+      completer.complete(null);
+    }
+    
+    return completer.future;
+  }
+}
 ```
 
 Questo protocollo rappresenta l'implementazione completa dell'app originale per interagire con il device CL837 in Flutter/Dart.
