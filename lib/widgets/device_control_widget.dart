@@ -37,6 +37,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   Timer? _temperatureDebounceTimer;
   DateTime? _lastTemperatureRequest;
   
+  // Temperature data tracking to prevent spam
+  DateTime? _lastTemperatureLogTime;
+  String? _lastTemperatureData;
+  
   // Command execution state
   bool _isExecutingCommand = false;
   String _commandStatus = '';
@@ -180,9 +184,35 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     _streamSubscriptions.add(
       widget.extendedService.temperatureDataStream.listen((data) {
         if (mounted) {
-          _updateCommandStatus('🌡️ Temperature: Body ${data.bodyTempC.toStringAsFixed(1)}°C | Wrist ${data.wristTempC.toStringAsFixed(1)}°C | Ambient ${data.ambientTempC.toStringAsFixed(1)}°C');
-          _addToHistory('🌡️ Temperature Data Received', true, 
-              details: 'Body: ${data.bodyTempC.toStringAsFixed(1)}°C, Wrist: ${data.wristTempC.toStringAsFixed(1)}°C, Ambient: ${data.ambientTempC.toStringAsFixed(1)}°C');
+          final now = DateTime.now();
+          final newTempData = 'Body: ${data.bodyTempC.toStringAsFixed(1)}°C, Wrist: ${data.wristTempC.toStringAsFixed(1)}°C, Ambient: ${data.ambientTempC.toStringAsFixed(1)}°C';
+          
+          // Aggiorna sempre lo status per feedback immediato
+          _updateCommandStatus('🌡️ Temperature: $newTempData');
+          
+          // Ma aggiungi alla cronologia solo se:
+          // 1. È la prima volta
+          // 2. Sono passati almeno 10 secondi dall'ultimo log
+          // 3. I dati sono cambiati significativamente
+          bool shouldLog = false;
+          
+          if (_lastTemperatureLogTime == null) {
+            // Prima temperatura ricevuta
+            shouldLog = true;
+          } else if (now.difference(_lastTemperatureLogTime!).inSeconds >= 10) {
+            // Sono passati almeno 10 secondi
+            shouldLog = true;
+          } else if (_lastTemperatureData != null && _lastTemperatureData != newTempData) {
+            // I dati sono cambiati significativamente
+            shouldLog = true;
+          }
+          
+          if (shouldLog) {
+            _addToHistory('🌡️ Temperature Data Received', true, 
+                details: newTempData);
+            _lastTemperatureLogTime = now;
+            _lastTemperatureData = newTempData;
+          }
         }
       })
     );
