@@ -511,37 +511,80 @@ class ChileafExtendedService {
 
   /// Avvia la misurazione SpO2 utilizzando il comando ufficiale 0x37
   /// Equivalente a BloodOxygenSearchActivity.onClick() + CL880WearManager.setBloodOxygen(1)
-  /// Pipeline: UI → Command → BLE TX → Device → BLE RX → Parse → Callback → UI Update
+  /// Pipeline: UI → Callback Setup → Command → BLE TX → Device → BLE RX → Parse → Callback → UI Update
+  /// IMPORTANTE: Il dispositivo controlla autonomamente la durata della misurazione - NO TIMER ARBITRARIO
+  /// Il device smette automaticamente di inviare frame 0x37 quando la misurazione è completa
   Future<void> startBloodOxygenMeasurement() async {
     if (_spo2MeasurementActive) {
       debugPrint('🩸 SpO2 measurement already active, ignoring start request');
       return;
     }
 
-    debugPrint('🩸 STARTING Blood Oxygen Measurement');
+    debugPrint('🩸 STARTING Blood Oxygen Measurement (Android-Compatible Sequence)');
+
+    // CRITICAL: Pre-flight checks (like Android DeviceManager validation)
+    if (_rxCharacteristic == null || _txCharacteristic == null) {
+      throw Exception('BLE characteristics not ready for SpO2 measurement');
+    }
+    
+    if (!(_txCharacteristic?.isNotifying ?? false)) {
+      debugPrint('⚠️ WARNING: TX characteristic notifications may not be enabled');
+      // Try to enable them
+      try {
+        await _txCharacteristic!.setNotifyValue(true);
+        debugPrint('🔄 TX notifications enabled for SpO2');
+      } catch (e) {
+        debugPrint('❌ Failed to enable TX notifications: $e');
+      }
+    }
 
     try {
-      // debugPrint('🩸🔧 Phase 1: Sending BLE Command');
-      // debugPrint('   Command: 0x37 (55 decimal) - 0 = Stop');
+      // PHASE 1: CRITICAL - Setup callback reception FIRST (like Android app)
+      debugPrint('🩸🔧 Phase 1: Setting up callback reception (BEFORE command)');
       _spo2MeasurementActive = true;
       _spo2MeasurementPaused = false;
       _lastSpO2Value = null;
-      // var resetBloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(0);
-      // await _sendCommand(bloodOxygenCommand);
-      // debugPrint('🩸✅ Phase 1 Complete: Reset');
+      debugPrint('🩸✅ Phase 1 Complete: State ready');
 
-      debugPrint('🩸🔧 Phase 2: Sending BLE Command');
+      // PHASE 2: Setup data reception monitoring (Android pattern - NO TIMER!)
+      debugPrint('🩸🔧 Phase 2: Setting up data monitoring (device-controlled duration)');
+      _setupBloodOxygenDataMonitoring();
+      debugPrint('🩸✅ Phase 2 Complete: Data monitoring ready');
+
+      // PHASE 3: Send command ONLY after everything is ready (Android pattern)
+      debugPrint('🩸🔧 Phase 3: Sending BLE Command (callback ready)');
       debugPrint('   Command: 0x37 (55 decimal) - 1 = Start');
-      var bloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(1);
+      
+      // CRITICAL FIX: Use manual command construction like Android app
+      // Based on Java: int[] command = new int[]{(byte)mode, 0}; this.sendCommand((byte)55, command);
+      // sendCommand builds: [255, len, cmd, ...values, checksum] where len = 4 + values.length
+      List<int> bloodOxygenCommand = [
+        0xFF,    // Start byte (255)
+        0x06,    // Length = 4 (base) + 2 (values: mode + padding) = 6
+        0x37,    // Command (55 decimal)
+        0x01,    // Mode (1 = start)
+        0x00,    // Padding (second value)
+        0x00     // Checksum (will be calculated)
+      ];
+      
+      // Calculate correct checksum using Java algorithm: (-sum) ^ 58 & 0xFF
+      int checksumCalc = 0;
+      for (int i = 0; i < bloodOxygenCommand.length - 1; i++) {
+        checksumCalc += bloodOxygenCommand[i];
+      }
+      checksumCalc = (-checksumCalc) & 0xFF; // Negate and mask
+      checksumCalc ^= 0x3A; // XOR with 58 (0x3A)
+      checksumCalc &= 0xFF; // Final mask
+      bloodOxygenCommand[5] = checksumCalc;
+      
+      // Debug the manual command
+      debugPrint('🔍 Manual SpO2 command (CORRECTED): ${bloodOxygenCommand.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('🔍 Length: ${bloodOxygenCommand[1]} (was 5, now 6 - FIXED!)');
+      debugPrint('🔍 Java checksum: 0x${checksumCalc.toRadixString(16).padLeft(2, '0')} ((-sum) ^ 58 & 0xFF)');
+      debugPrint('🔍 Matches Android: sendCommand((byte)55, new int[]{1, 0})');
+      
       await _sendCommand(bloodOxygenCommand);
-      debugPrint('🩸✅ Phase 2 Complete: Start');
-
-      // Phase 4: Setup data reception callback
-      debugPrint('🩸🔄 Phase 3: Setting up data reception pipeline');
-      _setupBloodOxygenDataReception();
-
-      // Phase 5: Setup measurement timer (similar to Android app Timer/TimerTask)
-      _setupBloodOxygenTimer();
+      debugPrint('🩸✅ Phase 3 Complete: Start command sent');
 
       debugPrint('🩸 Blood Oxygen Measurement Started Successfully');
       debugPrint('🩸⏱️ Waiting for device response on command 0x37...');
@@ -555,24 +598,10 @@ class ChileafExtendedService {
     }
   }
 
-  /// Setup del timer di misurazione (equivalente al Timer/TimerTask dell'app Android)
-  void _setupBloodOxygenTimer() {
-    debugPrint('⏱️ Setting up measurement timer (60 seconds max)');
-
-    _spo2MeasurementTimer?.cancel();
-    _spo2MeasurementTimer = Timer(const Duration(seconds: 60), () async {
-      debugPrint('⏰ Blood oxygen measurement timeout (60s) - auto stopping');
-      await stopBloodOxygenMeasurement();
-
-      if (_onSpO2MeasurementComplete != null) {
-        _onSpO2MeasurementComplete!();
-      }
-    });
-  }
-
-  /// Setup della ricezione dati SpO2 (equivalente a BloodOxygenCallback.onBloodOxygenReceived)
-  void _setupBloodOxygenDataReception() {
-    debugPrint('📥 Setting up Blood Oxygen data reception callback');
+  /// Setup del monitoraggio dei dati SpO2 - il dispositivo controlla la durata
+  void _setupBloodOxygenDataMonitoring() {
+    debugPrint('📥 Setting up Blood Oxygen data monitoring (device-controlled)');
+    debugPrint('🎯 Device will automatically stop when measurement is complete');
 
     // Cancel any existing subscription
     _spo2DataSubscription?.cancel();
@@ -591,11 +620,23 @@ class ChileafExtendedService {
         }
       },
     );
+    
+    // Setup a timeout as safety fallback (much longer - 3 minutes)
+    _spo2MeasurementTimer?.cancel();
+    _spo2MeasurementTimer = Timer(const Duration(minutes: 3), () async {
+      debugPrint('⏰ SpO2 safety timeout (3 minutes) - device may be unresponsive');
+      await stopBloodOxygenMeasurement();
+      
+      if (_onSpO2Error != null) {
+        _onSpO2Error!('Measurement timeout - device unresponsive');
+      }
+    });
   }
 
   /// Gestisce i dati SpO2 ricevuti (REPLICA ESATTA del comportamento Android)
   /// Equivalente a: onBloodOxygenReceived(bluetoothDevice, final int i, final String str, int i2, int i3, int i4)
-  /// Logica Android: if (str != "" && str != null && Integer.valueOf(str) > 0) → pause = true
+  /// Logica Android: if (str != "" && str != null && Integer.valueOf(str) > 0) → measurement complete
+  /// Il dispositivo controlla autonomamente quando fermarsi - nessun timer artificiale
   void _handleBloodOxygenReceived(SpO2Data spo2Data) {
     if (!_spo2MeasurementActive) return;
 
@@ -608,39 +649,37 @@ class ChileafExtendedService {
         '   On Wrist: ${spo2Data.onWrist} (${spo2Data.isWearing ? "Wearing" : "Not Wearing"})');
     debugPrint('   Reliable: ${spo2Data.isReliable}');
 
-    // Validation following Android app logic
-    if (spo2Data.value > 0 && spo2Data.isValidMeasurement) {
+    // Always notify UI of progress updates (like Android app)
+    if (_onSpO2ValueReceived != null) {
+      String displayValue = spo2Data.value > 0 ? spo2Data.value.toString() : "--";
+      _onSpO2ValueReceived!(displayValue);
+    }
+
+    // Check for valid final reading (following Android app logic)
+    if (spo2Data.value > 0 && spo2Data.isValidMeasurement && spo2Data.isReliable) {
       String valueStr = spo2Data.value.toString();
       _lastSpO2Value = valueStr;
 
-      debugPrint('✅ Valid SpO2 reading: $valueStr%');
-      debugPrint('🔄 Updating UI (equivalent to runOnUiThread)');
+      debugPrint('✅ Valid final SpO2 reading: $valueStr%');
+      debugPrint('🏁 Measurement completed by device');
 
-      // Trigger UI update callback (equivalent to mTxtBloodOxygenValue.setText(str + "%"))
-      if (_onSpO2ValueReceived != null) {
-        _onSpO2ValueReceived!(valueStr);
-      }
+      // Mark as completed (device has provided final result)
+      _spo2MeasurementPaused = true;
+      
+      // The device will stop sending frames automatically
+      // We complete after a short delay to allow final data processing
+      Future.delayed(const Duration(seconds: 2), () async {
+        if (_spo2MeasurementActive && _spo2MeasurementPaused) {
+          debugPrint('🎯 Auto-completing measurement after device signaled completion');
+          await stopBloodOxygenMeasurement();
 
-      // Pause measurement when valid value received (like Android app)
-      if (!_spo2MeasurementPaused) {
-        _spo2MeasurementPaused = true;
-        debugPrint('⏸️ Measurement paused after valid reading');
-
-        // Auto-complete after valid reading (user can save or continue)
-        Future.delayed(const Duration(seconds: 2), () async {
-          if (_spo2MeasurementActive && _spo2MeasurementPaused) {
-            debugPrint('Auto-completing measurement after valid reading');
-            await stopBloodOxygenMeasurement();
-
-            if (_onSpO2MeasurementComplete != null) {
-              _onSpO2MeasurementComplete!();
-            }
+          if (_onSpO2MeasurementComplete != null) {
+            _onSpO2MeasurementComplete!();
           }
-        });
-      }
+        }
+      });
     } else {
-      debugPrint(
-          '⚠️ Invalid or unreliable SpO2 reading - continuing measurement');
+      debugPrint('📊 Intermediate SpO2 reading - device continuing measurement...');
     }
   }
 
@@ -656,7 +695,31 @@ class ChileafExtendedService {
     try {
       // Phase 1: Send stop command (setBloodOxygen(0))
       debugPrint('📡 Sending stop command: setBloodOxygen(0)');
-      var stopCommand = OfficialChileafCommands.setBloodOxygen(0);
+      
+      // CRITICAL FIX: Use manual command construction for stop too
+      // Java: setBloodOxygen(0) -> sendCommand((byte)55, new int[]{0, 0})
+      List<int> stopCommand = [
+        0xFF,    // Start byte (255)
+        0x06,    // Length = 4 (base) + 2 (values: mode + padding) = 6
+        0x37,    // Command (55 decimal)
+        0x00,    // Mode (0 = stop)
+        0x00,    // Padding (second value)
+        0x00     // Checksum (will be calculated)
+      ];
+      
+      // Calculate correct checksum using Java algorithm: (-sum) ^ 58 & 0xFF
+      int checksumCalc = 0;
+      for (int i = 0; i < stopCommand.length - 1; i++) {
+        checksumCalc += stopCommand[i];
+      }
+      checksumCalc = (-checksumCalc) & 0xFF; // Negate and mask
+      checksumCalc ^= 0x3A; // XOR with 58 (0x3A)
+      checksumCalc &= 0xFF; // Final mask
+      stopCommand[5] = checksumCalc;
+      
+      debugPrint('🔍 Manual STOP command (CORRECTED): ${stopCommand.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('🔍 Java checksum: 0x${checksumCalc.toRadixString(16).padLeft(2, '0')}');
+      
       await _sendCommand(stopCommand);
 
       debugPrint('✅ Stop command sent successfully');
@@ -708,14 +771,36 @@ class ChileafExtendedService {
 
     final hexString = frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
     debugPrint('📡 Sending BLE Command: $hexString');
+    
+    // Decodifica speciale per SpO2 per debug
+    if (frame.length >= 4 && frame[2] == 0x37) {
+      final mode = frame[3];
+      debugPrint('🩸 SpO2 Command Details:');
+      debugPrint('   Command: 0x37 (55 decimal)');
+      debugPrint('   Mode: $mode (${mode == 1 ? "START" : mode == 0 ? "STOP" : "UNKNOWN"})');
+      debugPrint('   Expected response: Command 55 frames with SpO2 data');
+      debugPrint('   Frame structure: [0xFF, length, 0x37, mode, padding, checksum]');
+      debugPrint('   RX Characteristic available: ${_rxCharacteristic != null}');
+      debugPrint('   TX Characteristic available: ${_txCharacteristic != null}');
+      debugPrint('   Notifications enabled: ${_txCharacteristic?.isNotifying ?? false}');
+    }
 
     try {
       if (_rxCharacteristic!.properties.writeWithoutResponse) {
         await _rxCharacteristic!.write(frame, withoutResponse: true);
+        debugPrint('✅ Command sent (writeWithoutResponse)');
       } else {
         await _rxCharacteristic!.write(frame, withoutResponse: false);
+        debugPrint('✅ Command sent (write with response)');
       }
-      await Future.delayed(const Duration(milliseconds: 100));
+      
+      // Longer delay for SpO2 commands to ensure device processing
+      if (frame.length >= 4 && frame[2] == 0x37) {
+        await Future.delayed(const Duration(milliseconds: 500));
+        debugPrint('🩸 SpO2 command processing delay completed');
+      } else {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
     } catch (e) {
       debugPrint('❌ Command send failed: $e');
       throw Exception('Command sending failed: $e');
