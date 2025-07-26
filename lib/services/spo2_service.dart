@@ -27,13 +27,13 @@ class SpO2Service {
     }
 
     // Estrai dati dal pacchetto (basato su analisi decompilazione)
-    int bSwitch = data[3];      // Stato misurazione
+    int status = data[3];      // Stato misurazione
     int spO2Value = data[4];    // Valore SpO2 (0-100%)
     int gesture = data[5];      // Postura polso (0=errata, 1=corretta)
     int piValue = data[6];      // Perfusion Index (0-255)
     int onWrist = data[7];      // Contatto polso (0=non indossato, 1=indossato)
 
-    developer.log("SpO2 Raw Data: switch=$bSwitch, value=$spO2Value%, gesture=$gesture, PI=$piValue, onWrist=$onWrist", name: 'SpO2Service');
+    developer.log("SpO2 Raw Data: switch=$status, value=$spO2Value%, gesture=$gesture, PI=$piValue, onWrist=$onWrist", name: 'SpO2Service');
 
     // Validazione qualità del segnale
     bool isReliableReading = _validateSignalQuality(gesture, piValue, onWrist);
@@ -43,8 +43,7 @@ class SpO2Service {
       piValue: piValue,
       gesture: gesture,
       onWrist: onWrist,
-      isReliable: isReliableReading,
-      quality: _getQualityText(piValue, gesture, onWrist),
+      status: status,
       timestamp: DateTime.now(),
     );
 
@@ -67,16 +66,6 @@ class SpO2Service {
            onWrist == 1;              // Dispositivo indossato correttamente
   }
 
-  /// Genera testo descrittivo per la qualità del segnale
-  String _getQualityText(int piValue, int gesture, int onWrist) {
-    // Priorità: problemi più critici prima
-    if (onWrist == 0) return "Dispositivo non indossato";
-    if (gesture == 0) return "Postura polso errata";
-    if (piValue == 0) return "Nessun battito rilevato";
-    if (piValue < 8) return "Segnale troppo debole";
-    if (piValue < 15) return "Segnale buono";
-    return "Segnale eccellente";
-  }
 
   /// Aggiunge lettura affidabile al sistema di monitoraggio salute
   void _addToHealthMonitoring(SpO2Data reading) {

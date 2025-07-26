@@ -230,12 +230,6 @@ class _SpO2DisplayWidgetState extends State<SpO2DisplayWidget> {
             _currentReading?.onWrist == 1 ? Colors.green : Colors.red,
             _currentReading?.onWrist == 1 ? Icons.check : Icons.close,
           ),
-          _buildQualityRow(
-            'Qualità Segnale',
-            _currentReading?.quality ?? 'N/A',
-            _getSignalQualityColor(),
-            _getSignalQualityIcon(),
-          ),
         ],
       ),
     );
@@ -398,21 +392,6 @@ class _SpO2DisplayWidgetState extends State<SpO2DisplayWidget> {
     return 'Ottimale';
   }
 
-  Color _getSignalQualityColor() {
-    if (_currentReading == null) return Colors.grey;
-    if (_currentReading!.piValue == 0) return Colors.red;
-    if (_currentReading!.piValue < 8) return Colors.red;
-    if (_currentReading!.piValue < 15) return Colors.orange;
-    return Colors.green;
-  }
-
-  IconData _getSignalQualityIcon() {
-    if (_currentReading == null) return Icons.help;
-    if (_currentReading!.piValue == 0) return Icons.signal_cellular_0_bar;
-    if (_currentReading!.piValue < 8) return Icons.signal_cellular_connected_no_internet_0_bar;
-    if (_currentReading!.piValue < 15) return Icons.signal_cellular_alt;
-    return Icons.signal_cellular_4_bar;
-  }
 
   void _showInfoDialog() {
     showDialog(

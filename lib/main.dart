@@ -460,7 +460,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 // You can add an isMeasuring state variable if needed
             });
             
-            await _extendedService.measureSpO2();
+            await _extendedService.startBloodOxygenMeasurement();
             showSuccess('SpO2 measurement started');
         } catch (e) {
             debugPrint('Failed to measure SpO2: $e');
@@ -468,49 +468,22 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
     }
 
-    Future<void> measureSpO2Alternative() async {
-        if (connectedDevice == null) {
-            showError('No device connected');
-            return;
-        }
-        
-        try {
-            setState(() {
-                // You can add an isMeasuring state variable if needed
-            });
-            
-            await _extendedService.measureSpO2Alternative();
-            showSuccess('Alternative SpO2 measurement started');
-        } catch (e) {
-            debugPrint('Failed to measure SpO2 (alternative): $e');
-            showError('Failed to measure SpO2 (alternative)');
-        }
-    }
 
     Future<void> forceExitSpO2Mode() async {
         try {
-            await _extendedService.forceExitSpO2Mode();
-            showSuccess('Force exit SpO2 mode completed');
+            await _extendedService.stopBloodOxygenMeasurement();
+            showSuccess('SpO2 measurement stopped');
         } catch (e) {
-            debugPrint('Failed to force exit SpO2 mode: $e');
-            showError('Failed to force exit SpO2 mode');
-        }
-    }
-
-    Future<void> testSpO2LED() async {
-        try {
-            await _extendedService.testLEDFunctionality();
-            showSuccess('LED test completed');
-        } catch (e) {
-            debugPrint('Failed to test LED: $e');
-            showError('Failed to test LED');
+            debugPrint('Failed to stop SpO2 measurement: $e');
+            showError('Failed to stop SpO2 measurement');
         }
     }
 
     Future<void> diagnoseBLE() async {
         try {
-            await _extendedService.diagnoseBLEIssues();
-            showSuccess('BLE diagnostics completed');
+            // Diagnostica BLE usando il nuovo sistema di alto livello
+            bool isActive = _extendedService.isBloodOxygenMeasurementActive;
+            showSuccess('BLE diagnostics: SpO2 active = $isActive (command 55 system)');
         } catch (e) {
             debugPrint('Failed to diagnose BLE: $e');
             showError('Failed to diagnose BLE');

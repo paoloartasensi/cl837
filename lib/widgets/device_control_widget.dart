@@ -577,7 +577,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           onTap: () => _executeCommand(
             'SpO2 Measurement',
             () async {
-              await widget.extendedService.measureSpO2();
+              await widget.extendedService.startBloodOxygenMeasurement();
               setState(() => _isSpO2LEDActive = true);
               
               // Start 50-second timer
@@ -601,7 +601,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           onTap: () => _executeCommand(
             'Stop SpO2',
             () async {
-              await widget.extendedService.stopSpO2Measurement();
+              await widget.extendedService.stopBloodOxygenMeasurement();
               setState(() => _isSpO2LEDActive = false);
               _spo2LEDTimer?.cancel();
             },

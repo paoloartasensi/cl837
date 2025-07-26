@@ -1,23 +1,22 @@
 class SpO2Data {
+  final int status; // Se la lettura è affidabile per analisi salute
   final int value; // Valore SpO2 0-100%
-  final int piValue; // Perfusion Index 0-255
   final int gesture; // Postura polso (0=errata, 1=corretta)
+  final int piValue; // Perfusion Index 0-255
   final int onWrist; // Contatto polso (0=non indossato, 1=indossato)
-  final bool isReliable; // Se la lettura è affidabile per analisi salute
-  final String quality; // Descrizione qualità del segnale
   final DateTime timestamp;
 
   SpO2Data({
+    required this.status,
     required this.value,
-    required this.piValue,
     required this.gesture,
+    required this.piValue,
     required this.onWrist,
-    required this.isReliable,
-    required this.quality,
     DateTime? timestamp,
   }) : timestamp = timestamp ?? DateTime.now();
 
   // Getter di compatibilità con l'implementazione precedente
+  bool get isReliable => status == 1;
   int? get spo2Value => value;
   bool get correctWristPosture => gesture == 1;
   int get signalQuality => piValue;
@@ -42,7 +41,7 @@ class SpO2Data {
   @override
   String toString() {
     String reliabilityFlag = isReliable ? '✓' : '⚠';
-    return 'SpO2: $value% $reliabilityFlag, PI:$piValue, ${isWearing ? 'Indossato' : 'Non Indossato'}, $quality';
+    return 'SpO2: $value% $reliabilityFlag, PI:$piValue, ${isWearing ? 'Indossato' : 'Non Indossato'}, Postura: ${correctWristPosture ? 'Corretta' : 'Errata'}, Timestamp: ${timestamp.toIso8601String()}';
   }
 
   /// Conversione a mappa per serializzazione
@@ -52,8 +51,7 @@ class SpO2Data {
       'piValue': piValue,
       'gesture': gesture,
       'onWrist': onWrist,
-      'isReliable': isReliable,
-      'quality': quality,
+      'status': status,
       'timestamp': timestamp.millisecondsSinceEpoch,
     };
   }
@@ -61,12 +59,11 @@ class SpO2Data {
   /// Creazione da mappa per deserializzazione
   factory SpO2Data.fromMap(Map<String, dynamic> map) {
     return SpO2Data(
+      status: map['status'] ?? 0,
       value: map['value'] ?? 0,
       piValue: map['piValue'] ?? 0,
       gesture: map['gesture'] ?? 0,
       onWrist: map['onWrist'] ?? 0,
-      isReliable: map['isReliable'] ?? false,
-      quality: map['quality'] ?? '',
       timestamp: DateTime.fromMillisecondsSinceEpoch(map['timestamp'] ?? 0),
     );
   }

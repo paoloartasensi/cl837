@@ -48,6 +48,8 @@ class OfficialChileafCommands {
   /// Equivalente al metodo setBloodOxygen(int mode) del SDK Android
   /// mode: 0 = stop, 1 = start measurement
   static List<int> setBloodOxygen(int mode) {
+    // not documented, the decompiled code suggests to send an array of 2 elements
+    // where the second is always 0
     return _buildCommand(0x37, [mode, 0]);
   }
   
