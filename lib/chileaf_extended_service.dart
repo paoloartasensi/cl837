@@ -71,6 +71,7 @@ class ChileafExtendedService {
   // Stato della misurazione SpO2 ottimizzato seguendo pipeline ufficiale
   bool _spo2MeasurementActive = false;
   bool _spo2MeasurementPaused = false;
+  bool _spo2ResultSaved = false; // NUOVO: Flag per evitare salvataggio multiplo
   String? _lastSpO2Value;
   Timer? _spo2MeasurementTimer;
   StreamSubscription? _spo2DataSubscription;
@@ -543,6 +544,7 @@ class ChileafExtendedService {
       debugPrint('🩸🔧 Phase 1: Setting up callback reception (BEFORE command)');
       _spo2MeasurementActive = true;
       _spo2MeasurementPaused = false;
+      _spo2ResultSaved = false; // Reset salvataggio per nuova sessione
       _lastSpO2Value = null;
       debugPrint('🩸✅ Phase 1 Complete: State ready');
 
@@ -661,23 +663,35 @@ class ChileafExtendedService {
       _lastSpO2Value = valueStr;
 
       debugPrint('✅ Valid final SpO2 reading: $valueStr%');
+      
+      // SALVA SOLO UNA VOLTA per evitare toast multipli
+      if (!_spo2ResultSaved) {
+        _spo2ResultSaved = true;
+        debugPrint('💾 Saving SpO2 result (first valid reading of session)');
+        // Qui viene chiamato il callback per salvare - solo una volta
+      } else {
+        debugPrint('📊 Additional valid reading (not saving - already saved)');
+      }
+      
       debugPrint('🏁 Measurement completed by device');
 
       // Mark as completed (device has provided final result)
-      _spo2MeasurementPaused = true;
-      
-      // The device will stop sending frames automatically
-      // We complete after a short delay to allow final data processing
-      Future.delayed(const Duration(seconds: 2), () async {
-        if (_spo2MeasurementActive && _spo2MeasurementPaused) {
-          debugPrint('🎯 Auto-completing measurement after device signaled completion');
-          await stopBloodOxygenMeasurement();
+      if (!_spo2MeasurementPaused) {
+        _spo2MeasurementPaused = true;
+        
+        // The device will stop sending frames automatically
+        // We complete after a short delay to allow final data processing
+        Future.delayed(const Duration(seconds: 2), () async {
+          if (_spo2MeasurementActive && _spo2MeasurementPaused) {
+            debugPrint('🎯 Auto-completing measurement after device signaled completion');
+            await stopBloodOxygenMeasurement();
 
-          if (_onSpO2MeasurementComplete != null) {
-            _onSpO2MeasurementComplete!();
+            if (_onSpO2MeasurementComplete != null) {
+              _onSpO2MeasurementComplete!();
+            }
           }
-        }
-      });
+        });
+      }
     } else {
       debugPrint('📊 Intermediate SpO2 reading - device continuing measurement...');
     }
@@ -743,6 +757,7 @@ class ChileafExtendedService {
     // Reset state
     _spo2MeasurementActive = false;
     _spo2MeasurementPaused = false;
+    _spo2ResultSaved = false; // Reset flag salvataggio
 
     // Cancel timer
     _spo2MeasurementTimer?.cancel();
