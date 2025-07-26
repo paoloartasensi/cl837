@@ -44,6 +44,43 @@ class SpO2Data {
     return 'SpO2: $value% $reliabilityFlag, PI:$piValue, ${isWearing ? 'Indossato' : 'Non Indossato'}, Postura: ${correctWristPosture ? 'Corretta' : 'Errata'}, Timestamp: ${timestamp.toIso8601String()}';
   }
 
+  /// Visualizzazione dettagliata del valore SpO2 per debugging
+  String toDetailedString() {
+    String valueInterpretation = '';
+    String alertColor = '';
+    
+    if (value == 0) {
+      valueInterpretation = 'Misurazione in corso';
+      alertColor = '⚪';
+    } else if (value >= 98) {
+      valueInterpretation = 'ECCELLENTE - Ossigenazione ottimale';
+      alertColor = '💚';
+    } else if (value >= 95) {
+      valueInterpretation = 'NORMALE - Ossigenazione buona';
+      alertColor = '💚';
+    } else if (value >= 90) {
+      valueInterpretation = 'BASSA - Possibile ipossiemia lieve';
+      alertColor = '🟡';
+    } else if (value > 0) {
+      valueInterpretation = 'CRITICA - Ipossiemia severa';
+      alertColor = '🔴';
+    }
+    
+    return '''
+🩸 ===== DETTAGLI SATURAZIONE OSSIGENO =====
+$alertColor SpO2 VALUE: $value%
+🏥 INTERPRETAZIONE: $valueInterpretation
+📊 STATUS: ${isReliable ? "AFFIDABILE" : "NON AFFIDABILE"}
+⌚ INDOSSATO: ${isWearing ? "SÌ" : "NO"}
+🤚 POSTURA: ${correctWristPosture ? "CORRETTA" : "ERRATA"}
+📶 SEGNALE PI: $piValue ($signalQualityDescription)
+⏰ TIMESTAMP: ${timestamp.toIso8601String()}
+✅ VALIDO: ${isValidMeasurement ? "SÌ" : "NO"}
+🚨 CRITICO: ${isCritical ? "SÌ" : "NO"}
+🏃 DEVICE READY: ${isDeviceReady ? "SÌ" : "NO"}
+=============================================''';
+  }
+
   /// Conversione a mappa per serializzazione
   Map<String, dynamic> toMap() {
     return {

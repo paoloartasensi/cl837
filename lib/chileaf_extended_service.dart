@@ -433,9 +433,32 @@ class ChileafExtendedService {
         }
         break;
       case ChileafProtocol.commandSpo2:
+        debugPrint('🫁 ===== BLOOD OXYGEN DATA RECEIVED =====');
         debugPrint('🫁 BLOOD OXYGEN DATA RECEIVED (Command 0x37)!');
         debugPrint('📊 Processing through official pipeline...');
+        debugPrint('🔍 RAW FRAME DATA: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        debugPrint('🔍 RAW FRAME (decimal): ${data.join(' ')}');
+        debugPrint('🔍 Frame length: ${data.length} bytes');
+        
+        // Analisi preliminare del frame prima del processing
+        if (data.length >= 8) {
+          debugPrint('🔍 FRAME ANALYSIS:');
+          debugPrint('   Byte 0 (Start): 0x${data[0].toRadixString(16)} (${data[0]})');
+          debugPrint('   Byte 1 (Length): 0x${data[1].toRadixString(16)} (${data[1]})');
+          debugPrint('   Byte 2 (Command): 0x${data[2].toRadixString(16)} (${data[2]})');
+          debugPrint('   Byte 3 (Status): 0x${data[3].toRadixString(16)} (${data[3]})');
+          debugPrint('   Byte 4 (SpO2 Value): 0x${data[4].toRadixString(16)} (${data[4]}%) ⬅️ QUESTO È IL VALORE PRINCIPALE');
+          debugPrint('   Byte 5 (Posture): 0x${data[5].toRadixString(16)} (${data[5]})');
+          debugPrint('   Byte 6 (PI Signal): 0x${data[6].toRadixString(16)} (${data[6]})');
+          debugPrint('   Byte 7 (On Wrist): 0x${data[7].toRadixString(16)} (${data[7]})');
+          if (data.length > 8) {
+            debugPrint('   Additional bytes: ${data.skip(8).map((b) => '0x${b.toRadixString(16)}').join(' ')}');
+          }
+        }
+        
+        debugPrint('🔄 Forwarding to SpO2Processor for detailed analysis...');
         _spo2Processor.processSPO2Data(data);
+        debugPrint('🫁 ===== END BLOOD OXYGEN PROCESSING =====');
         break;
       case ChileafProtocol.commandTemperature:
         // SILENTLY process temperature data - no logging
@@ -642,6 +665,8 @@ class ChileafExtendedService {
   void _handleBloodOxygenReceived(SpO2Data spo2Data) {
     if (!_spo2MeasurementActive) return;
 
+    debugPrint('📊 ===== BLOOD OXYGEN DATA RECEIVED =====');
+    debugPrint('🩸 VALORE PRINCIPALE SpO2: ${spo2Data.value}%');
     debugPrint('📊 Blood Oxygen Data Received:');
     debugPrint('   Value: ${spo2Data.value}%');
     debugPrint('   PI (Signal): ${spo2Data.piValue}');
@@ -650,10 +675,33 @@ class ChileafExtendedService {
     debugPrint(
         '   On Wrist: ${spo2Data.onWrist} (${spo2Data.isWearing ? "Wearing" : "Not Wearing"})');
     debugPrint('   Reliable: ${spo2Data.isReliable}');
+    
+    // ANALISI DETTAGLIATA DEL VALORE
+    debugPrint('🔍 ===== ANALISI DETTAGLIATA VALORE =====');
+    debugPrint('🩸 SATURAZIONE OSSIGENO RILEVATA: ${spo2Data.value}%');
+    
+    String valueAnalysis = '';
+    if (spo2Data.value == 0) {
+      valueAnalysis = 'Misurazione in corso o non valida';
+    } else if (spo2Data.value >= 98) {
+      valueAnalysis = 'ECCELLENTE - Ossigenazione ottimale';
+    } else if (spo2Data.value >= 95) {
+      valueAnalysis = 'NORMALE - Ossigenazione buona';
+    } else if (spo2Data.value >= 90) {
+      valueAnalysis = 'BASSA - Possibile ipossiemia lieve';
+    } else if (spo2Data.value > 0) {
+      valueAnalysis = 'CRITICA - Ipossiemia severa';
+    }
+    
+    debugPrint('🏥 VALUTAZIONE CLINICA: $valueAnalysis');
+    debugPrint('📊 Range normale: 95-100% (valori salutari)');
+    debugPrint('📊 Range di attenzione: 90-94% (monitorare)');
+    debugPrint('📊 Range critico: <90% (consultare medico)');
 
     // Always notify UI of progress updates (like Android app)
     if (_onSpO2ValueReceived != null) {
       String displayValue = spo2Data.value > 0 ? spo2Data.value.toString() : "--";
+      debugPrint('📱 UI UPDATE: Mostrando valore $displayValue% all\'utente');
       _onSpO2ValueReceived!(displayValue);
     }
 
@@ -662,15 +710,26 @@ class ChileafExtendedService {
       String valueStr = spo2Data.value.toString();
       _lastSpO2Value = valueStr;
 
+      debugPrint('✅ ===== LETTURA FINALE VALIDA =====');
       debugPrint('✅ Valid final SpO2 reading: $valueStr%');
+      debugPrint('✅ QUESTO È IL VALORE DEFINITIVO DELLA SATURAZIONE OSSIGENO');
+      debugPrint('✅ Condizioni di misurazione verificate:');
+      debugPrint('   ✅ Dispositivo indossato correttamente');
+      debugPrint('   ✅ Postura del polso corretta');
+      debugPrint('   ✅ Segnale di qualità sufficiente');
+      debugPrint('   ✅ Valore nel range medico valido');
       
       // SALVA SOLO UNA VOLTA per evitare toast multipli
       if (!_spo2ResultSaved) {
         _spo2ResultSaved = true;
+        debugPrint('💾 ===== SALVATAGGIO RISULTATO =====');
         debugPrint('💾 Saving SpO2 result (first valid reading of session)');
+        debugPrint('💾 VALORE SALVATO: ${spo2Data.value}% SpO2');
+        debugPrint('💾 Timestamp: ${DateTime.now().toIso8601String()}');
         // Qui viene chiamato il callback per salvare - solo una volta
       } else {
         debugPrint('📊 Additional valid reading (not saving - already saved)');
+        debugPrint('📊 VALORE AGGIUNTIVO: ${spo2Data.value}% (già salvato il primo)');
       }
       
       debugPrint('🏁 Measurement completed by device');
@@ -684,6 +743,7 @@ class ChileafExtendedService {
         Future.delayed(const Duration(seconds: 2), () async {
           if (_spo2MeasurementActive && _spo2MeasurementPaused) {
             debugPrint('🎯 Auto-completing measurement after device signaled completion');
+            debugPrint('🎯 MISURAZIONE COMPLETATA - VALORE FINALE: ${spo2Data.value}%');
             await stopBloodOxygenMeasurement();
 
             if (_onSpO2MeasurementComplete != null) {
@@ -693,8 +753,29 @@ class ChileafExtendedService {
         });
       }
     } else {
+      debugPrint('📊 ===== LETTURA INTERMEDIA =====');
       debugPrint('📊 Intermediate SpO2 reading - device continuing measurement...');
+      debugPrint('📊 VALORE INTERMEDIO: ${spo2Data.value}% (misurazione in corso)');
+      
+      if (!spo2Data.isValidMeasurement) {
+        debugPrint('⚠️ Lettura non valida - motivi possibili:');
+        if (spo2Data.value < 70 || spo2Data.value > 100) {
+          debugPrint('   ⚠️ Valore fuori range normale (70-100%)');
+        }
+        if (!spo2Data.isReliable) {
+          debugPrint('   ⚠️ Status indica lettura non affidabile');
+        }
+      }
+      
+      if (!spo2Data.isReliable) {
+        debugPrint('⚠️ Condizioni di misurazione non ottimali:');
+        if (!spo2Data.isWearing) debugPrint('   ⚠️ Dispositivo non rilevato sul polso');
+        if (!spo2Data.correctWristPosture) debugPrint('   ⚠️ Postura del polso non corretta');
+        if (spo2Data.signalQuality < 8) debugPrint('   ⚠️ Qualità del segnale insufficiente');
+      }
     }
+    
+    debugPrint('📊 ===== FINE GESTIONE DATO SpO2 =====');
   }
 
   /// Ferma la misurazione SpO2 (equivalente a setBloodOxygen(0) + cleanup)
