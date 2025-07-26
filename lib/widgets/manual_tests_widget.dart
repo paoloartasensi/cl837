@@ -1089,9 +1089,51 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     });
     
     try {
+      // CRITICAL: Imposta i callback PRIMA di avviare la misurazione (come Android app)
+      widget.extendedService.setSpO2Callbacks(
+        onValueReceived: (spo2Value) {
+          debugPrint('🫁 SpO2 VALUE RECEIVED: $spo2Value%');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('SpO2 misurato: $spo2Value%'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+        onComplete: () {
+          debugPrint('✅ SpO2 measurement completed');
+          if (mounted) {
+            setState(() => _isSpo2Testing = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Misurazione SpO2 completata'),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ SpO2 measurement error: $error');
+          if (mounted) {
+            setState(() => _isSpo2Testing = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Errore SpO2: $error'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+      );
+      
       // Invia comando di alto livello 55 (0x37) - il dispositivo gestisce autonomamente i LED
       await widget.extendedService.startBloodOxygenMeasurement();
-      debugPrint('🩸 HIGH-LEVEL command 55 sent - device controls LEDs autonomously');
+      debugPrint('🩸 Completed');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -404,7 +404,6 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         _exerciseHistorySubscription?.cancel();
         _hrHistoryListSubscription?.cancel();
         _hrHistoryDataSubscription?.cancel();
-        _temperatureDataSubscription?.cancel();
         _sensorService.dispose();
         _heartRateService.dispose();
         _batteryService.dispose();

@@ -22,13 +22,13 @@ class SpO2Processor {
   /// Processa i dati SpO2 dal comando 0x37 (SDK ufficiale)
   void processSPO2Data(List<int> data) {
     // SPO2 Mode-0x37 response format from SDK:
-
+    
     if (data.length < 8) {
       debugPrint('SPO2 data too short: ${data.length} bytes');
       return;
     }
 
-    try {
+    try {      
       final status = data[3];
       final spo2Value = data[4];
       final correctPosture = data[5];

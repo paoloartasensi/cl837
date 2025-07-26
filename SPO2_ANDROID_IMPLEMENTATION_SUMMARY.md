@@ -86,7 +86,7 @@ Future<void> _startSpO2Test() async {
     try {
         // Invia comando di alto livello 55 (0x37) - il dispositivo gestisce autonomamente i LED
         await widget.extendedService.startBloodOxygenMeasurement();
-        debugPrint('🩸 HIGH-LEVEL command 55 sent - device controls LEDs autonomously');
+        debugPrint('🩸 completed');
         
         ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('Test SpO2 avviato - Comando 55 inviato (dispositivo controlla LED autonomamente)'))

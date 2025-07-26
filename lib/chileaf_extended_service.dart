@@ -247,11 +247,9 @@ class ChileafExtendedService {
 
   Future<void> _setupCharacteristics(BluetoothService customService) async {
     // Debug: List all characteristics
-    debugPrint(
-        'Service has ${customService.characteristics.length} characteristics:');
+    debugPrint('Service has ${customService.characteristics.length} characteristics:');
     for (var char in customService.characteristics) {
-      debugPrint(
-          '  - ${char.uuid} (properties: notify=${char.properties.notify}, read=${char.properties.read}, write=${char.properties.write})');
+      debugPrint('  - ${char.uuid} (properties: notify=${char.properties.notify}, read=${char.properties.read}, write=${char.properties.write})');
     }
 
     // Find characteristics - more robust matching
@@ -293,18 +291,18 @@ class ChileafExtendedService {
     }
 
     // Initial commands to start data flow
-    await Future.delayed(const Duration(milliseconds: 500));
-    await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
+    // await Future.delayed(const Duration(milliseconds: 500));
+    // await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
 
-    // Set up periodic data requests (only medical-grade sensors)
-    _dataRequestTimer =
-        Timer.periodic(const Duration(seconds: 5), (timer) async {
-      try {
-        await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
-      } catch (e) {
-        debugPrint('Error in periodic data request: $e');
-      }
-    });
+    // // Set up periodic data requests (only medical-grade sensors)
+    // _dataRequestTimer =
+    //     Timer.periodic(const Duration(seconds: 5), (timer) async {
+    //   try {
+    //     await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
+    //   } catch (e) {
+    //     debugPrint('Error in periodic data request: $e');
+    //   }
+    // });
   }
 
   void _processIncomingData(List<int> data) {
@@ -349,8 +347,7 @@ class ChileafExtendedService {
 
         // Only log command processing for NON-high frequency commands
         if (_enableVerboseLogging || !isHighFrequency) {
-          debugPrint(
-              'Processing command: ${ChileafProtocol.getCommandName(command)}');
+          debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
         }
 
         // Route to appropriate processor
@@ -524,18 +521,18 @@ class ChileafExtendedService {
     debugPrint('🩸 STARTING Blood Oxygen Measurement');
 
     try {
-      debugPrint('🩸🔧 Phase 1: Sending BLE Command');
-      debugPrint('   Command: 0x37 (55 decimal) - 0 = Stop');
+      // debugPrint('🩸🔧 Phase 1: Sending BLE Command');
+      // debugPrint('   Command: 0x37 (55 decimal) - 0 = Stop');
       _spo2MeasurementActive = true;
       _spo2MeasurementPaused = false;
       _lastSpO2Value = null;
-      var bloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(0);
-      await _sendCommand(bloodOxygenCommand);
-      debugPrint('🩸✅ Phase 1 Complete: Reset');
+      // var resetBloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(0);
+      // await _sendCommand(bloodOxygenCommand);
+      // debugPrint('🩸✅ Phase 1 Complete: Reset');
 
       debugPrint('🩸🔧 Phase 2: Sending BLE Command');
       debugPrint('   Command: 0x37 (55 decimal) - 1 = Start');
-      bloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(1);
+      var bloodOxygenCommand = OfficialChileafCommands.setBloodOxygen(1);
       await _sendCommand(bloodOxygenCommand);
       debugPrint('🩸✅ Phase 2 Complete: Start');
 
@@ -632,7 +629,7 @@ class ChileafExtendedService {
         // Auto-complete after valid reading (user can save or continue)
         Future.delayed(const Duration(seconds: 2), () async {
           if (_spo2MeasurementActive && _spo2MeasurementPaused) {
-            debugPrint('� Auto-completing measurement after valid reading');
+            debugPrint('Auto-completing measurement after valid reading');
             await stopBloodOxygenMeasurement();
 
             if (_onSpO2MeasurementComplete != null) {
@@ -709,8 +706,8 @@ class ChileafExtendedService {
       throw Exception('RX characteristic not available');
     }
 
-    debugPrint(
-        '📡 Sending: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    final hexString = frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
+    debugPrint('📡 Sending BLE Command: $hexString');
 
     try {
       if (_rxCharacteristic!.properties.writeWithoutResponse) {
