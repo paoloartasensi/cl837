@@ -7,6 +7,7 @@ import 'battery.dart';
 import 'heartrate.dart';
 import 'chileaf_extended_service.dart';
 import 'hrv_session_service.dart';
+import 'services/ble_protocol/official_commands_complete.dart';
 import 'widgets/accelerometer_widget.dart';
 import 'widgets/battery_widget.dart';
 import 'widgets/heart_rate_widget.dart';
@@ -335,7 +336,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 setState(() {
                     latestHRHistoryList = hrHistoryList;
                 });
-                debugPrint('💓 HR History List received: ${hrHistoryList.timestamps.length} timestamps');
+                debugPrint('💓 🔥 MAIN: HR History List received: ${hrHistoryList.timestamps.length} timestamps');
+                debugPrint('💓 🔥 MAIN: Updated latestHRHistoryList = ${latestHRHistoryList?.timestamps.length} timestamps');
             },
             onError: (error) {
                 debugPrint('HR history list stream error: $error');
@@ -348,7 +350,8 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     latestHRHistoryData ??= [];
                     latestHRHistoryData!.add(hrHistoryData);
                 });
-                debugPrint('💓 HR History Data received: ${hrHistoryData.entries.length} entries for ${hrHistoryData.timestamp}');
+                debugPrint('💓 🔥 MAIN: HR History Data received: ${hrHistoryData.entries.length} entries for ${hrHistoryData.timestamp}');
+                debugPrint('💓 🔥 MAIN: Total sessions now = ${latestHRHistoryData?.length}');
             },
             onError: (error) {
                 debugPrint('HR history data stream error: $error');
@@ -543,11 +546,39 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
         }
         
         try {
+            // Prima impostiamo l'ora corretta
+            await setDeviceUTC();
+            await Future.delayed(const Duration(milliseconds: 500));
+            
             await _extendedService.requestAllHistoricalData();
             showSuccess('All historical data requested');
         } catch (e) {
             debugPrint('Failed to request all historical data: $e');
             showError('Failed to request all historical data');
+        }
+    }
+
+    /// Imposta l'UTC time sul dispositivo
+    Future<void> setDeviceUTC() async {
+        if (connectedDevice == null) {
+            showError('No device connected');
+            return;
+        }
+        
+        try {
+            // Ottieni il timestamp UTC corrente
+            int currentUTC = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+            debugPrint('📅 Setting device UTC to: $currentUTC (${DateTime.now()})');
+            
+            // Usa il comando ufficiale per impostare l'UTC
+            var setUTCCommand = OfficialChileafCommands.setUTCTime(currentUTC);
+            await _extendedService.sendRawCommand(setUTCCommand);
+            
+            showSuccess('Device time updated');
+            debugPrint('✅ Device UTC time set successfully');
+        } catch (e) {
+            debugPrint('Failed to set device UTC: $e');
+            showError('Failed to set device time');
         }
     }
 
@@ -615,6 +646,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                     onRequestExercise: requestExerciseHistory,
                     onRequestHRHistory: requestHRHistory,
                     onRequestAllHistory: requestAllHistoricalData,
+                    onSetDeviceTime: setDeviceUTC,
                 ),
             ],
         );
@@ -652,8 +684,14 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         latestData: latestAccelData,
                     ),
                     HistoricalDataWidget(
+                        exerciseHistory: latestExerciseHistory,
+                        hrHistoryList: latestHRHistoryList,
+                        hrHistoryData: latestHRHistoryData,
                         isConnected: connectedDevice != null,
+                        onRequestExercise: requestExerciseHistory,
+                        onRequestHRHistory: requestHRHistory,
                         onRequestAllHistory: requestAllHistoricalData,
+                        onSetDeviceTime: setDeviceUTC,
                     ),
                 ]),
             ],

@@ -435,6 +435,10 @@ class ChileafExtendedService {
       debugPrint('TX characteristic does not support notifications');
     }
 
+    // CRITICAL: Set device time FIRST before any other operations
+    // This is essential for historical data accuracy
+    await _syncDeviceTime();
+
     // Initial commands to start data flow
     // await Future.delayed(const Duration(milliseconds: 500));
     // await _sendCommand(CommandBuilder.buildTemperatureDataRequest());
@@ -448,6 +452,27 @@ class ChileafExtendedService {
     //     debugPrint('Error in periodic data request: $e');
     //   }
     // });
+  }
+
+  /// Sincronizza l'ora del dispositivo con l'ora corrente del telefono
+  /// ESSENZIALE per la corretta gestione dei dati storici
+  Future<void> _syncDeviceTime() async {
+    try {
+      int currentUtc = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      List<int> setTimeCommand = OfficialChileafCommands.setUTCTime(currentUtc);
+      
+      debugPrint('🕐 SYNC DEVICE TIME: Setting UTC to $currentUtc (${DateTime.fromMillisecondsSinceEpoch(currentUtc * 1000)})');
+      debugPrint('🕐 Command: ${OfficialChileafCommands.commandToHexString(setTimeCommand)}');
+      
+      await _sendCommand(setTimeCommand);
+      
+      // Aspetta un momento per permettere al dispositivo di processare
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      debugPrint('✅ Device time synchronized successfully');
+    } catch (e) {
+      debugPrint('❌ Failed to sync device time: $e');
+    }
   }
 
   void _processIncomingData(List<int> data) {
@@ -490,7 +515,7 @@ class ChileafExtendedService {
         if (command == null) return;
 
         // Only log command processing for NON-high frequency commands
-        if (_enableVerboseLogging || !isHighFrequency) {
+        if (_enableVerboseLogging || (!isHighFrequency && command != ChileafProtocol.commandTemperature)) {
           debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
         }
 
@@ -632,10 +657,15 @@ class ChileafExtendedService {
         debugPrint('💓 HR HISTORY LIST: Processing HR timestamp list');
         var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(
             Uint8List.fromList(data));
-        _hrHistoryListController.add(hrHistoryList);
-
-        // Auto-request detailed data for each timestamp
-        _requestDetailedHRData(hrHistoryList);
+        
+        // Ignore "end of data" messages to preserve existing valid data
+        if (!hrHistoryList.isEndOfData) {
+          _hrHistoryListController.add(hrHistoryList);
+          // Auto-request detailed data for each timestamp
+          _requestDetailedHRData(hrHistoryList);
+        } else {
+          debugPrint('💓 🛑 Ignoring END-OF-DATA message - preserving existing HR history list');
+        }
         break;
       case 0x22: // HR History Data
         debugPrint(
@@ -1344,9 +1374,30 @@ class ChileafExtendedService {
     debugPrint(
         '💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
 
-    // DEBUG: Temporaneamente accetta tutti i timestamp per analisi
-    List<DateTime> validTimestamps = hrHistoryList.timestamps;
-    debugPrint('💓 📊 DEBUG: Processing ALL ${validTimestamps.length} timestamps for analysis');
+    // DEBUG: Filtra per timestamp di agosto 2025 (più probabili di essere validi)
+    List<DateTime> validTimestamps = hrHistoryList.timestamps.where((timestamp) {
+      // Solo timestamp di agosto 2025 (più probabili di essere corretti)
+      return timestamp.year == 2025 && timestamp.month == 8;
+    }).toList();
+    
+    debugPrint('💓 📊 DEBUG: Found ${validTimestamps.length} August 2025 timestamps out of ${hrHistoryList.timestamps.length} total');
+    
+    // Se non ci sono timestamp di agosto 2025, prova quelli più recenti
+    if (validTimestamps.isEmpty) {
+      DateTime now = DateTime.now();
+      validTimestamps = hrHistoryList.timestamps.where((timestamp) {
+        // Prendi timestamp entro 7 giorni da oggi
+        Duration diff = (timestamp.difference(now)).abs();
+        return diff.inDays <= 7;
+      }).toList();
+      debugPrint('💓 📊 DEBUG: No August 2025 timestamps, trying ${validTimestamps.length} recent timestamps (within 7 days)');
+    }
+    
+    // Se ancora vuoti, prendi tutti ma logga il problema
+    if (validTimestamps.isEmpty) {
+      validTimestamps = hrHistoryList.timestamps;
+      debugPrint('💓 ⚠️ Using all ${validTimestamps.length} timestamps (may include problematic dates)');
+    }
 
     if (validTimestamps.isEmpty) {
       debugPrint('💓 ⚠️ No HR timestamps found in list');

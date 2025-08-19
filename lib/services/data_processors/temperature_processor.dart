@@ -7,10 +7,8 @@ import '../../models/temperature_data.dart';
 class TemperatureProcessor {
   final StreamController<TemperatureData> _temperatureDataController = StreamController<TemperatureData>.broadcast();
   
-  // Debouncing per ridurre log ripetitivi
+  // Per ridurre log ripetitivi
   TemperatureData? _lastTemperatureData;
-  DateTime? _lastLogTime;
-  static const Duration _logInterval = Duration(seconds: 10); // Log ogni 10 secondi max
   
   /// Stream dei dati di temperatura processati
   Stream<TemperatureData> get temperatureDataStream => _temperatureDataController.stream;
@@ -37,13 +35,7 @@ class TemperatureProcessor {
       final wristTemp = wristTempRaw / 10.0;
       final bodyTemp = bodyTempRaw / 10.0;
       
-      // Log raw sempre per debug, ma con meno frequenza se stesso valore
-      final now = DateTime.now();
-      final shouldLogRaw = _lastLogTime == null || now.difference(_lastLogTime!) > _logInterval;
-      
-      if (shouldLogRaw) {
-        debugPrint('Temperature raw: ambient=$ambientTempRaw ($ambientTemp°C), wrist=$wristTempRaw ($wristTemp°C), body=$bodyTempRaw ($bodyTemp°C)');
-      }
+      // Silent processing - no debug logs for temperature data
 
       // Temperature readings are generally stable, send all valid readings
       // Similar to professional medical devices: continuous monitoring approach
@@ -58,22 +50,19 @@ class TemperatureProcessor {
         
         _temperatureDataController.add(temperatureData);
         
-        // Log solo se i valori sono cambiati significativamente o è passato tempo
+        // Log solo se i valori sono cambiati significativamente
         final hasSignificantChange = _lastTemperatureData == null ||
             (ambientTemp - _lastTemperatureData!.ambientTempC).abs() > 0.5 ||
             (wristTemp - _lastTemperatureData!.wristTempC).abs() > 0.5 ||
             (bodyTemp - _lastTemperatureData!.bodyTempC).abs() > 0.5;
             
-        if (hasSignificantChange || shouldLogRaw) {
-          debugPrint('✅ Temperature Data: ambient: $ambientTemp°C, wrist: $wristTemp°C, body: $bodyTemp°C');
+        if (hasSignificantChange) {
+          // Solo log significativi, no spam
+          // debugPrint('✅ Temperature Data: ambient: $ambientTemp°C, wrist: $wristTemp°C, body: $bodyTemp°C');
           _lastTemperatureData = temperatureData;
-          _lastLogTime = now;
         }
       } else {
-        if (shouldLogRaw) {
-          debugPrint('⚠️ Temperature readings out of expected range');
-          _lastLogTime = now;
-        }
+        // No logs for out-of-range temperature
       }
     } catch (e) {
       debugPrint('Error parsing temperature data: $e');

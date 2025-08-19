@@ -190,20 +190,56 @@ class HistoricalDataProcessor {
         return const HeartRateHistoryList(timestamps: []);
       }
       
+      // Check if this is an "end of data" message (all 0xFFFFFFFF)
+      if (numTimestamps == 1) {
+        int testOffset = 3;
+        if (testOffset + 4 <= data.length) {
+          int testUtc = data[testOffset] | 
+                       (data[testOffset + 1] << 8) | 
+                       (data[testOffset + 2] << 16) | 
+                       (data[testOffset + 3] << 24);
+          if (testUtc == 0xFFFFFFFF) {
+            debugPrint('💓 🛑 This is an END-OF-DATA message (0xFFFFFFFF) - ignoring to preserve existing data');
+            return const HeartRateHistoryList(timestamps: [], isEndOfData: true);
+          }
+        }
+      }
+      
       for (int i = 0; i < numTimestamps; i++) {
         int offset = 3 + (i * timestampSize);
         
         if (offset + timestampSize <= data.length) {
-          int utcTimestamp = data[offset] | 
-                           (data[offset + 1] << 8) | 
-                           (data[offset + 2] << 16) | 
-                           (data[offset + 3] << 24);
+          // Prova entrambi little-endian e big-endian per debug
+          int utcTimestampLE = data[offset] | 
+                             (data[offset + 1] << 8) | 
+                             (data[offset + 2] << 16) | 
+                             (data[offset + 3] << 24);
           
-          if (utcTimestamp != 0xFFFFFFFF) {
-            DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
-            
-            // Debug: mostra sempre il timestamp, anche se sembra fuori range
-            debugPrint('💓 HR Timestamp ${i + 1}: $timestamp (UTC: $utcTimestamp)');
+          int utcTimestampBE = (data[offset] << 24) | 
+                             (data[offset + 1] << 16) | 
+                             (data[offset + 2] << 8) | 
+                             data[offset + 3];
+          
+          debugPrint('💓 🔍 Timestamp ${i + 1} DEBUG:');
+          debugPrint('💓   Raw bytes: 0x${data[offset].toRadixString(16).padLeft(2, '0')} 0x${data[offset + 1].toRadixString(16).padLeft(2, '0')} 0x${data[offset + 2].toRadixString(16).padLeft(2, '0')} 0x${data[offset + 3].toRadixString(16).padLeft(2, '0')}');
+          debugPrint('💓   Little-endian: $utcTimestampLE = ${DateTime.fromMillisecondsSinceEpoch(utcTimestampLE * 1000)}');
+          debugPrint('💓   Big-endian: $utcTimestampBE = ${DateTime.fromMillisecondsSinceEpoch(utcTimestampBE * 1000)}');
+          
+          // Determina quale sembra più ragionevole (più vicino ad agosto 2025)
+          DateTime nowDate = DateTime.now();
+          DateTime dateLE = DateTime.fromMillisecondsSinceEpoch(utcTimestampLE * 1000);
+          DateTime dateBE = DateTime.fromMillisecondsSinceEpoch(utcTimestampBE * 1000);
+          
+          Duration diffLE = (dateLE.difference(nowDate)).abs();
+          Duration diffBE = (dateBE.difference(nowDate)).abs();
+          
+          bool useLE = diffLE.inDays < diffBE.inDays;
+          int utcTimestamp = useLE ? utcTimestampLE : utcTimestampBE;
+          DateTime timestamp = useLE ? dateLE : dateBE;
+          
+          debugPrint('💓   ✅ Using ${useLE ? "Little-endian" : "Big-endian"}: $timestamp (UTC: $utcTimestamp)');
+          
+          if (utcTimestamp != 0xFFFFFFFF && utcTimestamp != 0xFFFFFFFF) {
             
             // Aggiungi tutti i timestamp per debug (rimuovi il filtro di range per ora)
             timestamps.add(timestamp);
@@ -457,22 +493,35 @@ class HistoricalDataProcessor {
           int steps = payload[i+4] | (payload[i+5] << 8) | (payload[i+6] << 16) | (payload[i+7] << 24);
           int calories = payload[i+8] | (payload[i+9] << 8) | (payload[i+10] << 16) | (payload[i+11] << 24);
           
+          // Test anche big-endian per UTC
+          int utcBE = (payload[i] << 24) | (payload[i+1] << 16) | (payload[i+2] << 8) | payload[i+3];
+          
           debugPrint('🔬 Entry ${(i~/12)+1}:');
-          debugPrint('🔬   UTC: $utc (${_utcToDateString(utc)})');
+          debugPrint('🔬   UTC LE: $utc (${_utcToDateString(utc)})');
+          debugPrint('🔬   UTC BE: $utcBE (${_utcToDateString(utcBE)})');
           debugPrint('🔬   Steps: $steps');
           debugPrint('🔬   Calories raw: $calories (${calories/10.0}kcal)');
           
+          // Scegli l'UTC che ha più senso (più vicino alla data corrente)
+          int currentUtc = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          int diffLE = (utc - currentUtc).abs();
+          int diffBE = (utcBE - currentUtc).abs();
+          bool useLE = diffLE < diffBE;
+          int finalUtc = useLE ? utc : utcBE;
+          
+          debugPrint('🔬   ✅ Using ${useLE ? "Little-endian" : "Big-endian"}: ${_utcToDateString(finalUtc)} (UTC: $finalUtc)');
+          
           // Aggiungi comunque per test, anche se la data è sbagliata
-          if (utc != 0xFFFFFFFF && utc > 0) {
+          if (finalUtc != 0xFFFFFFFF && finalUtc > 0) {
             try {
-              DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+              DateTime date = DateTime.fromMillisecondsSinceEpoch(finalUtc * 1000);
               results.add(ExerciseHistoryData(
                 date: date,
                 steps: steps,
                 calories: calories / 10.0,
               ));
             } catch (e) {
-              debugPrint('🔬   ❌ Invalid date conversion for UTC $utc');
+              debugPrint('🔬   ❌ Invalid date conversion for UTC $finalUtc');
             }
           }
         }

@@ -21,14 +21,16 @@ class ExerciseHistoryData {
 /// Modello per la lista degli storici della frequenza cardiaca (comando 0x21)
 class HeartRateHistoryList {
   final List<DateTime> timestamps;
+  final bool isEndOfData;
   
   const HeartRateHistoryList({
     required this.timestamps,
+    this.isEndOfData = false,
   });
   
   @override
   String toString() {
-    return 'HeartRateHistoryList{entries: ${timestamps.length}}';
+    return 'HeartRateHistoryList{entries: ${timestamps.length}, isEndOfData: $isEndOfData}';
   }
 }
 
