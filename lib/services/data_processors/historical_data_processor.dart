@@ -225,32 +225,53 @@ class HistoricalDataProcessor {
           debugPrint('💓   Little-endian: $utcTimestampLE = ${DateTime.fromMillisecondsSinceEpoch(utcTimestampLE * 1000)}');
           debugPrint('💓   Big-endian: $utcTimestampBE = ${DateTime.fromMillisecondsSinceEpoch(utcTimestampBE * 1000)}');
           
-          // Determina quale sembra più ragionevole (più vicino ad agosto 2025)
+          // ALGORITMO INTELLIGENTE per scegliere l'endian corretto
+          // Criteri in ordine di priorità:
+          // 1. Timestamp ragionevole (2020-2030)
+          // 2. Vicinanza alla data corrente
+          // 3. Preferenza per date recenti vs future
+          
           DateTime nowDate = DateTime.now();
           DateTime dateLE = DateTime.fromMillisecondsSinceEpoch(utcTimestampLE * 1000);
           DateTime dateBE = DateTime.fromMillisecondsSinceEpoch(utcTimestampBE * 1000);
           
-          Duration diffLE = (dateLE.difference(nowDate)).abs();
-          Duration diffBE = (dateBE.difference(nowDate)).abs();
+          bool leIsReasonable = dateLE.year >= 2020 && dateLE.year <= 2030;
+          bool beIsReasonable = dateBE.year >= 2020 && dateBE.year <= 2030;
           
-          bool useLE = diffLE.inDays < diffBE.inDays;
+          bool useLE;
+          String reason;
+          
+          if (leIsReasonable && !beIsReasonable) {
+            useLE = true;
+            reason = "Only LE is in valid range (2020-2030)";
+          } else if (!leIsReasonable && beIsReasonable) {
+            useLE = false;
+            reason = "Only BE is in valid range (2020-2030)";
+          } else if (leIsReasonable && beIsReasonable) {
+            // Entrambi validi - scegli quello più vicino ad agosto 2025
+            DateTime augustTarget = DateTime(2025, 8, 19);
+            Duration diffLE = (dateLE.difference(augustTarget)).abs();
+            Duration diffBE = (dateBE.difference(augustTarget)).abs();
+            
+            useLE = diffLE < diffBE;
+            reason = "Both valid - chosen closer to Aug 2025 (LE: ${diffLE.inDays}d, BE: ${diffBE.inDays}d)";
+          } else {
+            // Nessuno dei due valido - scegli quello meno lontano dalla data corrente
+            Duration diffLE = (dateLE.difference(nowDate)).abs();
+            Duration diffBE = (dateBE.difference(nowDate)).abs();
+            
+            useLE = diffLE < diffBE;
+            reason = "Neither valid - chosen closer to current date";
+          }
+          
           int utcTimestamp = useLE ? utcTimestampLE : utcTimestampBE;
           DateTime timestamp = useLE ? dateLE : dateBE;
           
           debugPrint('💓   ✅ Using ${useLE ? "Little-endian" : "Big-endian"}: $timestamp (UTC: $utcTimestamp)');
+          debugPrint('💓   📝 Reason: $reason');
           
-          if (utcTimestamp != 0xFFFFFFFF && utcTimestamp != 0xFFFFFFFF) {
-            // Filtra solo date ragionevoli (agosto 2025 ± 30 giorni)
-            DateTime augustStart = DateTime(2025, 8, 1);
-            DateTime septemberEnd = DateTime(2025, 9, 30);
-            
-            if (timestamp.isAfter(augustStart) && timestamp.isBefore(septemberEnd)) {
-              timestamps.add(timestamp);
-              debugPrint('💓   ✅ VALID: Date is within August-September 2025 range');
-            } else {
-              debugPrint('💓   ❌ FILTERED: Date $timestamp is outside valid range (Aug-Sep 2025)');
-              debugPrint('💓       Expected range: $augustStart to $septemberEnd');
-            }
+          if (utcTimestamp != 0xFFFFFFFF) {
+            timestamps.add(timestamp);
           } else {
             debugPrint('💓 HR Timestamp ${i + 1}: No data (0xFFFFFFFF)');
           }
