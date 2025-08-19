@@ -201,8 +201,12 @@ class HistoricalDataProcessor {
           
           if (utcTimestamp != 0xFFFFFFFF) {
             DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000);
+            
+            // Debug: mostra sempre il timestamp, anche se sembra fuori range
+            debugPrint('💓 HR Timestamp ${i + 1}: $timestamp (UTC: $utcTimestamp)');
+            
+            // Aggiungi tutti i timestamp per debug (rimuovi il filtro di range per ora)
             timestamps.add(timestamp);
-            debugPrint('💓 HR Timestamp ${i + 1}: $timestamp');
           } else {
             debugPrint('💓 HR Timestamp ${i + 1}: No data (0xFFFFFFFF)');
           }
@@ -427,6 +431,93 @@ class HistoricalDataProcessor {
     }
     
     return history;
+  }
+
+  /// Debug analyzer per dati di esercizio grezzi
+  static List<ExerciseHistoryData> analyzeExerciseDataBytes(Uint8List data) {
+    debugPrint('🔬 DETAILED EXERCISE DATA ANALYSIS');
+    debugPrint('🔬 Total bytes: ${data.length}');
+    debugPrint('🔬 Raw hex: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    
+    List<ExerciseHistoryData> results = [];
+    
+    if (data.length < 3) return results;
+    
+    // Analizza payload
+    List<int> payload = data.sublist(3);
+    debugPrint('🔬 Payload (${payload.length} bytes): ${payload.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+    
+    // Test formato 12 bytes per entry (UTC + Steps + Calories, 4 bytes ciascuno)
+    if (payload.length >= 12) {
+      debugPrint('🔬 Testing 12-byte format (UTC+Steps+Calories, 4 bytes each):');
+      
+      for (int i = 0; i < payload.length; i += 12) {
+        if (i + 12 <= payload.length) {
+          int utc = payload[i] | (payload[i+1] << 8) | (payload[i+2] << 16) | (payload[i+3] << 24);
+          int steps = payload[i+4] | (payload[i+5] << 8) | (payload[i+6] << 16) | (payload[i+7] << 24);
+          int calories = payload[i+8] | (payload[i+9] << 8) | (payload[i+10] << 16) | (payload[i+11] << 24);
+          
+          debugPrint('🔬 Entry ${(i~/12)+1}:');
+          debugPrint('🔬   UTC: $utc (${_utcToDateString(utc)})');
+          debugPrint('🔬   Steps: $steps');
+          debugPrint('🔬   Calories raw: $calories (${calories/10.0}kcal)');
+          
+          // Aggiungi comunque per test, anche se la data è sbagliata
+          if (utc != 0xFFFFFFFF && utc > 0) {
+            try {
+              DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+              results.add(ExerciseHistoryData(
+                date: date,
+                steps: steps,
+                calories: calories / 10.0,
+              ));
+            } catch (e) {
+              debugPrint('🔬   ❌ Invalid date conversion for UTC $utc');
+            }
+          }
+        }
+      }
+    }
+    
+    // Test formato alternativo
+    if (payload.length == 11) {
+      debugPrint('🔬 Testing 11-byte payload - possible different format:');
+      // Forse il formato è diverso - proviamo a interpretare come singola entry
+      if (payload.length >= 8) {
+        int utc = payload[0] | (payload[1] << 8) | (payload[2] << 16) | (payload[3] << 24);
+        int steps = payload[4] | (payload[5] << 8);
+        int calories = payload[6] | (payload[7] << 8);
+        
+        debugPrint('🔬 Single entry attempt:');
+        debugPrint('🔬   UTC: $utc (${_utcToDateString(utc)})');
+        debugPrint('🔬   Steps (2 bytes): $steps');
+        debugPrint('🔬   Calories (2 bytes): $calories');
+        
+        if (utc != 0xFFFFFFFF && utc > 0) {
+          try {
+            DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+            results.add(ExerciseHistoryData(
+              date: date,
+              steps: steps,
+              calories: calories.toDouble(),
+            ));
+          } catch (e) {
+            debugPrint('🔬   ❌ Invalid date conversion for UTC $utc');
+          }
+        }
+      }
+    }
+    
+    return results;
+  }
+  
+  static String _utcToDateString(int utc) {
+    try {
+      DateTime date = DateTime.fromMillisecondsSinceEpoch(utc * 1000);
+      return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}';
+    } catch (e) {
+      return 'Invalid date';
+    }
   }
 
   /// ENHANCED: Process Exercise History usando il parser reverse-engineered

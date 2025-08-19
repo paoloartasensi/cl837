@@ -176,6 +176,14 @@ class OfficialChileafCommands {
     return _buildCommand(0x5B, [0]);
   }
   
+  /// Modalità allarme HR - impostazione (0x58)
+  /// Equivalente al metodo setHeartAlertSwitch(BOOL isOn) del SDK iOS
+  /// isOn = true: Using age calculation method
+  /// isOn = false: Upper and lower limits (manual)
+  static List<int> setHeartRateAlarmMode(bool ageBasedMode) {
+    return _buildCommand(0x58, [ageBasedMode ? 1 : 0]);
+  }
+  
   // ===== 3D SENSOR COMMANDS =====
   
   /// Frequenza 3D - impostazione (0x74)

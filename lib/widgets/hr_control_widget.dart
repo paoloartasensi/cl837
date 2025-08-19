@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../chileaf_extended_service.dart';
-import '../services/ble_protocol/official_commands.dart';
+import '../services/ble_protocol/official_commands_complete.dart';
+import 'heart_rate_test_widget.dart';
 
 /// Widget per controllare e configurare Heart Rate e testare vibrazione
 class HRControlWidget extends StatefulWidget {
@@ -16,12 +17,12 @@ class HRControlWidget extends StatefulWidget {
 }
 
 class _HRControlWidgetState extends State<HRControlWidget> {
-  // HR Configuration Data
+  // HR Configuration state
   final Map<String, dynamic> _hrConfig = {
-    'min': null,
-    'max': null,
-    'goal': null,
-    'alarmEnabled': null,
+    'min': 60,
+    'max': 180,
+    'goal': 120,
+    'alarmEnabled': false,
   };
 
   @override
@@ -29,25 +30,22 @@ class _HRControlWidgetState extends State<HRControlWidget> {
     super.initState();
     _setupHRCallbacks();
   }
-  
+
   void _setupHRCallbacks() {
     widget.service.setHRCallbacks(
-      onConfigReceived: (int min, int max, int goal, bool alarmEnabled) {
-        setState(() {
-          _hrConfig['min'] = min;
-          _hrConfig['max'] = max;
-          _hrConfig['goal'] = goal;
-          _hrConfig['alarmEnabled'] = alarmEnabled;
-        });
-        debugPrint('🔄 HR Config updated in UI: Min=$min, Max=$max, Goal=$goal, Alarm=$alarmEnabled');
-      },
-      onError: (String error) {
-        debugPrint('❌ HR Config error: $error');
+      onConfigReceived: (min, max, goal, alarmEnabled) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('HR Error: $error')),
-          );
+          setState(() {
+            _hrConfig['min'] = min;
+            _hrConfig['max'] = max;
+            _hrConfig['goal'] = goal;
+            _hrConfig['alarmEnabled'] = alarmEnabled;
+          });
+          debugPrint('🔄 HR Config updated in UI: Min=$min, Max=$max, Goal=$goal, Alarm=$alarmEnabled');
         }
+      },
+      onError: (error) {
+        debugPrint('❌ HR Config error: $error');
       },
     );
   }
@@ -56,68 +54,84 @@ class _HRControlWidgetState extends State<HRControlWidget> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('❤️ HR Configuration & Vibration Control'),
-        backgroundColor: Colors.orange,
+        title: const Text('❤️ HR Control'),
+        backgroundColor: Colors.red.shade100,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // HR Configuration Display
+            // Current HR Configuration Display
             Card(
+              elevation: 4,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      '❤️ Heart Rate Configuration',
+                      '❤️ Current HR Configuration',
                       style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
                     const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
                         Column(
                           children: [
                             const Text('Min HR', style: TextStyle(fontWeight: FontWeight.bold)),
-                            Text('${_hrConfig['min'] ?? '?'} BPM'),
+                            Text('${_hrConfig['min']} BPM', style: const TextStyle(color: Colors.blue)),
                           ],
                         ),
                         Column(
                           children: [
                             const Text('Max HR', style: TextStyle(fontWeight: FontWeight.bold)),
-                            Text('${_hrConfig['max'] ?? '?'} BPM'),
+                            Text('${_hrConfig['max']} BPM', style: const TextStyle(color: Colors.red)),
                           ],
                         ),
                         Column(
                           children: [
                             const Text('Goal HR', style: TextStyle(fontWeight: FontWeight.bold)),
-                            Text('${_hrConfig['goal'] ?? '?'} BPM'),
-                          ],
-                        ),
-                        Column(
-                          children: [
-                            const Text('Alarm', style: TextStyle(fontWeight: FontWeight.bold)),
-                            Text(_hrConfig['alarmEnabled'] == true ? 'ON' : 'OFF'),
+                            Text('${_hrConfig['goal']} BPM', style: const TextStyle(color: Colors.green)),
                           ],
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        ElevatedButton.icon(
-                          onPressed: _readHRConfiguration,
-                          icon: const Icon(Icons.refresh, size: 16),
-                          label: const Text('Read Config'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                        const Text('HR Alarm:', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _hrConfig['alarmEnabled'] ? Colors.green : Colors.grey,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _hrConfig['alarmEnabled'] ? 'ENABLED' : 'DISABLED',
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                          ),
                         ),
-                        ElevatedButton.icon(
-                          onPressed: _showHRConfigDialog,
-                          icon: const Icon(Icons.settings, size: 16),
-                          label: const Text('Set Config'),
-                          style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.refresh),
+                            label: const Text('Read Config'),
+                            onPressed: _readHRConfiguration,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.edit),
+                            label: const Text('Set Config'),
+                            onPressed: _showHRConfigDialog,
+                          ),
                         ),
                       ],
                     ),
@@ -142,22 +156,34 @@ class _HRControlWidgetState extends State<HRControlWidget> {
                     _testShutdownVibration,
                   ),
                   _buildQuickTestButton(
+                    '🔄 ALARM TOGGLE',
+                    'Test ON/OFF\nFunctionality',
+                    Colors.indigo.shade600,
+                    _testAlarmToggle,
+                  ),
+                  _buildQuickTestButton(
+                    '🔔 NOTIFICATIONS',
+                    'Test Call/Message\nVibrations',
+                    Colors.blue.shade600,
+                    _testNotificationVibrations,
+                  ),
+                  _buildQuickTestButton(
                     '🚨 TRIGGER ALARM',
                     'Test HR Threshold\nVibration',
                     Colors.orange.shade600,
                     _testHRAlarmVibration,
                   ),
                   _buildQuickTestButton(
-                    '🔍 DEBUG MODE',
-                    'Raw Command\nResponse Analysis',
-                    Colors.teal.shade600,
+                    '🔍 Test Alternative Commands',
+                    'Test Alternative\nCommand Set',
+                    Colors.deepPurple.shade600,
                     _testDecodeResponses,
                   ),
                   _buildQuickTestButton(
-                    '💡 SMART TRIGGER',
-                    'High HR + Alarm\nCombination Test',
-                    Colors.purple.shade600,
-                    _testSmartTrigger,
+                    '� HR SYSTEM TEST',
+                    'Complete HR Test\nAge & Manual Modes',
+                    Colors.green.shade600,
+                    _openHRSystemTest,
                   ),
                 ],
               ),
@@ -178,7 +204,11 @@ class _HRControlWidgetState extends State<HRControlWidget> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: color,
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [color.withOpacity(0.8), color],
+            ),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Column(
@@ -189,7 +219,7 @@ class _HRControlWidgetState extends State<HRControlWidget> {
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
-                  fontSize: 14,
+                  fontSize: 16,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -198,7 +228,7 @@ class _HRControlWidgetState extends State<HRControlWidget> {
                 description,
                 style: const TextStyle(
                   color: Colors.white70,
-                  fontSize: 11,
+                  fontSize: 12,
                 ),
                 textAlign: TextAlign.center,
               ),
@@ -208,18 +238,18 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       ),
     );
   }
-  
-  // ===== HR CONFIGURATION MANAGEMENT =====
-  
+
   Future<void> _readHRConfiguration() async {
     try {
       debugPrint('🔍 Reading HR Configuration from device...');
       
-      // Send commands to get HR configuration (triggers 0x47 response) using official commands
+      // Read HR configuration (min/max/goal)
       final getHRStatusCommand = OfficialChileafCommands.getHeartRateStatus();
       await widget.service.sendRawCommand(getHRStatusCommand);
       await Future.delayed(const Duration(milliseconds: 500));
       
+      // Read HR alarm status separately
+      debugPrint('🔍 Reading HR Alarm Status from device...');
       final getHRAlarmCommand = OfficialChileafCommands.getHeartRateAlarm();
       await widget.service.sendRawCommand(getHRAlarmCommand);
       await Future.delayed(const Duration(milliseconds: 500));
@@ -228,8 +258,6 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       await widget.service.sendRawCommand(getHRMaxCommand);
       await Future.delayed(const Duration(milliseconds: 500));
       
-      // Note: The actual decoding happens in chileaf_extended_service.dart command 0x47 handler
-      // Values will be displayed in Flutter logs for now
       debugPrint('🔍 HR Configuration commands sent. Check Flutter logs for decoded values.');
       
       if (mounted) {
@@ -243,6 +271,51 @@ class _HRControlWidgetState extends State<HRControlWidget> {
     }
   }
   
+  // Test specifically the alarm toggle functionality
+  Future<void> _testAlarmToggle() async {
+    try {
+      debugPrint('🔄 ALARM TOGGLE TEST: Testing ON/OFF functionality');
+      
+      // Step 1: Read current alarm status
+      debugPrint('📖 Step 1: Reading current alarm status');
+      final getAlarmCommand = OfficialChileafCommands.getHeartRateAlarm();
+      await widget.service.sendRawCommand(getAlarmCommand);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 2: Turn alarm ON
+      debugPrint('🔛 Step 2: Setting alarm ON');
+      final setAlarmOnCommand = OfficialChileafCommands.setHeartRateAlarm(true);
+      await widget.service.sendRawCommand(setAlarmOnCommand);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 3: Read alarm status again (should be ON)
+      debugPrint('📖 Step 3: Verifying alarm is ON');
+      await widget.service.sendRawCommand(getAlarmCommand);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 4: Turn alarm OFF
+      debugPrint('🔴 Step 4: Setting alarm OFF');
+      final setAlarmOffCommand = OfficialChileafCommands.setHeartRateAlarm(false);
+      await widget.service.sendRawCommand(setAlarmOffCommand);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Step 5: Read alarm status final time (should be OFF)
+      debugPrint('📖 Step 5: Verifying alarm is OFF');
+      await widget.service.sendRawCommand(getAlarmCommand);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🔄 Alarm toggle test complete - check logs!')),
+        );
+      }
+      
+      debugPrint('✅ Alarm toggle test sequence completed');
+      
+    } catch (e) {
+      debugPrint('❌ Error in alarm toggle test: $e');
+    }
+  }
+
   void _showHRConfigDialog() {
     int tempMin = _hrConfig['min'] ?? 60;
     int tempMax = _hrConfig['max'] ?? 180;
@@ -341,6 +414,8 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       await widget.service.sendRawCommand(setAlarmCommand);
       await Future.delayed(const Duration(milliseconds: 500));
       
+      // IMPORTANT: Since device doesn't respond to HR commands,
+      // we update the UI immediately with the values we sent
       setState(() {
         _hrConfig['min'] = min;
         _hrConfig['max'] = max;
@@ -348,16 +423,21 @@ class _HRControlWidgetState extends State<HRControlWidget> {
         _hrConfig['alarmEnabled'] = alarmEnabled;
       });
       
-      debugPrint('✅ HR Configuration applied successfully');
+      debugPrint('✅ HR Configuration applied successfully (UI updated manually)');
+      debugPrint('🔄 UI state: Min=$min, Max=$max, Goal=$goal, Alarm=$alarmEnabled');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HR Configuration applied successfully')),
+          SnackBar(
+            content: Text('HR Config set: Min=$min, Max=$max, Goal=$goal, Alarm=${alarmEnabled ? "ON" : "OFF"}'),
+            backgroundColor: alarmEnabled ? Colors.green : Colors.orange,
+          ),
         );
       }
       
-      // Refresh to verify
+      // Still try to refresh, but don't rely on device response
       await Future.delayed(const Duration(milliseconds: 1000));
+      debugPrint('🔍 Attempting to read back configuration (may not work)...');
       await _readHRConfiguration();
       
     } catch (e) {
@@ -369,7 +449,7 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       }
     }
   }
-  
+
   // ===== TEST FUNCTIONS =====
   
   Future<void> _testShutdownVibration() async {
@@ -386,38 +466,79 @@ class _HRControlWidgetState extends State<HRControlWidget> {
     );
     
     if (confirm == true) {
-      final command = OfficialChileafCommands.deviceShutdown();
-      await widget.service.sendRawCommand(command);
-      debugPrint('🔥 SHUTDOWN TEST: Device will vibrate and shutdown');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Shutdown command sent - device will vibrate and turn off')),
-        );
+      try {
+        final shutdownCommand = OfficialChileafCommands.deviceShutdown();
+        await widget.service.sendRawCommand(shutdownCommand);
+        debugPrint('🔥 SHUTDOWN command sent - device should vibrate and turn off');
+      } catch (e) {
+        debugPrint('❌ Shutdown test error: $e');
       }
     }
   }
-  
+
   Future<void> _testHRAlarmVibration() async {
     try {
-      debugPrint('🚨 HR ALARM TEST: Setting extreme thresholds to trigger alarm');
+      debugPrint('🚨 HR ALARM TEST: Multi-strategy vibration approach');
       
-      // Set very low thresholds to trigger alarm
-      final setLowMax = OfficialChileafCommands.setHeartRateStatus(40, 50, 45); // Very low max
+      // STRATEGY 1: Set extreme low thresholds first (40-50 BPM)
+      debugPrint('📊 Strategy 1: Extreme low thresholds (40-50 BPM)');
+      final setLowMax = OfficialChileafCommands.setHeartRateStatus(40, 50, 45);
       await widget.service.sendRawCommand(setLowMax);
       await Future.delayed(const Duration(milliseconds: 500));
       
       // Enable alarm
       final enableAlarm = OfficialChileafCommands.setHeartRateAlarm(true);
       await widget.service.sendRawCommand(enableAlarm);
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // STRATEGY 2: Quick switch to high thresholds (150-200 BPM) to simulate crossing
+      debugPrint('📊 Strategy 2: Quick switch to high thresholds (150-200 BPM)');
+      final setHighMax = OfficialChileafCommands.setHeartRateStatus(150, 200, 175);
+      await widget.service.sendRawCommand(setHighMax);
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // STRATEGY 3: Try notification commands (known to cause vibration)
+      debugPrint('📊 Strategy 3: Notification vibration triggers');
+      
+      // Call notification (comando 0x74 sub-tipo 0x01)
+      List<int> callNotification = [0xFF, 0x07, 0x74, 0x00, 0x01, 0x01, 0x00];
+      int checksum1 = _calculateVibrationChecksum(callNotification.sublist(0, callNotification.length - 1));
+      callNotification[callNotification.length - 1] = checksum1;
+      await widget.service.sendRawCommand(callNotification);
+      debugPrint('📞 Call notification sent');
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Message notification (comando 0x74 sub-tipo 0x02)
+      List<int> messageNotification = [0xFF, 0x07, 0x74, 0x00, 0x02, 0x01, 0x00];
+      int checksum2 = _calculateVibrationChecksum(messageNotification.sublist(0, messageNotification.length - 1));
+      messageNotification[messageNotification.length - 1] = checksum2;
+      await widget.service.sendRawCommand(messageNotification);
+      debugPrint('💬 Message notification sent');
+      await Future.delayed(const Duration(milliseconds: 800));
+      
+      // Alarm notification (comando 0x74 sub-tipo 0x03)
+      List<int> alarmNotification = [0xFF, 0x07, 0x74, 0x00, 0x03, 0x01, 0x00];
+      int checksum3 = _calculateVibrationChecksum(alarmNotification.sublist(0, alarmNotification.length - 1));
+      alarmNotification[alarmNotification.length - 1] = checksum3;
+      await widget.service.sendRawCommand(alarmNotification);
+      debugPrint('⏰ Alarm notification sent');
+      await Future.delayed(const Duration(seconds: 1));
+      
+      // STRATEGY 4: Sedentary reminder (comando 0x75 sub-tipo vibrazione)
+      List<int> sedentaryReminder = [0xFF, 0x06, 0x75, 0x00, 0x01, 0x00];
+      int checksum4 = _calculateVibrationChecksum(sedentaryReminder.sublist(0, sedentaryReminder.length - 1));
+      sedentaryReminder[sedentaryReminder.length - 1] = checksum4;
+      await widget.service.sendRawCommand(sedentaryReminder);
+      debugPrint('🪑 Sedentary reminder sent');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('HR alarm thresholds set - check if device vibrates')),
+          const SnackBar(content: Text('Multi-strategy vibration test complete - watch device!')),
         );
       }
       
-      // Auto-restore normal values after 10 seconds
-      await Future.delayed(const Duration(seconds: 10));
+      // Auto-restore normal values after test
+      await Future.delayed(const Duration(seconds: 8));
       final restoreNormal = OfficialChileafCommands.setHeartRateStatus(60, 180, 120);
       await widget.service.sendRawCommand(restoreNormal);
       debugPrint('🔧 Auto-restored normal HR thresholds');
@@ -427,6 +548,67 @@ class _HRControlWidgetState extends State<HRControlWidget> {
     }
   }
   
+  // Helper method for vibration checksum calculation
+  int _calculateVibrationChecksum(List<int> frame) {
+    int sum = 0;
+    for (int byte in frame) {
+      sum += byte;
+    }
+    return ((-sum) & 0xFF) ^ 0x3A; // Java algorithm: ((-sum) & 0xFF) ^ 0x3A
+  }
+  
+  // Test direct notification vibrations
+  Future<void> _testNotificationVibrations() async {
+    try {
+      debugPrint('🔔 NOTIFICATION VIBRATION TEST: Testing direct triggers');
+      
+      // Test 1: Call notification
+      debugPrint('📞 Test 1/5: Call notification');
+      List<int> callCmd = [0xFF, 0x07, 0x74, 0x00, 0x01, 0x01, 0x00];
+      callCmd[callCmd.length - 1] = _calculateVibrationChecksum(callCmd.sublist(0, callCmd.length - 1));
+      await widget.service.sendRawCommand(callCmd);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Test 2: Message notification
+      debugPrint('💬 Test 2/5: Message notification');
+      List<int> msgCmd = [0xFF, 0x07, 0x74, 0x00, 0x02, 0x01, 0x00];
+      msgCmd[msgCmd.length - 1] = _calculateVibrationChecksum(msgCmd.sublist(0, msgCmd.length - 1));
+      await widget.service.sendRawCommand(msgCmd);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Test 3: Alarm notification  
+      debugPrint('⏰ Test 3/5: Alarm notification');
+      List<int> alarmCmd = [0xFF, 0x07, 0x74, 0x00, 0x03, 0x01, 0x00];
+      alarmCmd[alarmCmd.length - 1] = _calculateVibrationChecksum(alarmCmd.sublist(0, alarmCmd.length - 1));
+      await widget.service.sendRawCommand(alarmCmd);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Test 4: Sedentary reminder
+      debugPrint('🪑 Test 4/5: Sedentary reminder');
+      List<int> sedentaryCmd = [0xFF, 0x06, 0x75, 0x00, 0x01, 0x00];
+      sedentaryCmd[sedentaryCmd.length - 1] = _calculateVibrationChecksum(sedentaryCmd.sublist(0, sedentaryCmd.length - 1));
+      await widget.service.sendRawCommand(sedentaryCmd);
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Test 5: Anti-lost alert
+      debugPrint('🔍 Test 5/5: Anti-lost alert');
+      List<int> antiLostCmd = [0xFF, 0x07, 0x74, 0x00, 0x04, 0x01, 0x00];
+      antiLostCmd[antiLostCmd.length - 1] = _calculateVibrationChecksum(antiLostCmd.sublist(0, antiLostCmd.length - 1));
+      await widget.service.sendRawCommand(antiLostCmd);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('🔔 Notification vibration tests complete!')),
+        );
+      }
+      
+      debugPrint('🔔 All notification vibration tests completed');
+      
+    } catch (e) {
+      debugPrint('❌ Error in notification vibration test: $e');
+    }
+  }
+
   Future<void> _testDecodeResponses() async {
     try {
       debugPrint('🔍 DEBUG MODE: Testing commands for detailed responses');
@@ -434,7 +616,7 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       // Test various commands to trigger responses
       final commands = [
         OfficialChileafCommands.getHeartRateStatus(),
-        OfficialChileafCommands.getHeartRateAlarm(),
+        OfficialChileafCommands.getHeartRateAlarm(), 
         OfficialChileafCommands.getHeartRateMax(),
         OfficialChileafCommands.getUserInfo(),
       ];
@@ -442,17 +624,38 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       for (int i = 0; i < commands.length; i++) {
         debugPrint('🔍 TEST ${i+1}/${commands.length}: Sending command');
         await widget.service.sendRawCommand(commands[i]);
-        await Future.delayed(const Duration(milliseconds: 1000));
+        await Future.delayed(const Duration(milliseconds: 1500));
       }
       
-      // Special test: Try to trigger 0x47 response
-      debugPrint('🔍 SPECIAL TEST: Triggering 0x47 response with setHeartRateStatus');
-      final triggerCommand = OfficialChileafCommands.setHeartRateStatus(60, 80, 70);
-      await widget.service.sendRawCommand(triggerCommand);
+      // TEST ALTERNATIVE COMMANDS that might work
+      debugPrint('🔍 TESTING ALTERNATIVE COMMANDS:');
+      
+      // Test basic device commands that usually work
+      debugPrint('🔍 Test 1: Basic device info');
+      List<int> deviceInfoCmd = [0xFF, 0x05, 0x03, 0x00, 0x07]; // getUserInfo
+      await widget.service.sendRawCommand(deviceInfoCmd);
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Test time sync (often works)
+      debugPrint('🔍 Test 2: Time sync command');
+      List<int> timeSyncCmd = [0xFF, 0x0A, 0x01, 0x00, 0x19, 0x08, 0x13, 0x0C, 0x00, 0x00, 0x5E]; // Date/time
+      await widget.service.sendRawCommand(timeSyncCmd);
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Test vibration command directly
+      debugPrint('🔍 Test 3: Direct vibration test');
+      List<int> vibrateCmd = [0xFF, 0x06, 0x04, 0x00, 0x01, 0x09]; // Find device vibration
+      await widget.service.sendRawCommand(vibrateCmd);
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Test factory reset command (CAREFUL!)
+      debugPrint('🔍 Test 4: Factory reset command (response only)');
+      List<int> factoryCmd = [0xFF, 0x05, 0x06, 0x00, 0x0A]; // Factory reset query
+      await widget.service.sendRawCommand(factoryCmd);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Debug commands sent - check Flutter logs')),
+          const SnackBar(content: Text('🔍 Alternative commands tested - check logs')),
         );
       }
       
@@ -460,41 +663,14 @@ class _HRControlWidgetState extends State<HRControlWidget> {
       debugPrint('❌ Error in decode test: $e');
     }
   }
-  
-  Future<void> _testSmartTrigger() async {
-    try {
-      debugPrint('💡 SMART TRIGGER: Complex HR configuration to force vibration');
-      
-      // Step 1: Enable alarm
-      final enableAlarm = OfficialChileafCommands.setHeartRateAlarm(true);
-      await widget.service.sendRawCommand(enableAlarm);
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      // Step 2: Set very tight thresholds
-      final setTightThresholds = OfficialChileafCommands.setHeartRateStatus(70, 75, 72); 
-      await widget.service.sendRawCommand(setTightThresholds);
-      await Future.delayed(const Duration(milliseconds: 500));
-      
-      // Step 3: Try to trigger via max HR command
-      final setMaxHR = OfficialChileafCommands.setHeartRateMax(65); // Lower than current HR
-      await widget.service.sendRawCommand(setMaxHR);
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Smart trigger applied - monitoring for vibration')),
-        );
-      }
-      
-      // Auto-restore after 15 seconds
-      await Future.delayed(const Duration(seconds: 15));
-      final restoreNormal = OfficialChileafCommands.setHeartRateStatus(60, 180, 120);
-      await widget.service.sendRawCommand(restoreNormal);
-      final restoreMaxHR = OfficialChileafCommands.setHeartRateMax(180);
-      await widget.service.sendRawCommand(restoreMaxHR);
-      debugPrint('🔧 Auto-restored normal HR configuration');
-      
-    } catch (e) {
-      debugPrint('❌ Error in smart trigger test: $e');
-    }
+
+  void _openHRSystemTest() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => HeartRateTestWidget(service: widget.service),
+      ),
+    );
   }
+
 }

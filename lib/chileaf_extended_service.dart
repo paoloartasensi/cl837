@@ -7,6 +7,7 @@ import 'models/spo2_data.dart';
 import 'models/temperature_data.dart';
 import 'models/hrv_data.dart';
 import 'models/heart_rate_data.dart';
+import 'models/heart_rate_config.dart';
 import 'models/historical_data.dart';
 import 'models/rope_data.dart';
 import 'models/device_info.dart';
@@ -58,10 +59,16 @@ class ChileafExtendedService {
   static const String _rxCharUuid =
       'aae28f02-71b5-42a1-8c3c-f9cf6ac969d0'; // Write to device (WRITE)
 
+  // Heart Rate Service (Standard BLE Service)
+  static const String _heartRateServiceUuid = '0000180D-0000-1000-8000-00805F9B34FB';
+  static const String _heartRateCharUuid = '00002A37-0000-1000-8000-00805F9B34FB';
+
   // Bluetooth characteristics
   BluetoothCharacteristic? _txCharacteristic;
   BluetoothCharacteristic? _rxCharacteristic;
+  BluetoothCharacteristic? _heartRateCharacteristic;
   StreamSubscription? _dataSubscription;
+  StreamSubscription? _heartRateSubscription;
   Timer? _dataRequestTimer;
 
   // Historical data service with optimized checksum
@@ -83,6 +90,29 @@ class ChileafExtendedService {
 
   // HR Callback functions
   void Function(int min, int max, int goal, bool alarmEnabled)? _onHRConfigReceived;
+  void Function(int heartRate)? _onRealtimeHRReceived;
+  void Function(HeartRateStatus status)? _onHRStatusChanged;
+
+  // ===== HEART RATE CONFIGURATION SYSTEM =====
+  // Configurazione HR corrente con supporto per entrambe le modalità di allarme
+  HeartRateConfig? _currentHRConfig;
+  int? _lastRealtimeHR;
+  HeartRateStatus? _lastHRStatus;
+  
+  // Streams per real-time HR e configurazione
+  final StreamController<int> _realtimeHRController = StreamController<int>.broadcast();
+  final StreamController<HeartRateConfig> _hrConfigController = StreamController<HeartRateConfig>.broadcast();
+  final StreamController<HeartRateStatus> _hrStatusController = StreamController<HeartRateStatus>.broadcast();
+  
+  // Getters pubblici per HR streams
+  Stream<int> get realtimeHRStream => _realtimeHRController.stream;
+  Stream<HeartRateConfig> get hrConfigStream => _hrConfigController.stream;
+  Stream<HeartRateStatus> get hrStatusStream => _hrStatusController.stream;
+  
+  // Getters per valori correnti
+  HeartRateConfig? get currentHRConfig => _currentHRConfig;
+  int? get lastRealtimeHR => _lastRealtimeHR;
+  HeartRateStatus? get lastHRStatus => _lastHRStatus;
 
   // Setter per callback - seguendo pattern BloodOxygenSearchActivity
   void setSpO2Callbacks({
@@ -98,16 +128,19 @@ class ChileafExtendedService {
   // Setter per callback HR
   void setHRCallbacks({
     void Function(int min, int max, int goal, bool alarmEnabled)? onConfigReceived,
+    void Function(int heartRate)? onRealtimeHRReceived,
+    void Function(HeartRateStatus status)? onHRStatusChanged,
     void Function(String error)? onError,
   }) {
     _onHRConfigReceived = onConfigReceived;
+    _onRealtimeHRReceived = onRealtimeHRReceived;
+    _onHRStatusChanged = onHRStatusChanged;
   }
 
   // Log throttling for high-frequency data
   int _accelerometerLogCount = 0;
   int _totalDataPackets = 0;
   int _healthDataLogCount = 0;
-  int _temperatureLogCount = 0;
   int _sportsLogCount = 0;
 
   // Historical data request throttling - PREVENT INFINITE LOOPS
@@ -124,8 +157,6 @@ class ChileafExtendedService {
   final int _logThrottleInterval = 500; // Log every 500 packets (was 50)
   final int _healthDataThrottleInterval =
       200; // Log health data every 200 occurrences (was 100)
-  final int _temperatureThrottleInterval =
-      100; // Log every 100th temperature (was 50)
   final int _sportsThrottleInterval =
       500; // Log every 500th sports data (was 50) - MUCH LESS NOISE
   final int _accelerometerThrottleInterval =
@@ -168,6 +199,10 @@ class ChileafExtendedService {
   final StreamController<String> _macAddressController =
       StreamController<String>.broadcast();
 
+  // Real-time Heart Rate streams (secondo documentazione SDK sezione 4.8)
+  final StreamController<int> _realTimeHeartRateController =
+      StreamController<int>.broadcast();
+
   // Constructor
   ChileafExtendedService() {
     _initializeProcessors();
@@ -197,6 +232,9 @@ class ChileafExtendedService {
   Stream<HeartRateHistoryData> get hrHistoryDataStream =>
       _hrHistoryDataController.stream;
 
+  // Real-time Heart Rate streams (SDK section 4.8)
+  Stream<int> get realTimeHeartRateStream => _realTimeHeartRateController.stream;
+
   // Rope skipping streams
   Stream<RopeSkippingData> get ropeStatusStream => _ropeStatusController.stream;
   Stream<RopeRealtimeData> get ropeRealtimeStream =>
@@ -222,13 +260,19 @@ class ChileafExtendedService {
 
       // Find custom service - more robust matching
       BluetoothService? customService;
+      BluetoothService? heartRateService;
 
       for (var service in services) {
         debugPrint('Service UUID: ${service.uuid}');
         if (service.uuid.toString().toLowerCase() ==
             _customServiceUuid.toLowerCase()) {
           customService = service;
-          break;
+        }
+        // Look for Heart Rate Service
+        if (service.uuid.toString().toLowerCase() ==
+            _heartRateServiceUuid.toLowerCase()) {
+          heartRateService = service;
+          debugPrint('💓 Found Heart Rate Service: ${service.uuid}');
         }
       }
 
@@ -244,6 +288,13 @@ class ChileafExtendedService {
 
       // Setup characteristics
       await _setupCharacteristics(customService);
+      
+      // Setup Heart Rate Service if available
+      if (heartRateService != null) {
+        await _setupHeartRateService(heartRateService);
+      } else {
+        debugPrint('💓 Heart Rate Service not found - using custom protocol only');
+      }
 
       // Diagnostics rimossi - utilizziamo solo il comando ufficiale 0x37
 
@@ -284,6 +335,88 @@ class ChileafExtendedService {
 
     debugPrint('Found TX: ${_txCharacteristic!.uuid}');
     debugPrint('Found RX: ${_rxCharacteristic!.uuid}');
+  }
+
+  Future<void> _setupHeartRateService(BluetoothService heartRateService) async {
+    try {
+      debugPrint('💓 Setting up Heart Rate Service...');
+      
+      // Find Heart Rate Measurement characteristic
+      BluetoothCharacteristic? hrChar;
+      
+      for (var char in heartRateService.characteristics) {
+        debugPrint('💓 HR Char: ${char.uuid}');
+        if (char.uuid.toString().toLowerCase() == _heartRateCharUuid.toLowerCase()) {
+          hrChar = char;
+          break;
+        }
+      }
+      
+      if (hrChar == null) {
+        debugPrint('💓 Heart Rate Measurement characteristic not found');
+        return;
+      }
+      
+      debugPrint('💓 Found HR characteristic: ${hrChar.uuid}');
+      
+      // Enable notifications for Heart Rate
+      if (hrChar.properties.notify) {
+        await hrChar.setNotifyValue(true);
+        debugPrint('💓 Heart Rate notifications enabled');
+        
+        _heartRateSubscription = hrChar.lastValueStream.listen(
+          _processHeartRateData,
+          onError: (error) {
+            debugPrint('💓 Heart Rate notification error: $error');
+          },
+        );
+      } else {
+        debugPrint('💓 Heart Rate characteristic does not support notifications');
+      }
+      
+    } catch (e) {
+      debugPrint('💓 Failed to setup Heart Rate Service: $e');
+    }
+  }
+
+  void _processHeartRateData(List<int> data) {
+    try {
+      if (data.isEmpty) return;
+      
+      debugPrint('💓 RAW HR DATA: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      
+      // Parse Heart Rate according to BLE Heart Rate Service specification
+      // https://www.bluetooth.com/specifications/gatt/viewer?attributeUuid=org.bluetooth.characteristic.heart_rate_measurement
+      
+      int heartRate = 0;
+      
+      // Check if Heart Rate is 16-bit (flag bit 0)
+      if ((data[0] & 0x01) == 0) {
+        // 8-bit heart rate
+        if (data.length > 1) {
+          heartRate = data[1];
+        }
+      } else {
+        // 16-bit heart rate (little endian)
+        if (data.length > 2) {
+          heartRate = data[1] + (data[2] << 8);
+        }
+      }
+      
+      debugPrint('💓 Parsed HR: $heartRate BPM');
+      
+      // Validate heart rate range
+      if (heartRate > 0 && heartRate < 250) {
+        _realTimeHeartRateController.add(heartRate);
+        _handleRealtimeHeartRate(heartRate);
+        debugPrint('💓 Real-time HR via BLE Service: $heartRate BPM');
+      } else {
+        debugPrint('💓 Invalid HR value: $heartRate BPM');
+      }
+      
+    } catch (e) {
+      debugPrint('💓 Error processing HR data: $e');
+    }
   }
 
   Future<void> _startDataFlow() async {
@@ -345,7 +478,6 @@ class ChileafExtendedService {
       // Log frame details ONLY for important commands or errors
       bool isHighFrequency = command == ChileafProtocol.commandAccelerometer ||
           command == ChileafProtocol.commandHealthData ||
-          command == ChileafProtocol.commandTemperature ||
           command == ChileafProtocol.commandSports;
 
       // NEVER log frame details for high frequency data
@@ -380,9 +512,6 @@ class ChileafExtendedService {
       case ChileafProtocol.commandHealthData:
         _healthDataLogCount++;
         return _healthDataLogCount % _healthDataThrottleInterval == 0;
-      case ChileafProtocol.commandTemperature:
-        _temperatureLogCount++;
-        return _temperatureLogCount % _temperatureThrottleInterval == 0;
       case ChileafProtocol.commandSports:
         _sportsLogCount++;
         return _sportsLogCount % _sportsThrottleInterval == 0;
@@ -486,11 +615,17 @@ class ChileafExtendedService {
       case 0x16: // Exercise History
         debugPrint(
             '📊 EXERCISE HISTORY DATA: Processing historical exercise data with OFFICIAL format');
+        
+        // Usa l'analyzer di debug per analizzare i dati grezzi
         var exerciseHistory =
-            HistoricalDataProcessor.processExerciseHistoryOfficial(
+            HistoricalDataProcessor.analyzeExerciseDataBytes(
                 Uint8List.fromList(data));
+        
         if (exerciseHistory.isNotEmpty) {
           _exerciseHistoryController.add(exerciseHistory);
+          debugPrint('📊 ✅ Exercise history processed: ${exerciseHistory.length} entries');
+        } else {
+          debugPrint('📊 ⚠️ No valid exercise history entries found');
         }
         break;
       case 0x21: // HR History List
@@ -534,6 +669,45 @@ class ChileafExtendedService {
         debugPrint(
             'Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
         
+        // SPECIAL HANDLER for command 0x57 (HR Alarm SET response)
+        if (command == 0x57) {
+          debugPrint('🚨 COMMAND 0x57 RAW BYTES (HR ALARM SET RESPONSE):');
+          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+          debugPrint('🚨 Full response: $hexString');
+          
+          if (data.length >= 4) {
+            int status = data[3];
+            debugPrint('🚨 ===== HR ALARM SET RESPONSE =====');
+            debugPrint('🚨 Status: $status (${status == 0 ? "SUCCESS" : status == 1 ? "ENABLED" : "ERROR/UNKNOWN"})');
+            debugPrint('🚨 Alarm command processed');
+            debugPrint('🚨 =====================================');
+          }
+        }
+        
+        // SPECIAL HANDLER for command 0x5B (HR Alarm GET response)
+        if (command == 0x5B) {
+          debugPrint('🔍 COMMAND 0x5B RAW BYTES (HR ALARM GET RESPONSE):');
+          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+          debugPrint('🔍 Full response: $hexString');
+          
+          if (data.length >= 4) {
+            int status = data[3];
+            debugPrint('🔍 ===== HR ALARM STATUS =====');
+            debugPrint('🔍 Alarm Status: $status (${status == 0 ? "DISABLED" : status == 1 ? "ENABLED" : "UNKNOWN"})');
+            debugPrint('🔍 ============================');
+            
+            // Update callback with current alarm status
+            if (_onHRConfigReceived != null) {
+              // Get current HR values from UI state or use defaults
+              int currentMin = 60;  // We'll need to track these properly
+              int currentMax = 180;
+              int currentGoal = 120;
+              _onHRConfigReceived!(currentMin, currentMax, currentGoal, status == 1);
+              debugPrint('🔄 Alarm status sent to UI via callback: ${status == 1 ? "ENABLED" : "DISABLED"}');
+            }
+          }
+        }
+        
         // SPECIAL HANDLER for command 0x46 (HR configuration response - 8 bytes)
         if (command == 0x46 && data.length == 8) {
           debugPrint('❤️ COMMAND 0x46 RAW BYTES (HR STATUS RESPONSE):');
@@ -576,12 +750,22 @@ class ChileafExtendedService {
             if (checksumValid && valuesValid) {
               debugPrint('✅ HR Configuration successfully decoded and validated!');
               
+              // Update internal configuration with manual mode (default)
+              _currentHRConfig = HeartRateConfig.manual(
+                minHeartRate: minHR,
+                maxHeartRate: maxHR,
+                goalHeartRate: goalHR,
+                alarmEnabled: status != 0, // Will be updated by alarm status command
+              );
+              _hrConfigController.add(_currentHRConfig!);
+              
               // Call callback to update UI
               if (_onHRConfigReceived != null) {
-                // For now, assume alarm is enabled if status != 0 (we need to check alarm status separately)
                 _onHRConfigReceived!(minHR, maxHR, goalHR, status != 0);
                 debugPrint('🔄 HR Configuration sent to UI via callback');
               }
+              
+              debugPrint('🔄 Internal HR configuration updated');
             }
           }
         }
@@ -1006,6 +1190,9 @@ class ChileafExtendedService {
 
     await _dataSubscription?.cancel();
     _dataSubscription = null;
+    
+    await _heartRateSubscription?.cancel();
+    _heartRateSubscription = null;
 
     // Close historical data streams
     await _exerciseHistoryController.close();
@@ -1029,6 +1216,12 @@ class ChileafExtendedService {
     _hardwareVersionController.close();
     _deviceNameController.close();
     _macAddressController.close();
+    
+    // Close HR streams
+    _realtimeHRController.close();
+    _hrConfigController.close();
+    _hrStatusController.close();
+    _realTimeHeartRateController.close();
 
     // Dispose all processors
     _spo2Processor.dispose();
@@ -1151,39 +1344,21 @@ class ChileafExtendedService {
     debugPrint(
         '💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
 
-    // Filter out obviously invalid timestamps to prevent infinite loops
-    List<DateTime> validTimestamps = [];
-    final now = DateTime.now();
-    final earliestValid = DateTime(2020, 1, 1); // Nothing before 2020
-    final latestValid = now.add(
-        const Duration(days: 30)); // Nothing more than 30 days in the future
-
-    for (var timestamp in hrHistoryList.timestamps) {
-      if (timestamp.isAfter(earliestValid) && timestamp.isBefore(latestValid)) {
-        validTimestamps.add(timestamp);
-      }
-      // SILENT - no logging for invalid timestamps to reduce spam
-    }
+    // DEBUG: Temporaneamente accetta tutti i timestamp per analisi
+    List<DateTime> validTimestamps = hrHistoryList.timestamps;
+    debugPrint('💓 📊 DEBUG: Processing ALL ${validTimestamps.length} timestamps for analysis');
 
     if (validTimestamps.isEmpty) {
-      debugPrint(
-          '💓 ⚠️ No valid HR timestamps found (all outside range 2020-${latestValid.year}), skipping detailed requests');
+      debugPrint('💓 ⚠️ No HR timestamps found in list');
       return;
     }
 
-    // Count invalid timestamps for summary
-    int invalidCount = hrHistoryList.timestamps.length - validTimestamps.length;
-    if (invalidCount > 0) {
-      debugPrint(
-          '💓 📊 Filtered out $invalidCount invalid timestamps (keeping ${validTimestamps.length} valid)');
-    }
-
-    // Limit to max 5 detailed requests to prevent spam
-    const maxRequests = 5;
+    // Limit to max 3 detailed requests to prevent spam durante il debug
+    const maxRequests = 3;
     final requestTimestamps = validTimestamps.take(maxRequests).toList();
 
     debugPrint(
-        '💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} valid timestamps');
+        '💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} timestamps (DEBUG MODE)');
 
     for (int i = 0; i < requestTimestamps.length; i++) {
       try {
@@ -1654,6 +1829,216 @@ class ChileafExtendedService {
     } catch (e) {
       debugPrint('❌ Failed to request HRV data: $e');
       rethrow;
+    }
+  }
+
+  // ===== HEART RATE CONFIGURATION METHODS (SDK Section 5.10-5.13) =====
+  
+  /// Imposta la configurazione HR con limiti manuali (Manual Mode)
+  /// Corrisponde a setHeartAlertSwitch:(BOOL)isOn con isOn = NO
+  Future<void> setHeartRateConfigManual({
+    required int minHeartRate,
+    required int maxHeartRate, 
+    required int goalHeartRate,
+    required bool alarmEnabled,
+  }) async {
+    try {
+      debugPrint('🫀 Setting HR config (Manual Mode):');
+      debugPrint('   Min: $minHeartRate, Max: $maxHeartRate, Goal: $goalHeartRate');
+      debugPrint('   Alarm: ${alarmEnabled ? "ON" : "OFF"}');
+      
+      // Crea la configurazione manuale
+      final config = HeartRateConfig.manual(
+        minHeartRate: minHeartRate,
+        maxHeartRate: maxHeartRate,
+        goalHeartRate: goalHeartRate,
+        alarmEnabled: alarmEnabled,
+      );
+      
+      // Step 1: Set HR Goal and Range (SDK 5.10)
+      final setRangeCommand = OfficialChileafCommands.setHeartRateStatus(
+        minHeartRate, maxHeartRate, goalHeartRate);
+      await _sendCommand(setRangeCommand);
+      debugPrint('✅ HR range set: $minHeartRate-$maxHeartRate, goal: $goalHeartRate');
+      
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Step 2: Set Alarm Mode to Manual (SDK 5.13)
+      final setAlarmModeCommand = OfficialChileafCommands.setHeartRateAlarmMode(false); // false = manual limits
+      await _sendCommand(setAlarmModeCommand);
+      debugPrint('✅ HR alarm mode set to: Manual Limits');
+      
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Step 3: Enable/Disable Alarm
+      final setAlarmCommand = OfficialChileafCommands.setHeartRateAlarm(alarmEnabled);
+      await _sendCommand(setAlarmCommand);
+      debugPrint('✅ HR alarm ${alarmEnabled ? "enabled" : "disabled"}');
+      
+      // Update internal state
+      _currentHRConfig = config;
+      _hrConfigController.add(config);
+      
+      debugPrint('🫀 Manual HR configuration completed successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to set manual HR config: $e');
+      rethrow;
+    }
+  }
+  
+  /// Imposta la configurazione HR basata sull'età (Age-Based Mode)
+  /// Corrisponde a setHeartAlertSwitch:(BOOL)isOn con isOn = YES
+  Future<void> setHeartRateConfigAgeBased({
+    required int userAge,
+    int? goalHeartRate,
+    bool alarmEnabled = true,
+    double targetZoneMin = 0.6, // 60% della HR max
+    double targetZoneMax = 0.8, // 80% della HR max
+  }) async {
+    try {
+      debugPrint('🫀 Setting HR config (Age-Based Mode):');
+      debugPrint('   User Age: $userAge');
+      debugPrint('   Target Zone: ${(targetZoneMin*100).round()}%-${(targetZoneMax*100).round()}%');
+      debugPrint('   Alarm: ${alarmEnabled ? "ON" : "OFF"}');
+      
+      // Crea la configurazione basata sull'età
+      final config = HeartRateConfig.fromAge(
+        userAge,
+        goalHeartRate: goalHeartRate,
+        alarmEnabled: alarmEnabled,
+        targetZoneMin: targetZoneMin,
+        targetZoneMax: targetZoneMax,
+      );
+      
+      debugPrint('   Calculated limits: ${config.minHeartRate}-${config.maxHeartRate} bpm');
+      debugPrint('   Goal: ${config.goalHeartRate} bpm');
+      
+      // Step 1: Set HR Goal and Range (SDK 5.10) 
+      final setRangeCommand = OfficialChileafCommands.setHeartRateStatus(
+        config.minHeartRate, config.maxHeartRate, config.goalHeartRate);
+      await _sendCommand(setRangeCommand);
+      debugPrint('✅ HR range set based on age calculation');
+      
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Step 2: Set Alarm Mode to Age-Based (SDK 5.13)
+      final setAlarmModeCommand = OfficialChileafCommands.setHeartRateAlarmMode(true); // true = age calculation
+      await _sendCommand(setAlarmModeCommand);
+      debugPrint('✅ HR alarm mode set to: Age-Based');
+      
+      await Future.delayed(const Duration(milliseconds: 300));
+      
+      // Step 3: Enable/Disable Alarm
+      final setAlarmCommand = OfficialChileafCommands.setHeartRateAlarm(alarmEnabled);
+      await _sendCommand(setAlarmCommand);
+      debugPrint('✅ HR alarm ${alarmEnabled ? "enabled" : "disabled"}');
+      
+      // Update internal state
+      _currentHRConfig = config;
+      _hrConfigController.add(config);
+      
+      debugPrint('🫀 Age-based HR configuration completed successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to set age-based HR config: $e');
+      rethrow;
+    }
+  }
+  
+  /// Ottiene la configurazione HR corrente (SDK 5.11)
+  Future<void> getHeartRateConfiguration() async {
+    try {
+      debugPrint('🫀 Requesting current HR configuration...');
+      
+      // Get HR Goal and Range (SDK 5.11)
+      final getConfigCommand = OfficialChileafCommands.getHeartRateStatus();
+      await _sendCommand(getConfigCommand);
+      debugPrint('✅ HR configuration request sent');
+      
+      await Future.delayed(const Duration(milliseconds: 200));
+      
+      // Get Alarm Status
+      final getAlarmCommand = OfficialChileafCommands.getHeartRateAlarm();
+      await _sendCommand(getAlarmCommand);
+      debugPrint('✅ HR alarm status request sent');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to get HR configuration: $e');
+      rethrow;
+    }
+  }
+  
+  /// Abilita/disabilita solo l'allarme HR mantenendo la configurazione esistente
+  Future<void> setHeartRateAlarmEnabled(bool enabled) async {
+    try {
+      debugPrint('🫀 ${enabled ? "Enabling" : "Disabling"} HR alarm...');
+      
+      final setAlarmCommand = OfficialChileafCommands.setHeartRateAlarm(enabled);
+      await _sendCommand(setAlarmCommand);
+      debugPrint('✅ HR alarm ${enabled ? "enabled" : "disabled"}');
+      
+      // Update internal state if we have a current config
+      if (_currentHRConfig != null) {
+        _currentHRConfig = _currentHRConfig!.copyWith(alarmEnabled: enabled);
+        _hrConfigController.add(_currentHRConfig!);
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Failed to set HR alarm: $e');
+      rethrow;
+    }
+  }
+  
+  /// Avvia il monitoraggio HR real-time
+  /// Utilizza il servizio BLE Heart Rate standard (più affidabile)
+  Future<void> startHeartRateMonitoring() async {
+    try {
+      debugPrint('💓 Starting Heart Rate monitoring...');
+      
+      if (_heartRateCharacteristic != null) {
+        debugPrint('💓 Using BLE Heart Rate Service for monitoring');
+        debugPrint('💓 HR monitoring active - receiving data via standard BLE service');
+      } else {
+        debugPrint('💓 BLE Heart Rate Service not available');
+        debugPrint('💓 Custom HR commands not supported by this device');
+      }
+      
+      // Prova a richiedere la configurazione (anche se potrebbe non funzionare)
+      debugPrint('💓 Attempting to read current HR configuration...');
+      await getHeartRateConfiguration();
+      
+      debugPrint('💓 HR monitoring initialization completed');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to start HR monitoring: $e');
+      rethrow;
+    }
+  }
+  
+  /// Callback per gestire real-time HR (SDK 4.8)
+  void _handleRealtimeHeartRate(int heartRate) {
+    _lastRealtimeHR = heartRate;
+    _realtimeHRController.add(heartRate);
+    
+    // Calcola e aggiorna lo stato dell'allarme se abbiamo una configurazione
+    if (_currentHRConfig != null) {
+      final status = HeartRateStatus(
+        currentHeartRate: heartRate,
+        config: _currentHRConfig!,
+      );
+      
+      _lastHRStatus = status;
+      _hrStatusController.add(status);
+      
+      // Trigger callbacks se configurati
+      _onRealtimeHRReceived?.call(heartRate);
+      _onHRStatusChanged?.call(status);
+      
+      // Log allarmi
+      if (status.shouldTriggerAlarm) {
+        debugPrint('🚨 HR ALARM: ${status.alarmState.displayName} - $heartRate bpm');
+      }
     }
   }
 
