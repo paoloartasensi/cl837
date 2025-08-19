@@ -16,6 +16,7 @@ import 'widgets/manual_tests_widget.dart';
 import 'widgets/historical_data_widget.dart';
 import 'widgets/device_info_widget.dart';
 import 'widgets/device_control_widget.dart';
+import 'screens/feedback_test_screen.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -104,7 +105,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     @override
     void initState() {
         super.initState();
-        _tabController = TabController(length: 4, vsync: this); // Sensori, Test Manuali, Device Control, Info
+        _tabController = TabController(length: 5, vsync: this); // Sensori, Test Manuali, Device Control, Feedback Tests, Info
         _setupStreamSubscriptions();
         _initializeBluetooth();
     }
@@ -844,10 +845,12 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 ],
                 bottom: TabBar(
                     controller: _tabController,
+                    isScrollable: true,
                     tabs: const [
                         Tab(icon: Icon(Icons.sensors), text: 'Sensori'),
                         Tab(icon: Icon(Icons.build), text: 'Test Manuali'),
                         Tab(icon: Icon(Icons.settings_remote), text: 'Device Control'),
+                        Tab(icon: Icon(Icons.vibration), text: 'Feedback Tests'),
                         Tab(icon: Icon(Icons.info), text: 'Info'),
                     ],
                 ),
@@ -875,7 +878,17 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                             deviceName: connectedDevice?.platformName ?? 'Unknown Device',
                         ),
                     ),
-                    // Tab 4: Info dispositivo
+                    // Tab 4: Feedback Tests
+                    connectedDevice != null
+                        ? FeedbackTestScreen(service: _extendedService)
+                        : const Center(
+                            child: Text(
+                                'Connetti un dispositivo CL837 per accedere ai test di feedback',
+                                style: TextStyle(fontSize: 16, color: Colors.grey),
+                                textAlign: TextAlign.center,
+                            ),
+                          ),
+                    // Tab 5: Info dispositivo
                     _buildInfoTab(),
                 ],
             ),
