@@ -240,9 +240,17 @@ class HistoricalDataProcessor {
           debugPrint('💓   ✅ Using ${useLE ? "Little-endian" : "Big-endian"}: $timestamp (UTC: $utcTimestamp)');
           
           if (utcTimestamp != 0xFFFFFFFF && utcTimestamp != 0xFFFFFFFF) {
+            // Filtra solo date ragionevoli (agosto 2025 ± 30 giorni)
+            DateTime augustStart = DateTime(2025, 8, 1);
+            DateTime septemberEnd = DateTime(2025, 9, 30);
             
-            // Aggiungi tutti i timestamp per debug (rimuovi il filtro di range per ora)
-            timestamps.add(timestamp);
+            if (timestamp.isAfter(augustStart) && timestamp.isBefore(septemberEnd)) {
+              timestamps.add(timestamp);
+              debugPrint('💓   ✅ VALID: Date is within August-September 2025 range');
+            } else {
+              debugPrint('💓   ❌ FILTERED: Date $timestamp is outside valid range (Aug-Sep 2025)');
+              debugPrint('💓       Expected range: $augustStart to $septemberEnd');
+            }
           } else {
             debugPrint('💓 HR Timestamp ${i + 1}: No data (0xFFFFFFFF)');
           }
