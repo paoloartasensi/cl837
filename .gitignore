@@ -56,6 +56,7 @@ android/app/.cxx/RelWithDebInfo/
 
 /tools/
 /REVERSE/CL831_DECOMPILED/
+/REVERSE_script/
 
 # Lock files that can cause merge conflicts
 pubspec.lock

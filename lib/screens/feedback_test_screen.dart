@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../chileaf_extended_service.dart';
-import '../widgets/device_feedback_test_widget.dart';
+import '../widgets/hr_control_widget.dart';
 
 /// Schermata per accedere ai test di feedback del device CL837
 /// Include spiegazione su vibrazione non supportata e alternative disponibili
@@ -103,12 +103,12 @@ class FeedbackTestScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) => DeviceFeedbackTestWidget(service: service),
+                      builder: (context) => HRControlWidget(service: service),
                     ),
                   );
                 },
-                icon: const Icon(Icons.science),
-                label: const Text('Avvia Test Feedback'),
+                icon: const Icon(Icons.favorite),
+                label: const Text('Apri HR Control'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.deepPurple,
                   foregroundColor: Colors.white,

@@ -81,6 +81,9 @@ class ChileafExtendedService {
   void Function()? _onSpO2MeasurementComplete;
   void Function(String error)? _onSpO2Error;
 
+  // HR Callback functions
+  void Function(int min, int max, int goal, bool alarmEnabled)? _onHRConfigReceived;
+
   // Setter per callback - seguendo pattern BloodOxygenSearchActivity
   void setSpO2Callbacks({
     void Function(String spo2Value)? onValueReceived,
@@ -90,6 +93,14 @@ class ChileafExtendedService {
     _onSpO2ValueReceived = onValueReceived;
     _onSpO2MeasurementComplete = onComplete;
     _onSpO2Error = onError;
+  }
+
+  // Setter per callback HR
+  void setHRCallbacks({
+    void Function(int min, int max, int goal, bool alarmEnabled)? onConfigReceived,
+    void Function(String error)? onError,
+  }) {
+    _onHRConfigReceived = onConfigReceived;
   }
 
   // Log throttling for high-frequency data
@@ -522,6 +533,84 @@ class ChileafExtendedService {
       default:
         debugPrint(
             'Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
+        
+        // SPECIAL HANDLER for command 0x46 (HR configuration response - 8 bytes)
+        if (command == 0x46 && data.length == 8) {
+          debugPrint('❤️ COMMAND 0x46 RAW BYTES (HR STATUS RESPONSE):');
+          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+          debugPrint('❤️ Full 8 bytes: $hexString');
+          
+          // Decode HR status response according to official format
+          // Expected: [0xFF, 0x08, 0x46, status, min, max, goal, checksum]
+          debugPrint('❤️ DECODING HR STATUS:');
+          debugPrint('❤️ Header: 0x${data[0].toRadixString(16)} 0x${data[1].toRadixString(16)} 0x${data[2].toRadixString(16)}');
+          
+          if (data.length >= 7) {
+            int status = data[3];
+            int minHR = data[4];
+            int maxHR = data[5];
+            int goalHR = data[6];
+            int checksum = data[7];
+            
+            debugPrint('❤️ ===== HR CONFIGURATION DECODED =====');
+            debugPrint('❤️ Status: $status (${status == 0 ? "GET Response" : status == 1 ? "SET Response" : "Unknown"})');
+            debugPrint('❤️ Min HR: $minHR BPM');
+            debugPrint('❤️ Max HR: $maxHR BPM');
+            debugPrint('❤️ Goal HR: $goalHR BPM');
+            debugPrint('❤️ Checksum: 0x${checksum.toRadixString(16).toUpperCase()}');
+            debugPrint('❤️ =====================================');
+            
+            // Verify checksum
+            List<int> frameWithoutChecksum = data.sublist(0, data.length - 1);
+            int calculatedChecksum = _calculateJavaChecksum(frameWithoutChecksum);
+            bool checksumValid = checksum == calculatedChecksum;
+            debugPrint('❤️ Checksum verification: ${checksumValid ? "✅ VALID" : "❌ INVALID"} (expected: 0x${calculatedChecksum.toRadixString(16).toUpperCase()})');
+            
+            // Validate HR values (reasonable ranges)
+            bool valuesValid = (minHR >= 40 && minHR <= 200) && 
+                              (maxHR >= 40 && maxHR <= 200) && 
+                              (goalHR >= 40 && goalHR <= 200) &&
+                              (minHR < maxHR);
+            debugPrint('❤️ Values validation: ${valuesValid ? "✅ VALID RANGES" : "❌ INVALID RANGES"}');
+            
+            if (checksumValid && valuesValid) {
+              debugPrint('✅ HR Configuration successfully decoded and validated!');
+              
+              // Call callback to update UI
+              if (_onHRConfigReceived != null) {
+                // For now, assume alarm is enabled if status != 0 (we need to check alarm status separately)
+                _onHRConfigReceived!(minHR, maxHR, goalHR, status != 0);
+                debugPrint('🔄 HR Configuration sent to UI via callback');
+              }
+            }
+          }
+        }
+        
+        // SPECIAL HANDLER for command 0x47 (HR configuration response - 23 bytes)
+        if (command == 0x47 && data.length == 23) {
+          debugPrint('🔍 COMMAND 0x47 RAW BYTES (HR CONFIG):');
+          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+          debugPrint('🔍 Full 23 bytes: $hexString');
+          
+          // Try to decode HR configuration
+          debugPrint('🔍 DECODING HR CONFIG:');
+          debugPrint('🔍 Byte 0-2: Header ${data[0].toRadixString(16)} ${data[1].toRadixString(16)} ${data[2].toRadixString(16)}');
+          
+          if (data.length >= 10) {
+            debugPrint('🔍 Byte 3-6: ${data[3]} ${data[4]} ${data[5]} ${data[6]} (potential HR values)');
+            debugPrint('🔍 Byte 7-10: ${data[7]} ${data[8]} ${data[9]} ${data[10]} (potential thresholds)');
+          }
+          
+          // Look for HR threshold patterns (typical values 40-200)
+          for (int i = 3; i < data.length; i++) {
+            int value = data[i];
+            if (value >= 40 && value <= 200) {
+              debugPrint('🔍 Potential HR value at byte $i: $value BPM');
+            }
+          }
+          
+          debugPrint('🔍 Raw decimal values: ${data.sublist(3).join(', ')}');
+        }
     }
   }
 
@@ -1667,5 +1756,19 @@ class ChileafExtendedService {
   /// Pulisce la cache delle richieste dati storici
   void clearHistoricalDataCache() {
     _historicalDataService.clearRequestCache();
+  }
+
+  // === UTILITY METHODS ===
+
+  /// Calcola checksum Java secondo il protocollo ufficiale Chileaf
+  /// Algoritmo: (-sum) ^ 0x3A & 0xFF
+  int _calculateJavaChecksum(List<int> frame) {
+    int sum = 0;
+    for (int byte in frame) {
+      sum += byte;
+    }
+    int checksum = (-sum) & 0xFF;  // Negazione + mask 8-bit
+    checksum ^= 0x3A;              // XOR con costante 0x3A
+    return checksum & 0xFF;        // Final mask
   }
 }
