@@ -18,6 +18,7 @@ import 'widgets/historical_data_widget.dart';
 import 'widgets/device_info_widget.dart';
 import 'widgets/device_control_widget.dart';
 import 'widgets/hr_control_widget.dart';
+import 'screens/data_extraction_dashboard.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -866,6 +867,20 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                 backgroundColor: connectedDevice != null ? Colors.green : Colors.blue,
                 actions: [
                     if (connectedDevice != null) ...[
+                        IconButton(
+                            icon: const Icon(Icons.analytics),
+                            onPressed: () {
+                                Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                        builder: (context) => DataExtractionDashboard(
+                                            service: _extendedService,
+                                        ),
+                                    ),
+                                );
+                            },
+                            tooltip: 'Data Extraction Dashboard',
+                        ),
                         IconButton(
                             icon: const Icon(Icons.refresh),
                             onPressed: () {

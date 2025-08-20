@@ -70,6 +70,9 @@ class ChileafExtendedService {
   StreamSubscription? _dataSubscription;
   StreamSubscription? _heartRateSubscription;
   Timer? _dataRequestTimer;
+  
+  // Device connection tracking
+  bool _isConnected = false;
 
   // Historical data service with optimized checksum
   late final HistoricalDataService _historicalDataService;
@@ -113,6 +116,9 @@ class ChileafExtendedService {
   HeartRateConfig? get currentHRConfig => _currentHRConfig;
   int? get lastRealtimeHR => _lastRealtimeHR;
   HeartRateStatus? get lastHRStatus => _lastHRStatus;
+  
+  // Connection status getter
+  bool get isConnected => _isConnected;
 
   // Setter per callback - seguendo pattern BloodOxygenSearchActivity
   void setSpO2Callbacks({
@@ -251,6 +257,9 @@ class ChileafExtendedService {
   Future<void> start(BluetoothDevice device) async {
     try {
       debugPrint('Starting Chileaf Extended Service...');
+      
+      // Track connection
+      _isConnected = true;
 
       // Add delay to ensure services are discovered
       await Future.delayed(const Duration(milliseconds: 2000));
@@ -1233,6 +1242,9 @@ class ChileafExtendedService {
   void dispose() {
     debugPrint('Disposing Chileaf Extended Service...');
     stop();
+    
+    // Reset connection state
+    _isConnected = false;
 
     // Close all stream controllers
     _exerciseHistoryController.close();
@@ -2192,6 +2204,210 @@ class ChileafExtendedService {
   /// Pulisce la cache delle richieste dati storici
   void clearHistoricalDataCache() {
     _historicalDataService.clearRequestCache();
+  }
+
+  // === NEW DATA EXTRACTION METHODS (Based on SDK Documentation) ===
+
+  /// Request Sleep Data - Based on SDK command getSleepData
+  /// Returns sleep patterns with action indices
+  Future<void> requestSleepData() async {
+    debugPrint('🛌 Requesting sleep data...');
+    try {
+      // Command 0x05 with subcommand 0x03 for sleep data request
+      // Based on WearReceivedDataCallback analysis: intValue == 5 and getIntParse(value, 3, 1) == 3
+      List<int> command = [0xFF, 0x05, 0x05, 0x03, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ Sleep data request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request sleep data: $e');
+    }
+  }
+
+  /// Request Step Interval Data - Commands 0x90 (list) and 0x91 (data)
+  /// Based on SDK documentation section 5.22 and 5.23
+  Future<void> requestStepIntervalHistory() async {
+    debugPrint('🚶 Requesting step interval history...');
+    try {
+      // Command 0x90: Step counting history data list request
+      List<int> command = [0xFF, 0x05, 0x90, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[3] = checksum;
+      
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request step interval history: $e');
+    }
+  }
+
+  /// Request Step Interval Data for specific UTC
+  /// Command 0x91 with UTC timestamp
+  Future<void> requestStepIntervalData(int utcTimestamp) async {
+    debugPrint('🚶 Requesting step interval data for UTC: $utcTimestamp');
+    try {
+      // Command 0x91: Request step counting historical interval data
+      // Format: ff 09 91 01 [4-byte UTC timestamp] [checksum]
+      List<int> utcBytes = [
+        utcTimestamp & 0xFF,
+        (utcTimestamp >> 8) & 0xFF,
+        (utcTimestamp >> 16) & 0xFF,
+        (utcTimestamp >> 24) & 0xFF,
+      ];
+      
+      List<int> command = [0xFF, 0x09, 0x91, 0x01, ...utcBytes, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[command.length - 1] = checksum;
+      
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request step interval data: $e');
+    }
+  }
+
+  /// Request Real-time Temperature Data
+  /// Based on SDK requestRealTimeTemperature method
+  Future<void> requestTemperatureData() async {
+    debugPrint('🌡️ Requesting real-time temperature data...');
+    try {
+      // Command for real-time temperature request
+      // Based on WearReceivedDataCallback: onTemperatureReceived with command parsing
+      List<int> command = [0xFF, 0x05, 0x63, 0x01, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ Temperature data request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request temperature data: $e');
+    }
+  }
+
+  /// Request 3D Accelerometer Data
+  /// Based on SDK get3DData and openOrClose3DData methods
+  Future<void> request3DAccelerometerData() async {
+    debugPrint('📊 Requesting 3D accelerometer data...');
+    try {
+      // First enable 3D data collection
+      await _enable3DDataCollection(true);
+      
+      // Wait for data collection
+      await Future.delayed(const Duration(seconds: 2));
+      
+      // Request 3D data with command 0x0C (based on WearReceivedDataCallback intValue == 12)
+      List<int> command = [0xFF, 0x05, 0x0C, 0x01, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ 3D accelerometer data request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request 3D data: $e');
+    }
+  }
+
+  /// Enable/Disable 3D Data Collection
+  /// Based on SDK openOrClose3DData method
+  Future<void> _enable3DDataCollection(bool enable) async {
+    debugPrint('📊 ${enable ? "Enabling" : "Disabling"} 3D data collection...');
+    try {
+      // Command to enable/disable 3D data collection
+      // Based on SDK documentation: openOrClose3DData:(BOOL)isOpen
+      List<int> command = [0xFF, 0x05, 0x0B, enable ? 0x01 : 0x00, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ 3D data collection ${enable ? "enabled" : "disabled"}');
+    } catch (e) {
+      debugPrint('❌ Failed to toggle 3D data: $e');
+      rethrow;
+    }
+  }
+
+  /// Request 3D Data Frequency
+  /// Based on SDK get3DFrequency method
+  Future<void> request3DFrequency() async {
+    debugPrint('📊 Requesting 3D data frequency...');
+    try {
+      // Command to get 3D frequency (based on WearReceivedDataCallback onSensor3DFrequencyReceived)
+      List<int> command = [0xFF, 0x05, 0x0D, 0x01, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ 3D frequency request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request 3D frequency: $e');
+    }
+  }
+
+  /// Set 3D Data Frequency
+  /// Based on SDK set3DFrequency method
+  Future<void> set3DFrequency(int frequency) async {
+    debugPrint('📊 Setting 3D data frequency to: $frequency');
+    try {
+      // Command to set 3D frequency (based on SDK set3DFrequency)
+      List<int> command = [0xFF, 0x06, 0x0E, frequency & 0xFF, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ 3D frequency set to: $frequency');
+    } catch (e) {
+      debugPrint('❌ Failed to set 3D frequency: $e');
+    }
+  }
+
+  /// Request Device Maximum Heart Rate
+  /// Based on SDK getMaxHeartRate method
+  Future<void> requestMaxHeartRate() async {
+    debugPrint('💓 Requesting maximum heart rate...');
+    try {
+      // Command to get maximum heart rate (based on SDK getMaxHeartRate)
+      List<int> command = [0xFF, 0x05, 0x5A, 0x01, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ Max heart rate request sent');
+    } catch (e) {
+      debugPrint('❌ Failed to request max heart rate: $e');
+    }
+  }
+
+  /// Set Device Maximum Heart Rate
+  /// Based on SDK setMaxHeartRate method
+  Future<void> setMaxHeartRate(int maxHR) async {
+    debugPrint('💓 Setting maximum heart rate to: $maxHR');
+    try {
+      // Command to set maximum heart rate (based on SDK setMaxHeartRate)
+      List<int> command = [0xFF, 0x06, 0x59, maxHR & 0xFF, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[4] = checksum;
+      
+      await _sendCommand(command);
+      debugPrint('✅ Max heart rate set to: $maxHR');
+    } catch (e) {
+      debugPrint('❌ Failed to set max heart rate: $e');
+    }
+  }
+
+  /// Request Device Info and Battery Status
+  /// Based on existing device info command (0x01)
+  Future<void> requestCompleteDeviceInfo() async {
+    debugPrint('📱 Requesting complete device information...');
+    try {
+      // Device info command (already implemented)
+      List<int> command = [0xFF, 0x05, 0x01, 0x00];
+      int checksum = _calculateJavaChecksum(command.sublist(1));
+      command[3] = checksum;
+      
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request device info: $e');
+    }
   }
 
   // === UTILITY METHODS ===
