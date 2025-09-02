@@ -17,6 +17,7 @@ dependencies:
   share_plus: ^7.2.2
   path_provider: ^2.1.1
   logger: ^2.3.0
+  fl_chart: ^0.66.2
 
 dev_dependencies:
   flutter_test:

@@ -1750,6 +1750,11 @@ class ChileafExtendedService {
     }
   }
 
+  /// Metodo pubblico per inviare comandi BLE
+  Future<void> sendCommand(List<int> command) async {
+    await _sendCommand(command);
+  }
+
   /// Imposta allarme frequenza cardiaca usando comando ufficiale (0x57)
   /// Equivalente al metodo setHeartRateAlarm() del SDK Android
   Future<void> setHeartRateAlarm(bool enabled) async {

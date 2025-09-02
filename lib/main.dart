@@ -19,6 +19,7 @@ import 'widgets/device_info_widget.dart';
 import 'widgets/device_control_widget.dart';
 import 'widgets/hr_control_widget.dart';
 import 'screens/data_extraction_dashboard.dart';
+import 'screens/grok_hr_screen.dart';
 import 'models/sensor_data.dart';
 import 'models/heart_rate_data.dart';
 import 'models/hrv_data.dart';
@@ -107,7 +108,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
     @override
     void initState() {
         super.initState();
-        _tabController = TabController(length: 5, vsync: this); // Sensori, Test Manuali, Device Control, Feedback Tests, Info
+        _tabController = TabController(length: 6, vsync: this); // Sensori, Test Manuali, Device Control, HR Control, GROK HR, Info
         _setupStreamSubscriptions();
         _initializeBluetooth();
     }
@@ -904,6 +905,7 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                         Tab(icon: Icon(Icons.build), text: 'Test Manuali'),
                         Tab(icon: Icon(Icons.settings_remote), text: 'Device Control'),
                         Tab(icon: Icon(Icons.favorite), text: 'HR Control'),
+                        Tab(icon: Icon(Icons.monitor_heart), text: 'GROK HR'),
                         Tab(icon: Icon(Icons.info), text: 'Info'),
                     ],
                 ),
@@ -941,7 +943,9 @@ class _SensorDisplayPageState extends State<SensorDisplayPage> with TickerProvid
                                 textAlign: TextAlign.center,
                             ),
                           ),
-                    // Tab 5: Info dispositivo
+                    // Tab 5: GROK HR Monitor
+                    const GrokHrScreen(),
+                    // Tab 6: Info dispositivo
                     _buildInfoTab(),
                 ],
             ),
