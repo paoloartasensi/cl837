@@ -380,6 +380,52 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  // ===== ANALISI AVANZATA TIMESTAMP =====
+
+  Future<void> _analyzeTimestampsAdvanced() async {
+    if (connectedDevice == null) {
+      setState(() {
+        _statusMessage = 'No device connected';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Analyzing timestamps with advanced decoder...';
+    });
+
+    try {
+      debugPrint('🔬 ADVANCED TIMESTAMP ANALYSIS STARTING!');
+      debugPrint('📋 Using TimestampDecoder with multiple interpretation methods');
+      debugPrint('📖 Following Chileaf BLE Protocol v0.6 specifications');
+      
+      // Perform advanced analysis using existing service instance
+      Map<String, dynamic> analysis = await _service.analyzeTimestampsAdvanced();
+      
+      setState(() {
+        _statusMessage = '✅ Advanced timestamp analysis completed! Check logs for detailed results.';
+        _isDownloading = false;
+      });
+      
+      debugPrint('✅ Advanced timestamp analysis completed successfully!');
+      
+      // Print summary in UI message if analysis successful
+      if (analysis['bestMethod'] != null) {
+        setState(() {
+          _statusMessage = '✅ Analysis complete! Best method: ${analysis['bestMethod']} (${analysis['bestMethodCount']}/${analysis['totalTimestamps']} timestamps). Check logs for details.';
+        });
+      }
+      
+    } catch (e) {
+      debugPrint('❌ Advanced timestamp analysis failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Advanced timestamp analysis failed: $e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -532,6 +578,20 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 label: const Text('🎯 Official Protocol Sequential'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // NEW: Advanced timestamp analysis
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _analyzeTimestampsAdvanced,
+                icon: const Icon(Icons.analytics),
+                label: const Text('🔬 Advanced Timestamp Analysis'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.deepPurple.shade700,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),

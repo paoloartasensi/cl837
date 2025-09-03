@@ -7,6 +7,13 @@ class HistoricalDataProcessor {
   /// Returns HeartRateHistoryList with session timestamps
   static HeartRateHistoryList processHRHistoryList(Uint8List data) {
     print('💓 Processing HR History List (0x21) - ${data.length} bytes');
+    
+    // 🔍 DEBUG: Show complete raw data for analysis
+    print('🔍 COMPLETE RAW DATA (${data.length} bytes):');
+    String rawHex = data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
+    print('   $rawHex');
+    print('🔍 RAW DECIMAL: ${data.toList()}');
+    print('=' * 80);
 
     if (data.length < 5) {
       print('❌ HR History List data too short');

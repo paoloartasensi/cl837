@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'services/data_processors/historical_data_processor.dart';
+import 'services/data_processors/timestamp_decoder.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -3363,5 +3364,105 @@ class ChileafExtendedService {
     } else {
       debugPrint('😞 All requests returned 0x23 (end signal) - no actual HR data');
     }
+  }
+
+  /// Advanced timestamp analysis using multiple decoding methods
+  /// Following Chileaf BLE Protocol v0.6 specifications
+  Future<Map<String, dynamic>> analyzeTimestampsAdvanced() async {
+    debugPrint('🔬 ADVANCED TIMESTAMP ANALYSIS STARTING...');
+    
+    if (_lastRawTimestamps.isEmpty) {
+      debugPrint('❌ No raw timestamps available. Call getHRHistoryList() first.');
+      return {'error': 'No timestamps available'};
+    }
+    
+    debugPrint('📊 Raw timestamps to analyze: ${_lastRawTimestamps.length}');
+    
+    // Convert each timestamp to 4-byte arrays for analysis
+    List<List<int>> timestampBytes = [];
+    for (var timestamp in _lastRawTimestamps) {
+      // Convert int to 4-byte little-endian array (as per Chileaf protocol)
+      List<int> bytes = [
+        timestamp & 0xFF,
+        (timestamp >> 8) & 0xFF,
+        (timestamp >> 16) & 0xFF,
+        (timestamp >> 24) & 0xFF,
+      ];
+      timestampBytes.add(bytes);
+    }
+    
+    // Perform advanced analysis
+    Map<String, dynamic> analysis = TimestampDecoder.analyzeTimestampPattern(timestampBytes);
+    
+    debugPrint('📈 ANALYSIS RESULTS:');
+    debugPrint('   📊 Total timestamps: ${analysis['totalTimestamps']}');
+    debugPrint('   🏆 Best method: ${analysis['bestMethod']}');
+    debugPrint('   ✅ Success count: ${analysis['bestMethodCount']}');
+    debugPrint('   📅 Chronological order: ${analysis['isChronological']}');
+    
+    // Print method success rates
+    if (analysis['methodSuccessRates'] != null) {
+      debugPrint('📊 METHOD SUCCESS RATES:');
+      Map<String, int> rates = Map<String, int>.from(analysis['methodSuccessRates']);
+      rates.forEach((method, count) {
+        double percentage = (count / analysis['totalTimestamps']) * 100;
+        debugPrint('   $method: $count/${analysis['totalTimestamps']} (${percentage.toStringAsFixed(1)}%)');
+      });
+    }
+    
+    // Print raw pattern analysis
+    if (analysis['rawPattern'] != null) {
+      Map<String, dynamic> pattern = Map<String, dynamic>.from(analysis['rawPattern']);
+      debugPrint('🔍 RAW PATTERN ANALYSIS:');
+      debugPrint('   🎯 Has constant prefix: ${pattern['hasConstantPrefix']}');
+      debugPrint('   📌 Most common prefix: ${pattern['mostCommonPrefix']}');
+      
+      if (pattern['prefixDistribution'] != null) {
+        debugPrint('   📊 Prefix distribution:');
+        Map<String, int> prefixes = Map<String, int>.from(pattern['prefixDistribution']);
+        prefixes.forEach((prefix, count) {
+          debugPrint('      $prefix: $count times');
+        });
+      }
+    }
+    
+    // Analyze individual timestamps with detailed breakdown
+    debugPrint('🔬 INDIVIDUAL TIMESTAMP ANALYSIS:');
+    for (int i = 0; i < _lastRawTimestamps.length && i < 5; i++) { // Show first 5
+      int timestamp = _lastRawTimestamps[i];
+      List<int> bytes = timestampBytes[i];
+      
+      TimestampResult result = TimestampDecoder.decodeTimestamp(bytes);
+      
+      debugPrint('   [$i] Raw: $timestamp (0x${timestamp.toRadixString(16).padLeft(8, '0')})');
+      debugPrint('       Bytes: [${bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(', ')}]');
+      
+      if (result.bestGuess != null) {
+        DateTime? bestDate = result.interpretations[result.bestGuess];
+        debugPrint('       🏆 Best guess: ${result.bestGuess} → ${bestDate?.toString() ?? 'null'}');
+        debugPrint('       📝 Reasoning: ${result.reasoning}');
+      }
+      
+      // Show all valid interpretations
+      int validCount = 0;
+      result.interpretations.forEach((method, date) {
+        if (date != null) {
+          validCount++;
+          debugPrint('       ✅ $method: ${date.toString()}');
+        }
+      });
+      
+      if (validCount == 0) {
+        debugPrint('       ❌ No valid interpretations found');
+      }
+      
+      debugPrint(''); // Empty line for readability
+    }
+    
+    if (_lastRawTimestamps.length > 5) {
+      debugPrint('   ... and ${_lastRawTimestamps.length - 5} more timestamps');
+    }
+    
+    return analysis;
   }
 }
