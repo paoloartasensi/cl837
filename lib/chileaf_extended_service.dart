@@ -252,28 +252,23 @@ class ChileafExtendedService {
       _isConnected = true;
 
       // Longer delay to ensure full service discovery
-      debugPrint('⏳ Waiting for complete service discovery...');
       await Future.delayed(const Duration(milliseconds: 3000));
 
       final services = await device.discoverServices();
-      debugPrint('📡 Extended Service: Found ${services.length} services');
 
       // Find custom service - more robust matching
       BluetoothService? customService;
       BluetoothService? heartRateService;
 
       for (var service in services) {
-        debugPrint('🔍 Service UUID: ${service.uuid}');
         if (service.uuid.toString().toLowerCase() ==
             _customServiceUuid.toLowerCase()) {
           customService = service;
-          debugPrint('✅ Found CUSTOM service: ${service.uuid}');
         }
         // Look for Heart Rate Service
         if (service.uuid.toString().toLowerCase() ==
             _heartRateServiceUuid.toLowerCase()) {
           heartRateService = service;
-          debugPrint('💓 Found Heart Rate Service: ${service.uuid}');
         }
       }
 
@@ -289,28 +284,19 @@ class ChileafExtendedService {
 
       // Setup characteristics with extra verification
       await _setupCharacteristicsRobust(customService, device);
-      
+
       // Verify characteristics are properly set
       if (_txCharacteristic == null || _rxCharacteristic == null) {
         throw Exception('Failed to setup critical characteristics');
       }
-      
-      debugPrint('✅ TX Characteristic verified: ${_txCharacteristic!.uuid}');
-      debugPrint('✅ RX Characteristic verified: ${_rxCharacteristic!.uuid}');
-      
+
       // Setup Heart Rate Service if available
       if (heartRateService != null) {
         await _setupHeartRateService(heartRateService);
-      } else {
-        debugPrint('💓 Heart Rate Service not found - using custom protocol only');
       }
-
-      // Diagnostics rimossi - utilizziamo solo il comando ufficiale 0x37
 
       // Enable notifications and start data flow
       await _startDataFlow();
-
-      debugPrint('Chileaf Extended Service started successfully');
     } catch (e) {
       debugPrint('Failed to start Chileaf Extended Service: $e');
       // Don't rethrow - let the app continue without extended features
@@ -318,12 +304,6 @@ class ChileafExtendedService {
   }
 
   Future<void> _setupCharacteristics(BluetoothService customService) async {
-    // Debug: List all characteristics
-    debugPrint('Service has ${customService.characteristics.length} characteristics:');
-    for (var char in customService.characteristics) {
-      debugPrint('  - ${char.uuid} (properties: notify=${char.properties.notify}, read=${char.properties.read}, write=${char.properties.write})');
-    }
-
     // Find characteristics - more robust matching
     BluetoothCharacteristic? txChar, rxChar;
 
@@ -351,13 +331,6 @@ class ChileafExtendedService {
     debugPrint('🔧 Setting up characteristics with ROBUST verification...');
     
     // Debug: List all characteristics with properties
-    debugPrint('📋 Service has ${customService.characteristics.length} characteristics:');
-    for (var char in customService.characteristics) {
-      final props = char.properties;
-      debugPrint('  - ${char.uuid}');
-      debugPrint('    Properties: notify=${props.notify}, read=${props.read}, write=${props.write}, writeWithoutResponse=${props.writeWithoutResponse}');
-    }
-
     // Find characteristics with multiple attempts
     BluetoothCharacteristic? txChar, rxChar;
     int attempts = 0;
@@ -365,23 +338,19 @@ class ChileafExtendedService {
 
     while ((txChar == null || rxChar == null) && attempts < maxAttempts) {
       attempts++;
-      debugPrint('🔄 Characteristic discovery attempt $attempts/$maxAttempts');
-      
+
       for (var char in customService.characteristics) {
         final charUuid = char.uuid.toString().toLowerCase();
         if (charUuid == _txCharUuid.toLowerCase()) {
           txChar = char;
-          debugPrint('✅ Found TX characteristic: ${char.uuid}');
         } else if (charUuid == _rxCharUuid.toLowerCase()) {
           rxChar = char;
-          debugPrint('✅ Found RX characteristic: ${char.uuid}');
         }
       }
-      
+
       if (txChar == null || rxChar == null) {
-        debugPrint('⚠️ Missing characteristics, waiting before retry...');
         await Future.delayed(const Duration(milliseconds: 1000));
-        
+
         // Rediscover service characteristics
         final services = await device.discoverServices();
         final refreshedService = services.firstWhere(
