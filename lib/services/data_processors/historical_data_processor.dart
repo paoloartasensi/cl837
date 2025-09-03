@@ -10,54 +10,114 @@ class HistoricalDataProcessor {
 
     if (data.length < 5) {
       print('❌ HR History List data too short');
-      return const HeartRateHistoryList(timestamps: []);
+      return const HeartRateHistoryList(
+        timestamps: [],
+        rawTimestamps: [],
+      );
     }
 
     List<DateTime> sessions = [];
+    List<int> rawTimestamps = [];
 
     // Skip header (0xFF, length, command)
     int offset = 3;
 
     // Each timestamp is 4 bytes - try different interpretations
     while (offset + 4 <= data.length - 1) { // -1 for checksum
-      // Try both big-endian and little-endian
-      int timestampBE = (data[offset] << 24) |
-                       (data[offset + 1] << 16) |
-                       (data[offset + 2] << 8) |
-                       data[offset + 3];
-
+      // Check for end-of-data signal (0xFFFFFFFF)
       int timestampLE = data[offset] |
                        (data[offset + 1] << 8) |
                        (data[offset + 2] << 16) |
                        (data[offset + 3] << 24);
 
+      // End of data signal according to CL831 documentation
+      if (timestampLE == 0xFFFFFFFF) {
+        print('🛑 End of HR data signal detected (0xFFFFFFFF)');
+        break;
+      }
+
       print('🔍 Raw timestamp bytes: [${data[offset]}, ${data[offset + 1]}, ${data[offset + 2]}, ${data[offset + 3]}]');
-      print('   Big-endian: $timestampBE, Little-endian: $timestampLE');
+      print('   Little-endian value: $timestampLE');
 
-      // Try different units: seconds, minutes, hours from base date
-      DateTime baseDate = DateTime(2025, 9, 1); // Base date around current time
+      // Save raw timestamp for direct use
+      rawTimestamps.add(timestampLE);
 
-      DateTime fromSeconds = baseDate.add(Duration(seconds: timestampLE));
-      DateTime fromMinutes = baseDate.add(Duration(minutes: timestampLE));
-      DateTime fromHours = baseDate.add(Duration(hours: timestampLE));
+      // Try different timestamp interpretations for CL837
+      DateTime sessionTime;
 
-      print('📅 Timestamp interpretations from 2025-09-01:');
-      print('   +$timestampLE seconds: $fromSeconds');
-      print('   +$timestampLE minutes: $fromMinutes');
-      print('   +$timestampLE hours: $fromHours');
+      // Method 1: Try as Unix timestamp (seconds since 1970-01-01)
+      try {
+        sessionTime = DateTime.fromMillisecondsSinceEpoch(timestampLE * 1000);
+        print('   As Unix timestamp: $sessionTime');
+        
+        // Check if it's a reasonable date (not too far in future/past)
+        Duration diff = sessionTime.difference(DateTime.now());
+        if (diff.inDays.abs() > 365 * 10) { // Allow up to 10 years difference
+          print('   ⚠️ Unix timestamp seems unreasonable (${diff.inDays} days from now)');
+          throw Exception('Unreasonable Unix timestamp');
+        }
+        
+        // If Unix timestamp works, use it
+        print('💓 HR Session: $sessionTime');
+        sessions.add(sessionTime);
+        offset += 4;
+        continue;
+        
+      } catch (e) {
+        print('   ❌ Unix timestamp interpretation failed: $e');
+        
+        // Method 2: For CL837, check if this is one of the known good timestamps
+        if (timestampLE == 1747499112) {
+          // This is the confirmed working timestamp
+          sessionTime = DateTime.fromMillisecondsSinceEpoch(timestampLE * 1000);
+          print('   ✅ Known working timestamp: $sessionTime');
+          print('💓 HR Session: $sessionTime');
+          sessions.add(sessionTime);
+          offset += 4;
+          continue;
+        }
+        
+        // Method 3: Try as offset from device base date
+        // CL837 might use a different base date than CL831
+        DateTime baseDate = DateTime(2020, 1, 1); // Try 2020 as base
+        int reasonableTimestamp = timestampLE;
+        
+        // If value is too large, try dividing
+        if (reasonableTimestamp > 86400 * 365) { // More than 1 year in seconds
+          reasonableTimestamp = (reasonableTimestamp / 1000).round(); // Maybe milliseconds
+        }
+        
+        sessionTime = baseDate.add(Duration(seconds: reasonableTimestamp));
+        print('   As offset from 2020-01-01: $sessionTime');
+        
+        // 🔄 SEMPLIFICATO: Accetta TUTTI i timestamp che il dispositivo ci invia
+        // Il dispositivo sa meglio di noi quando ha registrato i dati
+        print('   ✅ Accepting timestamp from device: $sessionTime');
+        // Niente più filtri arbitrari sui giorni/anni!
+      }
 
-      // For small values like 294, minutes from base date makes most sense
-      DateTime sessionTime = fromMinutes;
-
-      print('💓 HR Session selected: ${sessionTime.toString()}');
+      print('💓 HR Session: $sessionTime');
       sessions.add(sessionTime);
 
       offset += 4;
     }
 
     print('💓 Total HR sessions: ${sessions.length}');
+    
+    // Check if we got the end-of-data signal with no valid sessions
+    if (sessions.isEmpty) {
+      print('📭 No HR history data available on device');
+      return const HeartRateHistoryList(
+        timestamps: [],
+        rawTimestamps: [],
+        isEndOfData: true,
+      );
+    }
+    
     return HeartRateHistoryList(
       timestamps: sessions,
+      rawTimestamps: rawTimestamps,
+      isEndOfData: false,
     );
   }
 

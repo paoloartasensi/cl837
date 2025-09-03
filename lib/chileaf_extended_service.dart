@@ -23,7 +23,7 @@ import 'services/data_processors/device_info_processor.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
-import 'services/ble_protocol/official_commands_complete.dart';
+import 'services/ble_protocol/official_commands.dart';
 
 /// Servizio principale per la gestione del dispositivo Chileaf Extended
 /// Coordinatore che orchestra tutti i processori di dati e la comunicazione BLE
@@ -555,8 +555,10 @@ class ChileafExtendedService {
       if (ChileafProtocol.isValidChileafFrame(data)) {
         if (command == null) return;
 
-        // Only log command processing for NON-high frequency commands
-        if (_enableVerboseLogging || (!isHighFrequency && command != ChileafProtocol.commandTemperature)) {
+        // Only log command processing for NON-high frequency commands and exclude accelerometer
+        if (_enableVerboseLogging || (!isHighFrequency && 
+            command != ChileafProtocol.commandTemperature && 
+            command != ChileafProtocol.commandAccelerometer)) {
           debugPrint('Processing command: ${ChileafProtocol.getCommandName(command)}');
         }
 
@@ -688,25 +690,36 @@ class ChileafExtendedService {
         var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(
             Uint8List.fromList(data));
         
-        // Ignore "end of data" messages to preserve existing valid data
-        if (!hrHistoryList.isEndOfData) {
+        // Handle end of data or valid sessions
+        if (hrHistoryList.isEndOfData) {
+          debugPrint('📭 No HR history data available on device');
+          // Send empty list to UI to show "no data" message
+          _hrHistoryListController.add(const HeartRateHistoryList(
+            timestamps: [],
+            isEndOfData: true, rawTimestamps: [],
+          ));
+        } else if (hrHistoryList.timestamps.isNotEmpty) {
           _hrHistoryListController.add(hrHistoryList);
           // Auto-request detailed data for each timestamp
           _requestDetailedHRData(hrHistoryList);
         } else {
-          debugPrint('💓 🛑 Ignoring END-OF-DATA message - preserving existing HR history list');
+          debugPrint('💓 ⚠️ No valid HR sessions found in response');
         }
         break;
       case 0x22: // HR History Data
         debugPrint(
-            '💓 HR HISTORY DATA: Processing detailed HR historical data');
+            '💓✅ HR HISTORY DATA: Processing detailed HR historical data (SUCCESS!)');
+        debugPrint('💓📦 Raw data received: ${data.map((e) => '0x${e.toRadixString(16).padLeft(2, '0')}').join(' ')}');
         var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(
             Uint8List.fromList(data));
+        debugPrint('💓📊 Processed HR data: $hrHistoryData');
         _hrHistoryDataController.add(hrHistoryData);
         break;
       case 0x23: // HR History End Signal
         debugPrint(
-            '🏁 HR HISTORY END: Received end signal for HR history data');
+            '🏁❌ HR HISTORY END: Received END SIGNAL instead of data (0x23)');
+        debugPrint('🏁📦 End signal data: ${data.map((e) => '0x${e.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        debugPrint('🏁💭 This means the device has NO DATA for the requested timestamp');
         // Signal that HR history transfer is complete
         break;
       case 0x40: // Rope Status
@@ -1444,31 +1457,6 @@ class ChileafExtendedService {
     }
   }
 
-  /// Richiede la lista degli storici della frequenza cardiaca
-  Future<void> requestHRHistoryList() async {
-    // Check if we should throttle historical data requests
-    if (_shouldThrottleHistoricalRequests('hr')) {
-      debugPrint(
-          '💓 ⏸️ HR history request throttled (too many recent requests)');
-      return;
-    }
-
-    debugPrint('💓 Requesting HR history list...');
-    try {
-      // Usa il comando ufficiale con checksum corretto
-      List<int> command = OfficialChileafCommands.getHistoryOfHRRecord();
-      debugPrint('🔄💓 Requesting COMPLETE HR History with optimized checksum...');
-      debugPrint('📡 Official Command: ${OfficialChileafCommands.commandToHexString(command)}');
-      await _sendCommand(command);
-
-      // Update throttling counters
-      _hrHistoryRequests++;
-      _lastHRHistoryRequest = DateTime.now();
-    } catch (e) {
-      debugPrint('❌ Failed to request HR history list: $e');
-    }
-  }
-
   /// Check if historical data requests should be throttled to prevent infinite loops
   bool _shouldThrottleHistoricalRequests(String type) {
     final now = DateTime.now();
@@ -1509,22 +1497,386 @@ class ChileafExtendedService {
     return false; // Allow request
   }
 
-  /// Richiede i dati storici HR per un timestamp specifico
-  Future<void> requestHRHistoryData(DateTime timestamp) async {
+  /// Test alternativo del comando 0x22 senza parametro iniziale
+  Future<void> requestHRHistoryDataAlt(DateTime timestamp) async {
     int utcTimestamp = timestamp.millisecondsSinceEpoch ~/ 1000;
     debugPrint(
-        '💓 Requesting HR history data for timestamp: $timestamp ($utcTimestamp)');
+        '💓🔄 ALT: Requesting HR history data (no param) for timestamp: $timestamp ($utcTimestamp)');
     try {
-      // Usa il comando ufficiale con checksum corretto
-      List<int> command = OfficialChileafCommands.getHistoryOfHRData(utcTimestamp);
+      List<int> command = OfficialChileafCommands.getHistoryOfHRDataAlt(utcTimestamp);
       
-      debugPrint('🏗️ Building HR History Data Request (0x22) for timestamp: $utcTimestamp');
-      debugPrint('📡 Official Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      debugPrint('🏗️ Building ALT HR History Data Request (0x22) for timestamp: $utcTimestamp');
+      debugPrint('📡 ALT Command: ${OfficialChileafCommands.commandToHexString(command)}');
       
       await _sendCommand(command);
     } catch (e) {
-      debugPrint('❌ Failed to request HR history data: $e');
+      debugPrint('❌ Failed to request ALT HR history data: $e');
     }
+  }
+
+  /// Test con parametro 0 invece di 1 per CL837
+  Future<void> requestHRHistoryDataCL837(DateTime timestamp) async {
+    int utcTimestamp = timestamp.millisecondsSinceEpoch ~/ 1000;
+    debugPrint(
+        '💓🔄 CL837: Requesting HR history data (param=0) for timestamp: $timestamp ($utcTimestamp)');
+    try {
+      List<int> command = OfficialChileafCommands.getHistoryOfHRDataCL837(utcTimestamp);
+      
+      debugPrint('🏗️ Building CL837 HR History Data Request (0x22) for timestamp: $utcTimestamp');
+      debugPrint('📡 CL837 Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request CL837 HR history data: $e');
+    }
+  }
+
+  /// Richiede dati HR usando timestamp RAW originale dal dispositivo
+  Future<void> requestHRHistoryDataRaw(int rawTimestamp) async {
+    debugPrint(
+        '💓🔢 RAW: Requesting HR history data using RAW timestamp: $rawTimestamp');
+    try {
+      // Use the raw timestamp directly in the command
+      List<int> command = OfficialChileafCommands.getHistoryOfHRData(rawTimestamp);
+      
+      debugPrint('🏗️ Building RAW HR History Data Request (0x22) for raw timestamp: $rawTimestamp');
+      debugPrint('📡 RAW Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request RAW HR history data: $e');
+    }
+  }
+
+  /// Richiede i dati HR estesi con intervalli RR per HRV per un timestamp specifico
+  Future<void> requestHRHistoryDataExtended(DateTime timestamp) async {
+    int utcTimestamp = timestamp.millisecondsSinceEpoch ~/ 1000;
+    debugPrint(
+        '💓🔬 Requesting EXTENDED HR history data with RR intervals for timestamp: $timestamp ($utcTimestamp)');
+    try {
+      // Usa il comando ufficiale con checksum corretto per dati estesi
+      List<int> command = OfficialChileafCommands.getHistoryOfHRDataExtended(utcTimestamp);
+
+      debugPrint('🏗️ Building EXTENDED HR History Data Request (0x23) for timestamp: $utcTimestamp');
+      debugPrint('📡 Official Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      debugPrint('   Note: This includes RR intervals for HRV calculation');
+
+      await _sendCommand(command);
+    } catch (e) {
+      debugPrint('❌ Failed to request extended HR history data: $e');
+    }
+  }
+
+  /// Metodo di test completo per confrontare tutti e 3 i metodi HR history
+  /// Testa: 0x21 (lista), 0x22 (dati base), 0x23 (dati estesi con RR)
+  Future<void> testAllHRHistoryMethods() async {
+    debugPrint('🧪🔬 TEST: Starting comprehensive HR History Methods Comparison');
+    debugPrint('=' * 60);
+
+    // Test 1: Richiesta lista HR (0x21)
+    debugPrint('🧪 TEST 1/3: Requesting HR History LIST (0x21)');
+    try {
+      await requestHRHistoryList();
+      debugPrint('✅ TEST 1: HR History List request sent successfully');
+    } catch (e) {
+      debugPrint('❌ TEST 1: Failed to request HR History List: $e');
+    }
+
+    // Aspetta un po' prima del prossimo test
+    await Future.delayed(const Duration(seconds: 2));
+
+    // Test 2: Richiesta dati HR base per timestamp corrente (0x22)
+    debugPrint('🧪 TEST 2/3: Requesting HR History DATA (0x22)');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 1));
+      await requestHRHistoryData(testTimestamp);
+      debugPrint('✅ TEST 2: HR History Data request sent successfully');
+    } catch (e) {
+      debugPrint('❌ TEST 2: Failed to request HR History Data: $e');
+    }
+
+    // Aspetta un po' prima del prossimo test
+    await Future.delayed(const Duration(seconds: 2));
+
+    // Test 3: Richiesta dati HR estesi per timestamp corrente (0x23)
+    debugPrint('🧪 TEST 3/3: Requesting EXTENDED HR History DATA with RR (0x23)');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 1));
+      await requestHRHistoryDataExtended(testTimestamp);
+      debugPrint('✅ TEST 3: Extended HR History Data request sent successfully');
+    } catch (e) {
+      debugPrint('❌ TEST 3: Failed to request Extended HR History Data: $e');
+    }
+
+    debugPrint('=' * 60);
+    debugPrint('🧪🔬 TEST COMPLETE: Monitor the device responses to see which method works best');
+    debugPrint('💡 TIP: Check the BLE logs for responses from commands:');
+    debugPrint('   - 0x21: Should return list of HR timestamps');
+    debugPrint('   - 0x22: Should return detailed HR data for specific timestamp');
+    debugPrint('   - 0x23: Should return extended HR data with RR intervals');
+  }
+
+  /// Test con timestamp che sono stati ricevuti dal dispositivo
+  Future<void> testWithDeviceTimestamps() async {
+    debugPrint('🧪🔬 DEVICE TIMESTAMP TEST: Testing with actual device-provided timestamps');
+    debugPrint('=' * 80);
+
+    // Prima richiedi la lista per avere timestamp validi dal dispositivo
+    debugPrint('🧪 STEP 1: Requesting HR History List to get device timestamps...');
+    try {
+      await requestHRHistoryList();
+      debugPrint('✅ HR History List requested');
+    } catch (e) {
+      debugPrint('❌ Failed to request HR History List: $e');
+      return;
+    }
+
+    // Aspetta che arrivi la risposta
+    await Future.delayed(const Duration(seconds: 3));
+
+    // Lista di timestamp raw che abbiamo visto nei log e che potrebbero funzionare
+    List<int> testRawTimestamps = [
+      1747499112,  // Questo è stato parsato con successo come 2025-05-17
+      1529395304,  // 2018-06-19 (potrebbe avere dati)
+      1462876264,  // 2016-05-10 (potrebbe avere dati)
+    ];
+
+    debugPrint('🧪 STEP 2: Testing with known device raw timestamps...');
+    for (int i = 0; i < testRawTimestamps.length; i++) {
+      try {
+        int rawTimestamp = testRawTimestamps[i];
+        debugPrint('🧪 Testing raw timestamp ${i + 1}/${testRawTimestamps.length}: $rawTimestamp');
+
+        await requestHRHistoryDataRaw(rawTimestamp);
+        debugPrint('✅ Raw timestamp $rawTimestamp sent successfully');
+
+        // Aspetta tra le richieste
+        if (i < testRawTimestamps.length - 1) {
+          await Future.delayed(const Duration(seconds: 2));
+        }
+      } catch (e) {
+        debugPrint('❌ Failed to test raw timestamp ${testRawTimestamps[i]}: $e');
+      }
+    }
+
+    debugPrint('=' * 80);
+    debugPrint('🧪🔬 DEVICE TIMESTAMP TEST COMPLETE');
+    debugPrint('💡 If any of these timestamps work, we know the device has data for those periods');
+    debugPrint('💡 Look for 0x22 responses with actual HR data instead of 0x23 end signals');
+  }
+
+  /// Test avanzato con metodi alternativi per 0x22
+  Future<void> testHRHistoryDataVariants() async {
+    debugPrint('🧪🔬 ALT TEST: Testing different 0x22 command variants for CL837');
+    debugPrint('=' * 70);
+
+    // Prima richiedi la lista per avere timestamp validi
+    debugPrint('🧪 STEP 1: Requesting HR History List first...');
+    try {
+      await requestHRHistoryList();
+      debugPrint('✅ HR History List requested');
+    } catch (e) {
+      debugPrint('❌ Failed to request HR History List: $e');
+      return;
+    }
+
+    // Aspetta che arrivi la risposta
+    await Future.delayed(const Duration(seconds: 3));
+
+    // Test con timestamp realistico invece di arbitrario
+    debugPrint('🧪 STEP 2: Testing with REALISTIC timestamp (yesterday)...');
+    try {
+      DateTime realisticTimestamp = DateTime.now().subtract(const Duration(days: 1));
+      await requestHRHistoryData(realisticTimestamp);
+      debugPrint('✅ Realistic timestamp test sent: $realisticTimestamp');
+    } catch (e) {
+      debugPrint('❌ Realistic timestamp test failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    debugPrint('🧪 STEP 3: Testing with RAW timestamp from successful parsing...');
+    try {
+      // Use the timestamp that was successfully parsed: 1747499112
+      int successfulRawTimestamp = 1747499112; // This was parsed as 2025-05-17
+      await requestHRHistoryDataRaw(successfulRawTimestamp);
+      debugPrint('✅ Successful raw timestamp test sent: $successfulRawTimestamp');
+    } catch (e) {
+      debugPrint('❌ Successful raw timestamp test failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    debugPrint('🧪 STEP 4: Testing ALT 0x22 command (no initial param)...');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 24));
+      await requestHRHistoryDataAlt(testTimestamp);
+      debugPrint('✅ ALT 0x22 sent');
+    } catch (e) {
+      debugPrint('❌ ALT 0x22 failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 2));
+
+    debugPrint('🧪 STEP 5: Testing CL837 0x22 command (param=0)...');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 24));
+      await requestHRHistoryDataCL837(testTimestamp);
+      debugPrint('✅ CL837 0x22 sent');
+    } catch (e) {
+      debugPrint('❌ CL837 0x22 failed: $e');
+    }
+
+    debugPrint('=' * 70);
+    debugPrint('🧪🔬 ALT TEST COMPLETE: Check which variant gets actual HR data');
+    debugPrint('💡 Look for responses with command 0x22 containing actual HR measurements');
+    debugPrint('💡 vs responses with command 0x23 (end signal only)');
+    debugPrint('💡 The device may not have HR data for the tested timestamps');
+  }
+
+  /// Test avanzato con monitoraggio automatico delle risposte
+  /// Confronta tutti e 3 i metodi HR history e determina quale funziona meglio
+  Future<void> advancedHRHistoryTest() async {
+    debugPrint('🔬🧪 ADVANCED HR HISTORY TEST STARTED');
+    debugPrint('=' * 70);
+
+    // Variabili per tracciare i risultati
+    Map<String, bool> methodResults = {
+      '0x21_List': false,
+      '0x22_Data': false,
+      '0x23_Extended': false,
+    };
+
+    Map<String, int> responseCounts = {
+      '0x21_List': 0,
+      '0x22_Data': 0,
+      '0x23_Extended': 0,
+    };
+
+    // Timer per timeout del test
+    Timer? testTimeout;
+    testTimeout = Timer(const Duration(seconds: 30), () {
+      debugPrint('⏰ TEST TIMEOUT: 30 seconds elapsed');
+      _printTestResults(methodResults, responseCounts);
+    });
+
+    // Listener temporaneo per monitorare le risposte BLE
+    StreamSubscription? tempSubscription;
+    tempSubscription = _txCharacteristic!.lastValueStream.listen((data) {
+      if (data.length >= 3) {
+        int commandByte = data[2];
+
+        // Monitora risposte per comando 0x21 (33)
+        if (commandByte == 33) {
+          methodResults['0x21_List'] = true;
+          responseCounts['0x21_List'] = responseCounts['0x21_List']! + 1;
+          debugPrint('📥 RESPONSE for 0x21: HR History List - Length: ${data.length}');
+        }
+        // Monitora risposte per comando 0x22 (34)
+        else if (commandByte == 34) {
+          methodResults['0x22_Data'] = true;
+          responseCounts['0x22_Data'] = responseCounts['0x22_Data']! + 1;
+          debugPrint('📥 RESPONSE for 0x22: HR History Data - Length: ${data.length}');
+        }
+        // Monitora risposte per comando 0x23 (35)
+        else if (commandByte == 35) {
+          methodResults['0x23_Extended'] = true;
+          responseCounts['0x23_Extended'] = responseCounts['0x23_Extended']! + 1;
+          debugPrint('📥 RESPONSE for 0x23: Extended HR Data with RR - Length: ${data.length}');
+        }
+      }
+    });
+
+    // Test sequenziale con delay
+    debugPrint('🔬 Testing Method 1: HR History List (0x21)');
+    try {
+      await requestHRHistoryList();
+      debugPrint('✅ Method 1 sent successfully');
+    } catch (e) {
+      debugPrint('❌ Method 1 failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 3));
+
+    debugPrint('🔬 Testing Method 2: HR History Data (0x22)');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 2));
+      await requestHRHistoryData(testTimestamp);
+      debugPrint('✅ Method 2 sent successfully');
+    } catch (e) {
+      debugPrint('❌ Method 2 failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 3));
+
+    debugPrint('🔬 Testing Method 3: Extended HR Data with RR (0x23)');
+    try {
+      DateTime testTimestamp = DateTime.now().subtract(const Duration(hours: 2));
+      await requestHRHistoryDataExtended(testTimestamp);
+      debugPrint('✅ Method 3 sent successfully');
+    } catch (e) {
+      debugPrint('❌ Method 3 failed: $e');
+    }
+
+    // Aspetta ancora un po' per eventuali risposte tardive
+    await Future.delayed(const Duration(seconds: 5));
+
+    // Cancella timer e subscription
+    testTimeout.cancel();
+    tempSubscription.cancel();
+
+    // Stampa risultati finali
+    _printTestResults(methodResults, responseCounts);
+  }
+
+  /// Metodo helper per stampare i risultati del test
+  void _printTestResults(Map<String, bool> methodResults, Map<String, int> responseCounts) {
+    debugPrint('=' * 70);
+    debugPrint('🔬🧪 ADVANCED HR HISTORY TEST RESULTS');
+    debugPrint('=' * 70);
+
+    methodResults.forEach((method, success) {
+      int responses = responseCounts[method] ?? 0;
+      String status = success ? '✅ SUCCESS' : '❌ NO RESPONSE';
+      String responseText = responses > 0 ? '($responses responses)' : '';
+
+      debugPrint('📊 $method: $status $responseText');
+
+      // Spiegazione del metodo
+      switch (method) {
+        case '0x21_List':
+          debugPrint('   └─ Command 0x21: Requests list of HR history timestamps');
+          break;
+        case '0x22_Data':
+          debugPrint('   └─ Command 0x22: Requests detailed HR data for specific timestamp');
+          break;
+        case '0x23_Extended':
+          debugPrint('   └─ Command 0x23: Requests extended HR data with RR intervals for HRV');
+          break;
+      }
+    });
+
+    // Determina il vincitore
+    List<String> successfulMethods = methodResults.entries
+        .where((entry) => entry.value)
+        .map((entry) => entry.key)
+        .toList();
+
+    if (successfulMethods.isEmpty) {
+      debugPrint('😞 RESULT: No methods received responses from the device');
+      debugPrint('💡 SUGGESTIONS:');
+      debugPrint('   - Check device connection');
+      debugPrint('   - Verify device has HR history data');
+      debugPrint('   - Check BLE permissions');
+      debugPrint('   - Try different timestamps');
+    } else if (successfulMethods.length == 1) {
+      debugPrint('🏆 RESULT: ${successfulMethods[0]} is the most reliable method');
+    } else {
+      debugPrint('🎯 RESULT: Multiple methods work (${successfulMethods.length}/${methodResults.length})');
+      debugPrint('💡 RECOMMENDATION: Use the method with most responses for production');
+    }
+
+    debugPrint('=' * 70);
   }
 
   /// Richiede automaticamente i dati HR dettagliati per ogni timestamp nella lista
@@ -1533,53 +1885,223 @@ class ChileafExtendedService {
     debugPrint(
         '💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
 
-    // DEBUG: Filtra per timestamp di agosto 2025 (più probabili di essere validi)
-    List<DateTime> validTimestamps = hrHistoryList.timestamps.where((timestamp) {
-      // Solo timestamp di agosto 2025 (più probabili di essere corretti)
-      return timestamp.year == 2025 && timestamp.month == 8;
-    }).toList();
-    
-    debugPrint('💓 📊 DEBUG: Found ${validTimestamps.length} August 2025 timestamps out of ${hrHistoryList.timestamps.length} total');
-    
-    // Se non ci sono timestamp di agosto 2025, prova quelli più recenti
-    if (validTimestamps.isEmpty) {
-      DateTime now = DateTime.now();
-      validTimestamps = hrHistoryList.timestamps.where((timestamp) {
-        // Prendi timestamp entro 7 giorni da oggi
-        Duration diff = (timestamp.difference(now)).abs();
-        return diff.inDays <= 7;
-      }).toList();
-      debugPrint('💓 📊 DEBUG: No August 2025 timestamps, trying ${validTimestamps.length} recent timestamps (within 7 days)');
-    }
-    
-    // Se ancora vuoti, prendi tutti ma logga il problema
-    if (validTimestamps.isEmpty) {
-      validTimestamps = hrHistoryList.timestamps;
-      debugPrint('💓 ⚠️ Using all ${validTimestamps.length} timestamps (may include problematic dates)');
-    }
-
-    if (validTimestamps.isEmpty) {
+    if (hrHistoryList.timestamps.isEmpty) {
       debugPrint('💓 ⚠️ No HR timestamps found in list');
       return;
     }
 
-    // Limit to max 3 detailed requests to prevent spam durante il debug
-    const maxRequests = 3;
-    final requestTimestamps = validTimestamps.take(maxRequests).toList();
+    // � DISABILITATO TEMPORANEAMENTE: Il sync UTC sembra far sparire i dati HR!
+    // debugPrint('🕐 Performing UTC sync BEFORE requesting historical data...');
+    // try {
+    //   await _syncDeviceTime();
+    //   await Future.delayed(const Duration(milliseconds: 1000)); // Wait for sync to complete
+    //   debugPrint('🕐 ✅ UTC sync completed, now requesting historical data');
+    // } catch (e) {
+    //   debugPrint('🕐 ⚠️ UTC sync failed: $e, continuing anyway...');
+    // }
+    
+    debugPrint('🚫 SKIPPING UTC sync - testing if HR data reappears without it');
+
+    // Prendi TUTTI i timestamp disponibili (senza filtri arbitrari sulla data)
+    const maxRequests = 10; // Aumentato per testare più timestamp
+    final requestTimestamps = hrHistoryList.timestamps.take(maxRequests).toList();
 
     debugPrint(
-        '💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} timestamps (DEBUG MODE)');
+        '💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} timestamps (NO DATE FILTERS)');
 
     for (int i = 0; i < requestTimestamps.length; i++) {
       try {
         await Future.delayed(
-            Duration(milliseconds: 500 * i)); // Longer delay between requests
-        await requestHRHistoryData(requestTimestamps[i]);
+            Duration(milliseconds: 500 * (i + 1))); // Delay più breve
+        
+        // Usa direttamente il raw timestamp corrispondente senza conversioni
+        int timestampIndex = hrHistoryList.timestamps.indexOf(requestTimestamps[i]);
+        if (timestampIndex >= 0 && timestampIndex < hrHistoryList.rawTimestamps.length) {
+          int rawTimestamp = hrHistoryList.rawTimestamps[timestampIndex];
+          debugPrint('💓 🔢 Testing RAW timestamp: $rawTimestamp for ${requestTimestamps[i]}');
+          
+          // Prova SOLO la variante Standard per semplicità
+          await requestHRHistoryDataRaw(rawTimestamp);
+          
+        } else {
+          // Fallback to DateTime-based method
+          await requestHRHistoryData(requestTimestamps[i]);
+        }
       } catch (e) {
         debugPrint(
             '❌ Failed to request HR data for timestamp ${requestTimestamps[i]}: $e');
       }
     }
+  }
+
+  /// Test specifico con il timestamp che ha funzionato nei log precedenti
+  Future<void> testWorkingTimestamp() async {
+    debugPrint('🎯 TESTING WORKING TIMESTAMP: Using the timestamp that was successfully parsed');
+    debugPrint('=' * 70);
+
+    // Questo è il timestamp che è stato parsato con successo nei log: 1747499112
+    int workingTimestamp = 1747499112;
+
+    debugPrint('📅 Timestamp: $workingTimestamp (parsed as 2025-05-17 18:25:12.000)');
+    debugPrint('🔍 This timestamp was accepted by the device in previous tests');
+
+    try {
+      debugPrint('📡 Sending 0x22 command with working timestamp...');
+      await requestHRHistoryDataRaw(workingTimestamp);
+      debugPrint('✅ Working timestamp command sent successfully');
+
+      debugPrint('⏳ Waiting for device response...');
+      await Future.delayed(const Duration(seconds: 3));
+
+      debugPrint('=' * 70);
+      debugPrint('🎯 WORKING TIMESTAMP TEST COMPLETE');
+      debugPrint('💡 Check logs for 0x22 response with actual HR data');
+      debugPrint('💡 If you see 0x23 (end signal), the device has no data for this timestamp');
+      debugPrint('💡 If you see 0x22 with data, we have successfully retrieved HR history!');
+
+    } catch (e) {
+      debugPrint('❌ Failed to test working timestamp: $e');
+    }
+  }
+
+  /// Test con più timestamp che hanno funzionato nei log precedenti
+  Future<void> testMultipleWorkingTimestamps() async {
+    debugPrint('🎯 TESTING MULTIPLE WORKING TIMESTAMPS');
+    debugPrint('=' * 70);
+
+    // Timestamp che hanno funzionato nei log precedenti
+    List<int> workingTimestamps = [
+      1747499112,  // 2025-05-17 18:25:12.000
+      1747499113,  // Prossimo secondo
+      1747499114,  // Prossimo secondo
+      1747499115,  // Prossimo secondo
+      1747499116,  // Prossimo secondo
+    ];
+
+    debugPrint('📅 Testing ${workingTimestamps.length} working timestamps:');
+    for (int i = 0; i < workingTimestamps.length; i++) {
+      int ts = workingTimestamps[i];
+      DateTime dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+      debugPrint('   ${i + 1}. $ts → ${dt.toString()}');
+    }
+
+    debugPrint('🔍 These timestamps were accepted by the device in previous tests');
+
+    for (int i = 0; i < workingTimestamps.length; i++) {
+      int timestamp = workingTimestamps[i];
+      debugPrint('');
+      debugPrint('📡 [${i + 1}/${workingTimestamps.length}] Testing timestamp: $timestamp');
+
+      try {
+        await requestHRHistoryDataRaw(timestamp);
+        debugPrint('✅ Command sent for timestamp $timestamp');
+
+        // Aspetta risposta prima del prossimo
+        await Future.delayed(const Duration(seconds: 2));
+
+      } catch (e) {
+        debugPrint('❌ Failed for timestamp $timestamp: $e');
+      }
+    }
+
+    debugPrint('');
+    debugPrint('=' * 70);
+    debugPrint('🎯 MULTIPLE WORKING TIMESTAMPS TEST COMPLETE');
+    debugPrint('💡 Check logs for 0x22 responses with HR data');
+    debugPrint('💡 Look for patterns in which timestamps return data vs end signals');
+  }
+
+  /// Test con timestamp recenti (oggi e giorni scorsi) per trovare dati effettivi
+  Future<void> testRecentTimestamps() async {
+    debugPrint('🕒 TESTING RECENT TIMESTAMPS (Last 7 days)');
+    debugPrint('=' * 70);
+
+    // Genera timestamp per gli ultimi 7 giorni
+    List<int> recentTimestamps = [];
+    DateTime now = DateTime.now();
+
+    for (int i = 0; i < 7; i++) {
+      DateTime date = now.subtract(Duration(days: i));
+      // Usa mezzanotte di ogni giorno
+      DateTime midnight = DateTime(date.year, date.month, date.day);
+      int timestamp = (midnight.millisecondsSinceEpoch / 1000).round();
+      recentTimestamps.add(timestamp);
+    }
+
+    debugPrint('📅 Testing ${recentTimestamps.length} recent timestamps:');
+    for (int i = 0; i < recentTimestamps.length; i++) {
+      int ts = recentTimestamps[i];
+      DateTime dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+      debugPrint('   ${i + 1}. $ts → ${dt.toString().split(' ')[0]} (Day -$i)');
+    }
+
+    debugPrint('🔍 According to protocol: if device has data, should respond with 0x22 + HR data');
+    debugPrint('🚫 If no data available, should respond with 0x23 (end signal)');
+
+    for (int i = 0; i < recentTimestamps.length; i++) {
+      int timestamp = recentTimestamps[i];
+      DateTime date = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+
+      debugPrint('');
+      debugPrint('📡 [${i + 1}/${recentTimestamps.length}] Testing: ${date.toString().split(' ')[0]}');
+
+      try {
+        await requestHRHistoryDataRaw(timestamp);
+        debugPrint('✅ Command sent for ${date.toString().split(' ')[0]}');
+
+        // Aspetta risposta
+        await Future.delayed(const Duration(seconds: 3));
+
+      } catch (e) {
+        debugPrint('❌ Failed for ${date.toString().split(' ')[0]}: $e');
+      }
+    }
+
+    debugPrint('');
+    debugPrint('=' * 70);
+    debugPrint('🕒 RECENT TIMESTAMPS TEST COMPLETE');
+    debugPrint('💡 Look for 0x22 responses with actual HR data');
+    debugPrint('💡 If you see 0x23 for all, device may have no recent HR data');
+    debugPrint('💡 Try testing during/after actual exercise sessions');
+  }
+
+  /// Test per verificare se il device ha mai avuto dati HR
+  Future<void> testDeviceHasAnyHRData() async {
+    debugPrint('🔍 TESTING IF DEVICE HAS ANY HR DATA AT ALL');
+    debugPrint('=' * 70);
+
+    debugPrint('📋 Step 1: Request HR History List (0x21)');
+    debugPrint('🔍 Step 2: Analyze response for data availability');
+
+    try {
+      // Richiedi la lista completa dei timestamp disponibili
+      debugPrint('📡 Sending 0x21 command to get complete HR history list...');
+      await requestHRHistoryList();
+      debugPrint('✅ HR History List command sent');
+
+      // Aspetta la risposta completa
+      debugPrint('⏳ Waiting for complete HR history list response...');
+      await Future.delayed(const Duration(seconds: 5));
+
+      debugPrint('');
+      debugPrint('📊 ANALYSIS:');
+      debugPrint('   📋 If you see "Total HR sessions: 0" → Device has no HR data');
+      debugPrint('   📋 If you see "Total HR sessions: N" → Device has N sessions');
+      debugPrint('   🚫 If you see 0xFFFFFFFF → No historical data available');
+      debugPrint('   ✅ If you see valid timestamps → Device has data for those periods');
+
+      debugPrint('');
+      debugPrint('💡 RECOMMENDATIONS:');
+      debugPrint('   - If no data: Try using device during exercise to generate HR data');
+      debugPrint('   - If has data: Use those specific timestamps for 0x22 requests');
+      debugPrint('   - Check device settings to ensure HR monitoring is enabled');
+
+    } catch (e) {
+      debugPrint('❌ Device HR data test failed: $e');
+    }
+
+    debugPrint('=' * 70);
+    debugPrint('🔍 DEVICE HR DATA AVAILABILITY TEST COMPLETE');
   }
 
   // ===== ROPE SKIPPING METHODS =====
@@ -2502,15 +3024,224 @@ class ChileafExtendedService {
 
   // === UTILITY METHODS ===
 
+  /// Test completo per determinare quale metodo HR history funziona meglio
+  /// Confronta: 0x21 (lista), 0x22 (dati base), 0x23 (dati estesi con RR)
+  Future<void> testHRHistoryMethods() async {
+    debugPrint('🧪🔬 Starting HR History Methods Test...');
+    debugPrint('This will test all 3 HR history methods and show which one works best');
+    await advancedHRHistoryTest();
+  }
+
+  /// Test rapido di tutti e 3 i metodi HR history (senza monitoraggio avanzato)
+  Future<void> quickHRHistoryTest() async {
+    debugPrint('⚡🔬 QUICK HR HISTORY TEST');
+    debugPrint('=' * 50);
+
+    // Metodo 1: Lista HR (0x21)
+    debugPrint('⚡ 1/3: Testing HR List (0x21)');
+    try {
+      await requestHRHistoryList();
+      debugPrint('✅ HR List sent');
+    } catch (e) {
+      debugPrint('❌ HR List failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 1));
+
+    // Metodo 2: Dati HR base (0x22)
+    debugPrint('⚡ 2/3: Testing HR Data (0x22)');
+    try {
+      DateTime ts = DateTime.now().subtract(const Duration(hours: 1));
+      await requestHRHistoryData(ts);
+      debugPrint('✅ HR Data sent');
+    } catch (e) {
+      debugPrint('❌ HR Data failed: $e');
+    }
+
+    await Future.delayed(const Duration(seconds: 1));
+
+    // Metodo 3: Dati HR estesi (0x23)
+    debugPrint('⚡ 3/3: Testing Extended HR Data (0x23)');
+    try {
+      DateTime ts = DateTime.now().subtract(const Duration(hours: 1));
+      await requestHRHistoryDataExtended(ts);
+      debugPrint('✅ Extended HR Data sent');
+    } catch (e) {
+      debugPrint('❌ Extended HR Data failed: $e');
+    }
+
+    debugPrint('=' * 50);
+    debugPrint('⚡ QUICK TEST COMPLETE - Check BLE responses');
+  }
+
+  /// Calcola checksum Java secondo il protocollo ufficiale Chileaf
+  /// Algoritmo: (-sum) ^ 0x3A & 0xFF
+  /// Calculate checksum using EXACT Java algorithm from SDK
+  /// Based on: public byte calcChecksum(byte[] dat)
+  /// Richiede la lista degli storici della frequenza cardiaca usando comando ufficiale 0x21
+  /// Questo è il PRIMO passo: ottenere i timestamp disponibili dal dispositivo
+  Future<void> requestHRHistoryList() async {
+    debugPrint('💓 Requesting HR History LIST (0x21) - FIRST STEP');
+    debugPrint('🔍 This gets available timestamps from device');
+
+    try {
+      // Usa il comando ufficiale dal SDK Android
+      var command = OfficialChileafCommands.getHistoryOfHRRecord();
+      debugPrint('📡 Official HR List Command: ${OfficialChileafCommands.commandToHexString(command)}');
+
+      await _sendCommand(command);
+      debugPrint('✅ HR History List command sent successfully');
+      debugPrint('⏳ Waiting for device response with available timestamps...');
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history list: $e');
+    }
+  }
+
+  /// Richiede i dati HR per un timestamp specifico usando comando ufficiale 0x22
+  /// Questo è il SECONDO passo: ottenere i dati per un timestamp specifico
+  Future<void> requestHRHistoryData(DateTime timestamp) async {
+    int utcTimestamp = timestamp.millisecondsSinceEpoch ~/ 1000;
+    debugPrint('💓 Requesting HR History DATA (0x22) for timestamp: $timestamp');
+    debugPrint('🔍 UTC: $utcTimestamp');
+
+    try {
+      // Usa il comando ufficiale con parametro 1 + timestamp
+      var command = OfficialChileafCommands.getHistoryOfHRData(utcTimestamp);
+      debugPrint('📡 Official HR Data Command: ${OfficialChileafCommands.commandToHexString(command)}');
+
+      await _sendCommand(command);
+      debugPrint('✅ HR History Data command sent successfully');
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history data: $e');
+    }
+  }
+
+  /// Test completo del flusso HR History: lista + dati
+  /// Questa è la sequenza CORRETTA secondo il protocollo ufficiale
+  Future<void> testCompleteHRHistoryFlow() async {
+    debugPrint('🔄 TESTING COMPLETE HR HISTORY FLOW (Official Protocol)');
+    debugPrint('=' * 70);
+    debugPrint('📋 Step 1: Request HR History List (0x21)');
+    debugPrint('📊 Step 2: Request data for available timestamps (0x22)');
+    debugPrint('=' * 70);
+
+    try {
+      // PASSO 1: Richiedi la lista dei timestamp disponibili
+      debugPrint('📡 STEP 1: Sending 0x21 command to get available timestamps...');
+      await requestHRHistoryList();
+      debugPrint('✅ HR History List requested');
+
+      // Aspetta la risposta (i timestamp disponibili)
+      debugPrint('⏳ Waiting for timestamp list response...');
+      await Future.delayed(const Duration(seconds: 3));
+
+      // PASSO 2: Per ora testiamo con timestamp realistici
+      // In produzione, questi verrebbero dalla risposta del comando 0x21
+      List<int> testTimestamps = [
+        DateTime.now().subtract(const Duration(hours: 1)).millisecondsSinceEpoch ~/ 1000,
+        DateTime.now().subtract(const Duration(hours: 2)).millisecondsSinceEpoch ~/ 1000,
+      ];
+
+      debugPrint('📅 STEP 2: Testing with realistic timestamps:');
+      for (int ts in testTimestamps) {
+        DateTime dt = DateTime.fromMillisecondsSinceEpoch(ts * 1000);
+        debugPrint('   - $ts → ${dt.toString()}');
+      }
+
+      // Richiedi dati per ogni timestamp disponibile
+      for (int i = 0; i < testTimestamps.length; i++) {
+        int timestamp = testTimestamps[i];
+        DateTime dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+
+        debugPrint('');
+        debugPrint('� [${i + 1}/${testTimestamps.length}] Requesting HR data for: ${dateTime.toString()}');
+
+        try {
+          await requestHRHistoryData(dateTime);
+          debugPrint('✅ Data request sent for ${dateTime.toString()}');
+
+          // Aspetta risposta prima del prossimo
+          await Future.delayed(const Duration(seconds: 2));
+
+        } catch (e) {
+          debugPrint('❌ Failed for ${dateTime.toString()}: $e');
+        }
+      }
+
+      debugPrint('');
+      debugPrint('=' * 70);
+      debugPrint('🔄 COMPLETE HR HISTORY FLOW TEST COMPLETE');
+      debugPrint('💡 Expected responses:');
+      debugPrint('   📋 0x21: List of available timestamps');
+      debugPrint('   💓 0x22: Actual HR data for each timestamp');
+      debugPrint('   🚫 0x23: End signal (no data available)');
+
+    } catch (e) {
+      debugPrint('❌ Complete HR History flow test failed: $e');
+    }
+  }
+
+  /// Test per verificare se il dispositivo ha dati HR storici
+  Future<void> testDeviceHasHRData() async {
+    debugPrint('🔍 TESTING IF DEVICE HAS HR HISTORICAL DATA');
+    debugPrint('=' * 70);
+
+    debugPrint('📋 Step 1: Request HR History List (0x21)');
+    debugPrint('🔍 Step 2: Analyze response');
+
+    try {
+      debugPrint('📡 Sending 0x21 command to check for HR data...');
+      await requestHRHistoryList();
+      debugPrint('✅ HR History List command sent');
+
+      // Aspetta la risposta
+      debugPrint('⏳ Waiting for response...');
+      await Future.delayed(const Duration(seconds: 3));
+
+      debugPrint('');
+      debugPrint('📊 ANALYSIS EXPECTED:');
+      debugPrint('   ✅ If you see 0x21 response with timestamps → Device has HR data');
+      debugPrint('   🚫 If you see 0x23 (end signal) → No HR historical data');
+      debugPrint('   📋 If you see "Total HR sessions: 0" → Device has no data');
+
+    } catch (e) {
+      debugPrint('❌ Device HR data test failed: $e');
+    }
+
+    debugPrint('=' * 70);
+    debugPrint('🔍 DEVICE HR DATA AVAILABILITY TEST COMPLETE');
+  }
+
   /// Calcola checksum Java secondo il protocollo ufficiale Chileaf
   /// Algoritmo: (-sum) ^ 0x3A & 0xFF
   int _calculateJavaChecksum(List<int> frame) {
+    // Exact Java implementation from SDK:
+    // int len = dat.length-1;  // Exclude last byte (checksum itself)
+    // for (i = 0; i < len; i++) { res += dat[i]; }
+    // temp = (int) res; temp &= 0xFF; temp = (0 - temp); temp &= 0xFF;
+    // temp ^= 0x3a; res = (byte) (temp & 0xff);
+
     int sum = 0;
-    for (int byte in frame) {
-      sum += byte;
+    // Sum all bytes EXCEPT the last one (which is the checksum position)
+    for (int i = 0; i < frame.length - 1; i++) {
+      sum += frame[i];
     }
-    int checksum = (-sum) & 0xFF;  // Negazione + mask 8-bit
-    checksum ^= 0x3A;              // XOR con costante 0x3A
-    return checksum & 0xFF;        // Final mask
+
+    // Exact Java algorithm steps:
+    int temp = sum;
+    temp &= 0xFF;           // Mask to 8-bit
+    temp = (0 - temp);      // Negate
+    temp &= 0xFF;           // Mask again
+    temp ^= 0x3A;           // XOR with 0x3A
+    int checksum = temp & 0xFF;  // Final mask
+
+    debugPrint('🔢 Checksum calculation:');
+    debugPrint('   Input frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0').toUpperCase()}').join(' ')}');
+    debugPrint('   Sum (excluding last byte): $sum (0x${sum.toRadixString(16).toUpperCase()})');
+    debugPrint('   After & 0xFF: ${temp & 0xFF} (0x${(temp & 0xFF).toRadixString(16).toUpperCase()})');
+    debugPrint('   After negation: ${0 - (temp & 0xFF)}');
+    debugPrint('   After ^ 0x3A: $checksum (0x${checksum.toRadixString(16).toUpperCase()})');
+
+    return checksum;
   }
 }

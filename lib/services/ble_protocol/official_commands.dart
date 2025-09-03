@@ -104,6 +104,19 @@ class OfficialChileafCommands {
     return buildOfficialCommand(0x22, params);
   }
 
+  /// Versione alternativa del comando 0x22 per CL837 - prova senza parametro iniziale
+  static List<int> getHistoryOfHRDataAlt(int timestamp) {
+    // Prova senza il parametro '1' iniziale - potrebbe essere diverso per CL837
+    return buildOfficialCommand(0x22, utcToBytes(timestamp));
+  }
+
+  /// Versione con parametro diverso per CL837
+  static List<int> getHistoryOfHRDataCL837(int timestamp) {
+    List<int> params = [0]; // Prova con 0 invece di 1
+    params.addAll(utcToBytes(timestamp));
+    return buildOfficialCommand(0x22, params);
+  }
+
   /// Richiede dati HR estesi con intervalli RR (0x23 = 35 nel SDK)
   /// Equivalente a getHistoryOfHRDataExtended(long stamp) nel WearManager.java
   static List<int> getHistoryOfHRDataExtended(int timestamp) {
@@ -194,6 +207,13 @@ class OfficialChileafCommands {
   /// Equivalente a setHeartRateAlarm(boolean alarm) nel WearManager.java
   static List<int> setHeartRateAlarm(bool alarm) {
     return buildOfficialCommand(0x57, [alarm ? 1 : 0]);
+  }
+
+  /// Imposta modalità allarme HR (0x58 = 88 nel SDK)
+  /// Equivalente a setHeartRateAlarmMode(boolean ageBasedMode) nel WearManager.java
+  /// ageBasedMode: true = calcolo basato sull'età, false = limiti manuali
+  static List<int> setHeartRateAlarmMode(bool ageBasedMode) {
+    return buildOfficialCommand(0x58, [ageBasedMode ? 1 : 0]);
   }
 
   /// Richiede allarme HR (0x5B = 91 nel SDK)
