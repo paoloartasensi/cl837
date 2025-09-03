@@ -1,9 +1,6 @@
 // ignore_for_file: empty_catches
 
-import 'dart:typed_data';
-
 import 'ble_protocol/official_commands.dart';
-import 'data_processors/enhanced_historical_data_processor.dart';
 
 /// Servizio ottimizzato per il recupero dei dati storici dal dispositivo CL837
 /// Utilizza l'algoritmo checksum Java corretto per massima affidabilità
@@ -162,23 +159,6 @@ class HistoricalDataService {
       
     } catch (e) {
     }
-  }
-
-  /// Parse i dati ricevuti usando i parser enhanced (chiamato dai processori dati)
-  static List<ExerciseHistoryEntry> parseReceivedExerciseData(Uint8List data) {
-    return EnhancedHistoricalDataProcessor.parseSportHistory(data);
-  }
-
-  static List<SleepHistoryEntry> parseReceivedSleepData(Uint8List data) {
-    return EnhancedHistoricalDataProcessor.parseSleepHistory(data);
-  }
-
-  static List<IntervalStepEntry> parseReceivedIntervalStepsData(Uint8List data) {
-    return EnhancedHistoricalDataProcessor.parseIntervalSteps(data);
-  }
-
-  static List<HeartRateHistoryEntry> parseReceivedHRHistoryList(Uint8List data) {
-    return EnhancedHistoricalDataProcessor.parseHeartRateHistory(data);
   }
 
   /// Recupera dati di sonno storici

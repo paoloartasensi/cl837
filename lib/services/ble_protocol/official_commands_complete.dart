@@ -276,13 +276,29 @@ class OfficialChileafCommands {
     ];
   }
   
-  /// Calcola checksum semplice (somma di tutti i bytes)
+  /// Calcola checksum secondo il protocollo CL831 ufficiale
+  /// Basato sulla documentazione CL831 doc d Sonnet 4.1.md
+  /// 1. Somma tutti i bytes (head/length/command/data) 
+  /// 2. Sottrai da 0 (0 - sum)
+  /// 3. XOR con 0x3a
+  /// 4. Prendi gli 8 bit bassi
   static int _calculateChecksum(List<int> data) {
     int sum = 0;
+    
+    // Step 1: Calcola somma di head/length/command/data (tutti tranne checksum)
     for (int byte in data) {
       sum += byte;
     }
-    return sum & 0xFF;
+    
+    // Step 2: Sottrai da 0 
+    int temp = sum & 0xFF;
+    temp = (0 - temp) & 0xFF;
+    
+    // Step 3: XOR con 0x3a
+    temp ^= 0x3a;
+    
+    // Step 4: Prendi 8-bit bassi
+    return temp & 0xFF;
   }
   
   /// Converte comando in stringa hex per debug

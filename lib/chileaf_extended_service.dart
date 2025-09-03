@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'services/data_processors/historical_data_processor.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -15,16 +16,13 @@ import 'models/device_info.dart';
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
 import 'services/data_processors/temperature_processor.dart';
-import 'services/data_processors/accelerometer_processor.dart';
 import 'services/data_processors/health_processor.dart';
-import 'services/data_processors/historical_data_processor.dart';
 import 'services/historical_data_service.dart';
 import 'services/data_processors/rope_processor.dart';
 import 'services/data_processors/device_info_processor.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
-import 'services/ble_protocol/command_builder.dart';
 import 'services/ble_protocol/official_commands_complete.dart';
 
 /// Servizio principale per la gestione del dispositivo Chileaf Extended
@@ -144,7 +142,6 @@ class ChileafExtendedService {
   }
 
   // Log throttling for high-frequency data
-  int _accelerometerLogCount = 0;
   int _totalDataPackets = 0;
   int _healthDataLogCount = 0;
   int _sportsLogCount = 0;
@@ -165,13 +162,10 @@ class ChileafExtendedService {
       200; // Log health data every 200 occurrences (was 100)
   final int _sportsThrottleInterval =
       500; // Log every 500th sports data (was 50) - MUCH LESS NOISE
-  final int _accelerometerThrottleInterval =
-      500; // Log every 500th accelerometer batch (was 200)
 
   // Data Processors
   late final SpO2Processor _spo2Processor;
   late final TemperatureProcessor _temperatureProcessor;
-  late final AccelerometerProcessor _accelerometerProcessor;
   late final HealthProcessor _healthProcessor;
 
   // Diagnostics
@@ -194,8 +188,6 @@ class ChileafExtendedService {
   // Device info streams
   final StreamController<DeviceInfo> _deviceInfoController =
       StreamController<DeviceInfo>.broadcast();
-  final StreamController<BatteryInfo> _batteryInfoController =
-      StreamController<BatteryInfo>.broadcast();
   final StreamController<String> _firmwareVersionController =
       StreamController<String>.broadcast();
   final StreamController<String> _hardwareVersionController =
@@ -217,7 +209,6 @@ class ChileafExtendedService {
   void _initializeProcessors() {
     _spo2Processor = SpO2Processor();
     _temperatureProcessor = TemperatureProcessor();
-    _accelerometerProcessor = AccelerometerProcessor();
     _healthProcessor = HealthProcessor();
 
     // Initialize historical data service with optimized checksum
@@ -248,7 +239,6 @@ class ChileafExtendedService {
 
   // Device info streams
   Stream<DeviceInfo> get deviceInfoStream => _deviceInfoController.stream;
-  Stream<BatteryInfo> get batteryInfoStream => _batteryInfoController.stream;
   Stream<String> get firmwareVersionStream => _firmwareVersionController.stream;
   Stream<String> get hardwareVersionStream => _hardwareVersionController.stream;
   Stream<String> get deviceNameStream => _deviceNameController.stream;
@@ -256,26 +246,28 @@ class ChileafExtendedService {
 
   Future<void> start(BluetoothDevice device) async {
     try {
-      debugPrint('Starting Chileaf Extended Service...');
+      debugPrint('🚀 Starting ROBUST Chileaf Extended Service for GROK HR...');
       
       // Track connection
       _isConnected = true;
 
-      // Add delay to ensure services are discovered
-      await Future.delayed(const Duration(milliseconds: 2000));
+      // Longer delay to ensure full service discovery
+      debugPrint('⏳ Waiting for complete service discovery...');
+      await Future.delayed(const Duration(milliseconds: 3000));
 
       final services = await device.discoverServices();
-      debugPrint('Extended Service: Found ${services.length} services');
+      debugPrint('📡 Extended Service: Found ${services.length} services');
 
       // Find custom service - more robust matching
       BluetoothService? customService;
       BluetoothService? heartRateService;
 
       for (var service in services) {
-        debugPrint('Service UUID: ${service.uuid}');
+        debugPrint('🔍 Service UUID: ${service.uuid}');
         if (service.uuid.toString().toLowerCase() ==
             _customServiceUuid.toLowerCase()) {
           customService = service;
+          debugPrint('✅ Found CUSTOM service: ${service.uuid}');
         }
         // Look for Heart Rate Service
         if (service.uuid.toString().toLowerCase() ==
@@ -293,10 +285,18 @@ class ChileafExtendedService {
         orElse: () => throw Exception('Custom service not found'),
       );
 
-      debugPrint('Found custom service: ${customService.uuid}');
+      debugPrint('🎯 Using custom service: ${customService.uuid}');
 
-      // Setup characteristics
-      await _setupCharacteristics(customService);
+      // Setup characteristics with extra verification
+      await _setupCharacteristicsRobust(customService, device);
+      
+      // Verify characteristics are properly set
+      if (_txCharacteristic == null || _rxCharacteristic == null) {
+        throw Exception('Failed to setup critical characteristics');
+      }
+      
+      debugPrint('✅ TX Characteristic verified: ${_txCharacteristic!.uuid}');
+      debugPrint('✅ RX Characteristic verified: ${_rxCharacteristic!.uuid}');
       
       // Setup Heart Rate Service if available
       if (heartRateService != null) {
@@ -344,6 +344,70 @@ class ChileafExtendedService {
 
     debugPrint('Found TX: ${_txCharacteristic!.uuid}');
     debugPrint('Found RX: ${_rxCharacteristic!.uuid}');
+  }
+
+  /// Robust setup with additional verification and retry logic
+  Future<void> _setupCharacteristicsRobust(BluetoothService customService, BluetoothDevice device) async {
+    debugPrint('🔧 Setting up characteristics with ROBUST verification...');
+    
+    // Debug: List all characteristics with properties
+    debugPrint('📋 Service has ${customService.characteristics.length} characteristics:');
+    for (var char in customService.characteristics) {
+      final props = char.properties;
+      debugPrint('  - ${char.uuid}');
+      debugPrint('    Properties: notify=${props.notify}, read=${props.read}, write=${props.write}, writeWithoutResponse=${props.writeWithoutResponse}');
+    }
+
+    // Find characteristics with multiple attempts
+    BluetoothCharacteristic? txChar, rxChar;
+    int attempts = 0;
+    const maxAttempts = 3;
+
+    while ((txChar == null || rxChar == null) && attempts < maxAttempts) {
+      attempts++;
+      debugPrint('🔄 Characteristic discovery attempt $attempts/$maxAttempts');
+      
+      for (var char in customService.characteristics) {
+        final charUuid = char.uuid.toString().toLowerCase();
+        if (charUuid == _txCharUuid.toLowerCase()) {
+          txChar = char;
+          debugPrint('✅ Found TX characteristic: ${char.uuid}');
+        } else if (charUuid == _rxCharUuid.toLowerCase()) {
+          rxChar = char;
+          debugPrint('✅ Found RX characteristic: ${char.uuid}');
+        }
+      }
+      
+      if (txChar == null || rxChar == null) {
+        debugPrint('⚠️ Missing characteristics, waiting before retry...');
+        await Future.delayed(const Duration(milliseconds: 1000));
+        
+        // Rediscover service characteristics
+        final services = await device.discoverServices();
+        final refreshedService = services.firstWhere(
+          (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
+        );
+        customService = refreshedService;
+      }
+    }
+
+    if (txChar == null) throw Exception('TX characteristic not found after $maxAttempts attempts');
+    if (rxChar == null) throw Exception('RX characteristic not found after $maxAttempts attempts');
+
+    _txCharacteristic = txChar;
+    _rxCharacteristic = rxChar;
+
+    // Verify properties
+    debugPrint('🔍 Verifying TX properties: ${_txCharacteristic!.properties.notify}');
+    debugPrint('🔍 Verifying RX properties: write=${_rxCharacteristic!.properties.write}, writeWithoutResponse=${_rxCharacteristic!.properties.writeWithoutResponse}');
+    
+    if (!_txCharacteristic!.properties.notify) {
+      debugPrint('⚠️ WARNING: TX characteristic does not support notify');
+    }
+    
+    if (!_rxCharacteristic!.properties.write && !_rxCharacteristic!.properties.writeWithoutResponse) {
+      throw Exception('RX characteristic does not support write operations');
+    }
   }
 
   Future<void> _setupHeartRateService(BluetoothService heartRateService) async {
@@ -510,8 +574,7 @@ class ChileafExtendedService {
       }
 
       // Log frame details ONLY for important commands or errors
-      bool isHighFrequency = command == ChileafProtocol.commandAccelerometer ||
-          command == ChileafProtocol.commandHealthData ||
+      bool isHighFrequency = command == ChileafProtocol.commandHealthData ||
           command == ChileafProtocol.commandSports;
 
       // NEVER log frame details for high frequency data
@@ -540,9 +603,6 @@ class ChileafExtendedService {
     if (command == null) return false;
 
     switch (command) {
-      case ChileafProtocol.commandAccelerometer:
-        _accelerometerLogCount++;
-        return _accelerometerLogCount % _accelerometerThrottleInterval == 0;
       case ChileafProtocol.commandHealthData:
         _healthDataLogCount++;
         return _healthDataLogCount % _healthDataThrottleInterval == 0;
@@ -561,13 +621,6 @@ class ChileafExtendedService {
         var deviceInfo = DeviceInfoProcessor.processDeviceInfo(data);
         if (deviceInfo != null) {
           _deviceInfoController.add(deviceInfo);
-        }
-        break;
-      case 0x02: // Battery Level
-        debugPrint('🔋 BATTERY LEVEL: Processing battery information');
-        var batteryInfo = DeviceInfoProcessor.processBatteryLevel(data);
-        if (batteryInfo != null) {
-          _batteryInfoController.add(batteryInfo);
         }
         break;
       case 0x03: // Firmware Version
@@ -638,21 +691,20 @@ class ChileafExtendedService {
         // SILENTLY process temperature data - no logging
         _temperatureProcessor.processTemperatureData(data);
         break;
-      case ChileafProtocol.commandAccelerometer:
-        // SILENTLY process accelerometer data - no logging
-        _accelerometerProcessor.processAccelerometerData(data);
-        break;
       case ChileafProtocol.commandHealthData:
         // SILENTLY process health data - no logging
         _healthProcessor.processHealthData(data);
+        break;
+      case ChileafProtocol.commandAccelerometer:
+        // SILENTLY ignore accelerometer data - no logging (simplified app focus)
         break;
       case 0x16: // Exercise History
         debugPrint(
             '📊 EXERCISE HISTORY DATA: Processing historical exercise data with OFFICIAL format');
         
-        // Usa l'analyzer di debug per analizzare i dati grezzi
+        // Usa il processore per analizzare i dati grezzi
         var exerciseHistory =
-            HistoricalDataProcessor.analyzeExerciseDataBytes(
+            HistoricalDataProcessor.processExerciseHistory(
                 Uint8List.fromList(data));
         
         if (exerciseHistory.isNotEmpty) {
@@ -681,9 +733,7 @@ class ChileafExtendedService {
             '💓 HR HISTORY DATA: Processing detailed HR historical data');
         var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(
             Uint8List.fromList(data));
-        if (hrHistoryData != null) {
-          _hrHistoryDataController.add(hrHistoryData);
-        }
+        _hrHistoryDataController.add(hrHistoryData);
         break;
       case 0x23: // HR History End Signal
         debugPrint(
@@ -1168,13 +1218,135 @@ class ChileafExtendedService {
   bool get isBloodOxygenMeasurementPaused => _spo2MeasurementPaused;
   String? get lastBloodOxygenValue => _lastSpO2Value;
 
+  // ===== CONNECTION MANAGEMENT =====
+
+  /// Ripristina solo la caratteristica RX quando si perde
+  Future<bool> _restoreRxCharacteristic() async {
+    try {
+      if (_txCharacteristic == null) {
+        debugPrint('❌ TX characteristic also null, need full reconnection');
+        return false;
+      }
+
+      debugPrint('🔄 Attempting to restore RX characteristic...');
+      
+      // Get device from TX characteristic (which still works)
+      final device = _txCharacteristic!.device;
+      
+      // Re-discover services to find RX characteristic
+      final services = await device.discoverServices();
+      final customService = services.firstWhere(
+        (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
+        orElse: () => throw Exception('Custom service not found'),
+      );
+      
+      // Find RX characteristic specifically
+      BluetoothCharacteristic? rxChar;
+      for (var char in customService.characteristics) {
+        final charUuid = char.uuid.toString().toLowerCase();
+        if (charUuid == _rxCharUuid.toLowerCase()) {
+          rxChar = char;
+          break;
+        }
+      }
+      
+      if (rxChar == null) {
+        debugPrint('❌ RX characteristic still not found');
+        return false;
+      }
+      
+      _rxCharacteristic = rxChar;
+      debugPrint('✅ RX characteristic restored: ${_rxCharacteristic!.uuid}');
+      return true;
+      
+    } catch (e) {
+      debugPrint('❌ Failed to restore RX characteristic: $e');
+      return false;
+    }
+  }
+
+  /// Verifica e ripristina la connessione se necessario
+  Future<bool> _ensureConnection() async {
+    try {
+      if (_rxCharacteristic == null) {
+        debugPrint('⚠️ RX characteristic null, attempting restore...');
+        
+        // Try to restore just the RX characteristic first
+        final restored = await _restoreRxCharacteristic();
+        if (restored) {
+          return true;
+        }
+        
+        // If restore failed, try full rediscovery
+        if (_isConnected) {
+          debugPrint('🔄 Attempting full characteristics rediscovery...');
+          
+          // Find the device again
+          final devices = FlutterBluePlus.connectedDevices;
+          for (final device in devices) {
+            try {
+              final services = await device.discoverServices();
+              final customService = services.firstWhere(
+                (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
+                orElse: () => throw Exception('Custom service not found'),
+              );
+              
+              await _setupCharacteristics(customService);
+              debugPrint('✅ Characteristics rediscovered successfully');
+              return true;
+            } catch (e) {
+              continue;
+            }
+          }
+        }
+        
+        return false;
+      }
+
+      final device = _rxCharacteristic!.device;
+      final connectionState = await device.connectionState.first;
+      
+      if (connectionState != BluetoothConnectionState.connected) {
+        debugPrint('⚠️ Device disconnected, attempting reconnection...');
+        _isConnected = false;
+        
+        // Attempt reconnection
+        await device.connect();
+        await Future.delayed(const Duration(milliseconds: 1000));
+        
+        // Re-discover services and characteristics
+        final services = await device.discoverServices();
+        final customService = services.firstWhere(
+          (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
+        );
+        
+        await _setupCharacteristics(customService);
+        _isConnected = true;
+        debugPrint('✅ Device reconnected successfully');
+        return true;
+      }
+      
+      return true;
+    } catch (e) {
+      debugPrint('❌ Connection recovery failed: $e');
+      _isConnected = false;
+      return false;
+    }
+  }
+
   // ===== COMMAND SENDING =====
 
   /// Invia un comando BLE al dispositivo
   /// Gestisce automaticamente writeWithoutResponse vs write normale
   Future<void> _sendCommand(List<int> frame) async {
+    // Verifica e ripristina connessione se necessaria
+    final isConnected = await _ensureConnection();
+    if (!isConnected) {
+      throw Exception('Unable to establish connection to device');
+    }
+    
     if (_rxCharacteristic == null) {
-      throw Exception('RX characteristic not available');
+      throw Exception('RX characteristic not available after connection check');
     }
 
     final hexString = frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
@@ -1253,7 +1425,6 @@ class ChileafExtendedService {
     _ropeStatusController.close();
     _ropeRealtimeController.close();
     _deviceInfoController.close();
-    _batteryInfoController.close();
     _firmwareVersionController.close();
     _hardwareVersionController.close();
     _deviceNameController.close();
@@ -1315,7 +1486,10 @@ class ChileafExtendedService {
 
     debugPrint('💓 Requesting HR history list...');
     try {
-      List<int> command = CommandBuilder.buildHRHistoryListRequest();
+      // Usa il comando ufficiale con checksum corretto
+      List<int> command = OfficialChileafCommands.getHistoryOfHRRecord();
+      debugPrint('🔄💓 Requesting COMPLETE HR History with optimized checksum...');
+      debugPrint('📡 Official Command: ${OfficialChileafCommands.commandToHexString(command)}');
       await _sendCommand(command);
 
       // Update throttling counters
@@ -1372,8 +1546,12 @@ class ChileafExtendedService {
     debugPrint(
         '💓 Requesting HR history data for timestamp: $timestamp ($utcTimestamp)');
     try {
-      List<int> command =
-          CommandBuilder.buildHRHistoryDataRequest(utcTimestamp);
+      // Usa il comando ufficiale con checksum corretto
+      List<int> command = OfficialChileafCommands.getHistoryOfHRData(utcTimestamp);
+      
+      debugPrint('🏗️ Building HR History Data Request (0x22) for timestamp: $utcTimestamp');
+      debugPrint('📡 Official Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      
       await _sendCommand(command);
     } catch (e) {
       debugPrint('❌ Failed to request HR history data: $e');
@@ -1540,23 +1718,6 @@ class ChileafExtendedService {
     }
   }
 
-  /// Richiede livello batteria esteso
-  Future<void> requestBatteryInfo() async {
-    debugPrint('🔋 Requesting battery info...');
-    try {
-      if (_txCharacteristic != null) {
-        var frame = ChileafProtocol.buildProtocolFrame([0x02]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
-        debugPrint('✅ Battery info request sent');
-      } else {
-        debugPrint(
-            '❌ TX characteristic not available for battery info request');
-      }
-    } catch (e) {
-      debugPrint('❌ Failed to request battery info: $e');
-    }
-  }
-
   /// Richiede versione firmware
   Future<void> requestFirmwareVersion() async {
     debugPrint('💾 Requesting firmware version...');
@@ -1628,9 +1789,6 @@ class ChileafExtendedService {
     debugPrint('📱🔋💾 Requesting all device information...');
     try {
       await requestDeviceInfo();
-      await Future.delayed(const Duration(milliseconds: 200));
-
-      await requestBatteryInfo();
       await Future.delayed(const Duration(milliseconds: 200));
 
       await requestFirmwareVersion();
@@ -2286,48 +2444,6 @@ class ChileafExtendedService {
       debugPrint('✅ Temperature data request sent');
     } catch (e) {
       debugPrint('❌ Failed to request temperature data: $e');
-    }
-  }
-
-  /// Request 3D Accelerometer Data
-  /// Based on SDK get3DData and openOrClose3DData methods
-  Future<void> request3DAccelerometerData() async {
-    debugPrint('📊 Requesting 3D accelerometer data...');
-    try {
-      // First enable 3D data collection
-      await _enable3DDataCollection(true);
-      
-      // Wait for data collection
-      await Future.delayed(const Duration(seconds: 2));
-      
-      // Request 3D data with command 0x0C (based on WearReceivedDataCallback intValue == 12)
-      List<int> command = [0xFF, 0x05, 0x0C, 0x01, 0x00];
-      int checksum = _calculateJavaChecksum(command.sublist(1));
-      command[4] = checksum;
-      
-      await _sendCommand(command);
-      debugPrint('✅ 3D accelerometer data request sent');
-    } catch (e) {
-      debugPrint('❌ Failed to request 3D data: $e');
-    }
-  }
-
-  /// Enable/Disable 3D Data Collection
-  /// Based on SDK openOrClose3DData method
-  Future<void> _enable3DDataCollection(bool enable) async {
-    debugPrint('📊 ${enable ? "Enabling" : "Disabling"} 3D data collection...');
-    try {
-      // Command to enable/disable 3D data collection
-      // Based on SDK documentation: openOrClose3DData:(BOOL)isOpen
-      List<int> command = [0xFF, 0x05, 0x0B, enable ? 0x01 : 0x00, 0x00];
-      int checksum = _calculateJavaChecksum(command.sublist(1));
-      command[4] = checksum;
-      
-      await _sendCommand(command);
-      debugPrint('✅ 3D data collection ${enable ? "enabled" : "disabled"}');
-    } catch (e) {
-      debugPrint('❌ Failed to toggle 3D data: $e');
-      rethrow;
     }
   }
 

@@ -148,17 +148,6 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     );
     
     _streamSubscriptions.add(
-      widget.extendedService.batteryInfoStream.listen((battery) {
-        if (mounted) {
-          final message = '🔋 Battery: ${battery.level}% | Status: ${battery.isCharging ? "Charging" : "Discharging"}';
-          _updateCommandStatus(message);
-          _addToHistory('🔋 Battery Data Received', true, 
-              details: 'Level: ${battery.level}%, Charging: ${battery.isCharging ? "Yes" : "No"}');
-        }
-      })
-    );
-    
-    _streamSubscriptions.add(
       widget.extendedService.firmwareVersionStream.listen((version) {
         if (mounted) {
           final message = '💾 Firmware Version: $version';

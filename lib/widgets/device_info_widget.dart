@@ -13,7 +13,6 @@ class DeviceInfoWidget extends StatefulWidget {
 
 class _DeviceInfoWidgetState extends State<DeviceInfoWidget> {
   DeviceInfo? _deviceInfo;
-  BatteryInfo? _batteryInfo;
   String? _firmwareVersion;
   String? _hardwareVersion;
   String? _deviceName;
@@ -30,14 +29,6 @@ class _DeviceInfoWidgetState extends State<DeviceInfoWidget> {
       if (mounted) {
         setState(() {
           _deviceInfo = info;
-        });
-      }
-    });
-
-    widget.service.batteryInfoStream.listen((battery) {
-      if (mounted) {
-        setState(() {
-          _batteryInfo = battery;
         });
       }
     });
@@ -134,28 +125,6 @@ class _DeviceInfoWidgetState extends State<DeviceInfoWidget> {
                   if (_hardwareVersion != null)
                     _buildInfoRow('Hardware', _hardwareVersion!),
                 ],
-              ),
-              const SizedBox(height: 16),
-            ],
-
-            // Battery Info
-            if (_batteryInfo != null) ...[
-              _buildInfoSection(
-                'Battery',
-                Icons.battery_std,
-                _getBatteryColor(_batteryInfo!.level),
-                [
-                  _buildInfoRow('Level', '${_batteryInfo!.level}%'),
-                  _buildInfoRow('Status', _batteryInfo!.isCharging ? 'Charging ⚡' : 'Not Charging'),
-                  if (_batteryInfo!.voltage != null)
-                    _buildInfoRow('Voltage', '${_batteryInfo!.voltage}mV'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              LinearProgressIndicator(
-                value: _batteryInfo!.level / 100,
-                backgroundColor: Colors.grey[300],
-                valueColor: AlwaysStoppedAnimation<Color>(_getBatteryColor(_batteryInfo!.level)),
               ),
               const SizedBox(height: 16),
             ],
@@ -306,11 +275,5 @@ class _DeviceInfoWidgetState extends State<DeviceInfoWidget> {
         ],
       ),
     );
-  }
-
-  Color _getBatteryColor(int level) {
-    if (level > 60) return Colors.green;
-    if (level > 30) return Colors.orange;
-    return Colors.red;
   }
 }
