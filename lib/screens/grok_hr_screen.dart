@@ -272,6 +272,114 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  // ===== TEST DELLE 3 MODALITÀ 0x22 DALLA DOCUMENTAZIONE =====
+
+  Future<void> _testAllHRRequestModes() async {
+    if (connectedDevice == null) {
+      setState(() {
+        _statusMessage = 'No device connected';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Testing all 3 HR request modes from documentation...';
+    });
+
+    try {
+      debugPrint('📚 TESTING ALL 3 MODES FROM CHILEAF DOCUMENTATION!');
+      debugPrint('📋 Mode 1: Request single data (param 1)');
+      debugPrint('📋 Mode 2: Request all data (param 2)'); 
+      debugPrint('📋 Mode 3: Request all data after UTC (param 3)');
+      
+      // First: UTC sync to unlock data
+      debugPrint('🔐 Pre-step: UTC sync to unlock historical data...');
+      await _service.syncDeviceTime();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Get timestamp list to have valid timestamps
+      debugPrint('📋 Pre-step: Get timestamp list...');
+      await _service.requestHRHistoryList();
+      await Future.delayed(const Duration(milliseconds: 1000));
+      
+      // Test all 3 modes from documentation
+      debugPrint('🧪 MODE 1: Request single data (current implementation)');
+      await _service.testHRRequestMode1();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      debugPrint('🧪 MODE 2: Request all data (NEW!)');
+      await _service.testHRRequestMode2();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      debugPrint('🧪 MODE 3: Request all data after UTC (NEW!)');
+      await _service.testHRRequestMode3();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      setState(() {
+        _statusMessage = '✅ All 3 HR request modes tested! Check logs for results.';
+        _isDownloading = false;
+      });
+      debugPrint('✅ All 3 HR request modes from documentation tested!');
+    } catch (e) {
+      debugPrint('❌ HR request modes test failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'HR request modes test failed: $e';
+      });
+    }
+  }
+
+  // ===== TEST PROTOCOLLO UFFICIALE SEQUENZIALE =====
+
+  Future<void> _testOfficialProtocolSequential() async {
+    if (connectedDevice == null) {
+      setState(() {
+        _statusMessage = 'No device connected';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Testing official protocol sequential access...';
+    });
+
+    try {
+      debugPrint('🎯 OFFICIAL PROTOCOL SEQUENTIAL TEST!');
+      debugPrint('📖 Following EXACT documentation sequence:');
+      debugPrint('   1. UTC sync (0x08) to unlock historical data');
+      debugPrint('   2. Get HR timestamp list (0x21)');
+      debugPrint('   3. Request each timestamp individually (0x22 Mode 1)');
+      
+      // Step 1: UTC sync FIRST
+      debugPrint('🔐 Step 1: UTC sync to unlock historical data...');
+      await _service.syncDeviceTime();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Step 2: Get ALL timestamp list
+      debugPrint('📋 Step 2: Getting complete timestamp list...');
+      await _service.requestHRHistoryList();
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
+      // Step 3: Request ALL timestamps sequentially using Mode 1
+      debugPrint('💓 Step 3: Requesting ALL timestamps sequentially with Mode 1...');
+      await _service.testSequentialHRRequests();
+      
+      setState(() {
+        _statusMessage = '✅ Official protocol sequential test completed! Check logs.';
+        _isDownloading = false;
+      });
+      debugPrint('✅ Official protocol sequential test completed!');
+    } catch (e) {
+      debugPrint('❌ Official protocol sequential test failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Official protocol sequential test failed: $e';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -396,6 +504,34 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 label: const Text('🕐 UTC SYNC AFTER (Unlock Theory)'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // NEW: Test all 3 modes from documentation
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _testAllHRRequestModes,
+                icon: const Icon(Icons.science),
+                label: const Text('📚 Test 3 Modes (Documentation)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // NEW: Official protocol sequential test
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _testOfficialProtocolSequential,
+                icon: const Icon(Icons.timeline),
+                label: const Text('🎯 Official Protocol Sequential'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.teal.shade700,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),

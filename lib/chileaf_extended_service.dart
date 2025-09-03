@@ -155,6 +155,9 @@ class ChileafExtendedService {
   static const Duration _historicalRequestCooldown =
       Duration(minutes: 5); // 5 min cooldown
 
+  // ===== LATEST HR TIMESTAMPS FOR SEQUENTIAL ACCESS =====
+  List<int> _lastRawTimestamps = [];
+
   // Debug logging control - VERY AGGRESSIVE THROTTLING
   final bool _enableVerboseLogging = false; // Set to true for detailed logs
   final int _logThrottleInterval = 500; // Log every 500 packets (was 50)
@@ -699,6 +702,8 @@ class ChileafExtendedService {
             isEndOfData: true, rawTimestamps: [],
           ));
         } else if (hrHistoryList.timestamps.isNotEmpty) {
+          // Store raw timestamps for sequential access
+          _lastRawTimestamps = hrHistoryList.rawTimestamps;
           _hrHistoryListController.add(hrHistoryList);
           // Auto-request detailed data for each timestamp
           _requestDetailedHRData(hrHistoryList);
@@ -3243,5 +3248,120 @@ class ChileafExtendedService {
     debugPrint('   After ^ 0x3A: $checksum (0x${checksum.toRadixString(16).toUpperCase()})');
 
     return checksum;
+  }
+
+  // ===== NUOVI METODI PER TESTARE LE 3 MODALITÀ DALLA DOCUMENTAZIONE =====
+
+  /// Test Modalità 1: Request single data (implementazione attuale)
+  Future<void> testHRRequestMode1() async {
+    debugPrint('🧪 MODE 1: Request single data (param 1) - Current implementation');
+    try {
+      // Usa un timestamp recente
+      DateTime recentTimestamp = DateTime.now().subtract(const Duration(hours: 2));
+      int utcTimestamp = recentTimestamp.millisecondsSinceEpoch ~/ 1000;
+      
+      List<int> command = OfficialChileafCommands.getHistoryOfHRData(utcTimestamp);
+      debugPrint('📡 Mode 1 Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      debugPrint('🔍 Requesting data for specific timestamp: $recentTimestamp');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Mode 1 command sent successfully');
+    } catch (e) {
+      debugPrint('❌ Mode 1 test failed: $e');
+    }
+  }
+
+  /// Test Modalità 2: Request all data (NUOVO dalla documentazione!)
+  Future<void> testHRRequestMode2() async {
+    debugPrint('🧪 MODE 2: Request all data (param 2) - NEW FROM DOCUMENTATION!');
+    try {
+      List<int> command = OfficialChileafCommands.getHistoryOfHRDataMode2();
+      debugPrint('📡 Mode 2 Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      debugPrint('🔍 Requesting ALL HR data from device (no specific timestamp)');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Mode 2 command sent successfully');
+    } catch (e) {
+      debugPrint('❌ Mode 2 test failed: $e');
+    }
+  }
+
+  /// Test Modalità 3: Request all data after UTC (NUOVO dalla documentazione!)
+  Future<void> testHRRequestMode3() async {
+    debugPrint('🧪 MODE 3: Request all data after UTC (param 3) - NEW FROM DOCUMENTATION!');
+    try {
+      // Usa timestamp di 24 ore fa per ottenere dati recenti
+      DateTime yesterday = DateTime.now().subtract(const Duration(hours: 24));
+      int utcTimestamp = yesterday.millisecondsSinceEpoch ~/ 1000;
+      
+      List<int> command = OfficialChileafCommands.getHistoryOfHRDataMode3(utcTimestamp);
+      debugPrint('📡 Mode 3 Command: ${OfficialChileafCommands.commandToHexString(command)}');
+      debugPrint('🔍 Requesting all HR data AFTER timestamp: $yesterday');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Mode 3 command sent successfully');
+    } catch (e) {
+      debugPrint('❌ Mode 3 test failed: $e');
+    }
+  }
+
+  /// Test PROTOCOLLO UFFICIALE SEQUENZIALE: Richiede ogni timestamp individualmente 
+  Future<void> testSequentialHRRequests() async {
+    debugPrint('🎯 SEQUENTIAL HR REQUESTS: Official Protocol Implementation');
+    debugPrint('📖 Following Chileaf BLE Protocol v0.6 documentation EXACTLY:');
+    debugPrint('   "APP needs to request the heart rate list(0x21) first and get all the UTC time of records,');
+    debugPrint('   and then use the UTC time to request data"');
+    
+    if (_lastRawTimestamps.isEmpty) {
+      debugPrint('❌ No HR timestamps available! Must call requestHRHistoryList() first');
+      return;
+    }
+    
+    debugPrint('📋 Found ${_lastRawTimestamps.length} HR sessions to request');
+    debugPrint('🔄 Requesting each timestamp individually using Mode 1 (0x22)...');
+    
+    int successCount = 0;
+    int failCount = 0;
+    
+    for (int i = 0; i < _lastRawTimestamps.length; i++) {
+      int timestamp = _lastRawTimestamps[i];
+      DateTime parsedTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+      
+      debugPrint('💓 [$i/${_lastRawTimestamps.length}] Testing timestamp: $timestamp');
+      debugPrint('   📅 Parsed time: ${parsedTime.toString()}');
+      
+      try {
+        // Usa il comando Mode 1 ufficiale con timestamp specifico
+        List<int> command = OfficialChileafCommands.getHistoryOfHRData(timestamp);
+        debugPrint('   📡 Command: ${command.map((e) => '0x${e.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        
+        await _sendCommand(command);
+        debugPrint('   ✅ Command sent successfully');
+        
+        // Aspetta risposta dal dispositivo
+        await Future.delayed(const Duration(milliseconds: 1500));
+        successCount++;
+        
+      } catch (e) {
+        debugPrint('   ❌ Failed to request timestamp $timestamp: $e');
+        failCount++;
+      }
+      
+      // Piccola pausa tra richieste per non sovraccaricare il dispositivo
+      if (i < _lastRawTimestamps.length - 1) {
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    }
+    
+    debugPrint('📊 SEQUENTIAL REQUEST RESULTS:');
+    debugPrint('   ✅ Successful requests: $successCount');
+    debugPrint('   ❌ Failed requests: $failCount');
+    debugPrint('   📋 Total timestamps: ${_lastRawTimestamps.length}');
+    
+    if (successCount > 0) {
+      debugPrint('🎉 SUCCESS! Some timestamps returned data!');
+    } else {
+      debugPrint('😞 All requests returned 0x23 (end signal) - no actual HR data');
+    }
   }
 }

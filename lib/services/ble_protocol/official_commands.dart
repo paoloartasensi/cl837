@@ -104,6 +104,20 @@ class OfficialChileafCommands {
     return buildOfficialCommand(0x22, params);
   }
 
+  /// MODALITÀ 2 dalla documentazione: Request all data (param 2)
+  static List<int> getHistoryOfHRDataMode2() {
+    List<int> params = [2]; // Parametro 2 = Request all data
+    // Non serve timestamp per "all data"
+    return buildOfficialCommand(0x22, params);
+  }
+
+  /// MODALITÀ 3 dalla documentazione: Request all data after UTC (param 3)
+  static List<int> getHistoryOfHRDataMode3(int timestamp) {
+    List<int> params = [3]; // Parametro 3 = Request all data after UTC
+    params.addAll(utcToBytes(timestamp));
+    return buildOfficialCommand(0x22, params);
+  }
+
   /// Versione alternativa del comando 0x22 per CL837 - prova senza parametro iniziale
   static List<int> getHistoryOfHRDataAlt(int timestamp) {
     // Prova senza il parametro '1' iniziale - potrebbe essere diverso per CL837
