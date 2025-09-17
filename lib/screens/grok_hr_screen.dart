@@ -554,17 +554,30 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
               ),
               value: _selectedTimestamp,
               hint: const Text('Choose a session to view HR chart'),
-              items: _hrRawTimestamps.map((timestamp) {
-                final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
-                final index = _hrRawTimestamps.indexOf(timestamp);
-                return DropdownMenuItem<int>(
-                  value: timestamp,
-                  child: Text(
-                    '${DateFormat('MMM dd, yyyy - HH:mm').format(dateTime)} (Session ${index + 1})',
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                );
-              }).toList(),
+              items: () {
+                // Create a list of (timestamp, dateTime) pairs for sorting
+                List<MapEntry<int, DateTime>> timestampPairs = _hrRawTimestamps.map((timestamp) {
+                  return MapEntry(timestamp, DateTime.fromMillisecondsSinceEpoch(timestamp * 1000));
+                }).toList();
+                
+                // Sort by date/time descending (most recent first)
+                timestampPairs.sort((a, b) => b.value.compareTo(a.value));
+                
+                // Generate dropdown items from sorted list
+                return timestampPairs.asMap().entries.map((entry) {
+                  int sortedIndex = entry.key;
+                  int timestamp = entry.value.key;
+                  DateTime dateTime = entry.value.value;
+                  
+                  return DropdownMenuItem<int>(
+                    value: timestamp,
+                    child: Text(
+                      '${DateFormat('MMM dd, yyyy - HH:mm').format(dateTime)} (Session ${sortedIndex + 1})',
+                      style: const TextStyle(fontSize: 14),
+                    ),
+                  );
+                }).toList();
+              }(),
               onChanged: (int? newTimestamp) async {
                 if (newTimestamp != null) {
                   setState(() {

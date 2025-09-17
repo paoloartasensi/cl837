@@ -1318,10 +1318,15 @@ class ChileafExtendedService {
       
       // Send processed data to UI stream
       if (_hrDataList.isNotEmpty) {
-        debugPrint('💓 HR measurements available - sending to UI stream');
+        debugPrint('💓 HR measurements available - applying outlier filter...');
+        
+        // OUTLIER FILTER: Remove HR values that are statistical outliers
+        List<Map<String, dynamic>> filteredHRData = _filterHROutliers(_hrDataList);
+        
+        debugPrint('💓 Outlier filter: ${_hrDataList.length} → ${filteredHRData.length} measurements (${_hrDataList.length - filteredHRData.length} outliers removed)');
         
         // Convert to HeartRateHistoryData format
-        List<HeartRateHistoryEntry> entries = _hrDataList.map((data) {
+        List<HeartRateHistoryEntry> entries = filteredHRData.map((data) {
           return HeartRateHistoryEntry(
             heartRate: data['heartRate'],
             time: data['dateTime'],
@@ -1336,7 +1341,7 @@ class ChileafExtendedService {
         
         // Emit to stream
         _hrHistoryDataController.add(historyData);
-        debugPrint('📤 Sent ${entries.length} HR measurements to UI stream');
+        debugPrint('📤 Sent ${entries.length} filtered HR measurements to UI stream');
         
       } else {
         debugPrint('💓 No HR measurements found in accumulated data');
@@ -1374,6 +1379,80 @@ class ChileafExtendedService {
     DateTime utcTime = DateTime.fromMillisecondsSinceEpoch(stamp * 1000, isUtc: true);
     DateTime localTime = utcTime.toLocal();
     return localTime.millisecondsSinceEpoch;
+  }
+
+  /// Filtra outlier HR usando metodo IQR (Interquartile Range)
+  /// Rimuove valori che si discostano eccessivamente dalla distribuzione normale
+  /// Esempio: se la maggior parte dei valori è 70-80 BPM, rimuove il valore isolato di 159 BPM
+  List<Map<String, dynamic>> _filterHROutliers(List<Map<String, dynamic>> hrDataList) {
+    if (hrDataList.length < 5) {
+      // Troppo pochi dati per applicare filtro statistico
+      debugPrint('🔍 OUTLIER FILTER: Too few data points (${hrDataList.length}), skipping filter');
+      return hrDataList;
+    }
+
+    // Estrai solo i valori HR per calcoli statistici
+    List<int> hrValues = hrDataList.map((data) => data['heartRate'] as int).toList();
+    hrValues.sort(); // Ordina per calcoli percentili
+
+    // Calcola quartili per metodo IQR
+    int n = hrValues.length;
+    double q1 = _calculatePercentile(hrValues, 25); // Primo quartile (25%)
+    double q3 = _calculatePercentile(hrValues, 75); // Terzo quartile (75%)
+    double iqr = q3 - q1; // Interquartile Range
+    
+    // Calcola limiti outlier (1.5 * IQR è standard statistico)
+    double lowerBound = q1 - (1.5 * iqr);
+    double upperBound = q3 + (1.5 * iqr);
+
+    debugPrint('🔍 OUTLIER FILTER STATISTICS:');
+    debugPrint('   📊 Total HR values: $n');
+    debugPrint('   📈 Q1 (25%): ${q1.toStringAsFixed(1)} BPM');
+    debugPrint('   📈 Q3 (75%): ${q3.toStringAsFixed(1)} BPM');
+    debugPrint('   📏 IQR: ${iqr.toStringAsFixed(1)} BPM');
+    debugPrint('   🚫 Lower bound: ${lowerBound.toStringAsFixed(1)} BPM');
+    debugPrint('   🚫 Upper bound: ${upperBound.toStringAsFixed(1)} BPM');
+
+    // Filtra outlier mantenendo solo valori entro i limiti
+    List<Map<String, dynamic>> filtered = [];
+    List<int> removedOutliers = [];
+
+    for (var data in hrDataList) {
+      int hrValue = data['heartRate'] as int;
+      
+      if (hrValue >= lowerBound && hrValue <= upperBound) {
+        filtered.add(data); // Valore normale, mantieni
+      } else {
+        removedOutliers.add(hrValue); // Outlier, rimuovi
+      }
+    }
+
+    if (removedOutliers.isNotEmpty) {
+      debugPrint('🗑️ REMOVED OUTLIERS: ${removedOutliers.join(', ')} BPM');
+      debugPrint('✅ CLEAN DATA RANGE: ${filtered.map((d) => d['heartRate']).reduce((a, b) => a < b ? a : b)}-${filtered.map((d) => d['heartRate']).reduce((a, b) => a > b ? a : b)} BPM');
+    } else {
+      debugPrint('✅ NO OUTLIERS DETECTED: All HR values within normal range');
+    }
+
+    return filtered;
+  }
+
+  /// Calcola percentile per una lista ordinata di valori
+  double _calculatePercentile(List<int> sortedValues, double percentile) {
+    double index = (percentile / 100) * (sortedValues.length - 1);
+    
+    if (index == index.floorToDouble()) {
+      // Indice esatto
+      return sortedValues[index.toInt()].toDouble();
+    } else {
+      // Interpolazione lineare tra due valori
+      int lowerIndex = index.floor();
+      int upperIndex = index.ceil();
+      double fraction = index - lowerIndex;
+      
+      return sortedValues[lowerIndex] + 
+             (fraction * (sortedValues[upperIndex] - sortedValues[lowerIndex]));
+    }
   }
 
   // ===== SLEEP AND STEPS DATA PROCESSING METHODS =====

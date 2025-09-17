@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'screens/grok_hr_screen.dart';
+import 'screens/navigation_screen.dart';
 
 void main() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +22,7 @@ class MyApp extends StatelessWidget {
                 primarySwatch: Colors.blue,
                 visualDensity: VisualDensity.adaptivePlatformDensity,
             ),
-            home: const GrokHrScreen(),
+            home: const NavigationScreen(),
         );
     }
 }
