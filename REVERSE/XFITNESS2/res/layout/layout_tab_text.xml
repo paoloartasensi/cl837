@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center" android:orientation="vertical" android:tag="layout/layout_tab_text_0" android:layout_width="fill_parent" android:layout_height="wrap_content"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <TextView android:textSize="14.0sp" android:textColor="@color/tab_indicator_color" android:gravity="center" android:id="@id/tab_title" android:background="@drawable/tab_indicator_bg" android:paddingTop="5.0dip" android:paddingBottom="5.0dip" android:layout_width="wrap_content" android:layout_height="wrap_content" android:singleLine="true" android:paddingStart="8.0dip" android:paddingEnd="8.0dip" />
-</LinearLayout>

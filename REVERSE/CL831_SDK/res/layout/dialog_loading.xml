@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:gravity="center" android:orientation="vertical" android:background="@drawable/dialog_loading_bg" android:layout_width="wrap_content" android:layout_height="wrap_content"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <ProgressBar android:id="@id/pb_loading" android:layout_width="25.0dip" android:layout_height="25.0dip" android:layout_marginTop="15.0dip" />
-    <TextView android:textSize="16.0sp" android:textColor="@color/black" android:layout_gravity="center" android:id="@id/tv_loading" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="15.0dip" android:layout_marginBottom="20.0dip" android:text="@string/loading" android:singleLine="true" android:layout_marginStart="35.0dip" android:layout_marginEnd="35.0dip" />
-</LinearLayout>

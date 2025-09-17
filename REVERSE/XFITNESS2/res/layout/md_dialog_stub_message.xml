@@ -1,3 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<com.afollestad.materialdialogs.internal.rtl.RtlTextView android:id="@id/md_text_message" style="@style/MD_Dialog_Message"
-  xmlns:android="http://schemas.android.com/apk/res/android" />

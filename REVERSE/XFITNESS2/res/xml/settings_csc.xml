@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<PreferenceScreen
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <ListPreference android:entries="@array/csc_settings_units" android:title="@string/csc_settings_units_title" android:key="settings_csc_unit" android:summary="@string/csc_settings_units_summary" android:defaultValue="1" android:entryValues="@array/csc_settings_units_values" />
-    <ListPreference android:entries="@array/csc_settings_wheel_diameters" android:title="@string/csc_settings_wheel_diameter_title" android:key="settings_wheel_size" android:defaultValue="2340" android:entryValues="@array/csc_settings_wheel_diameter_values" />
-</PreferenceScreen>

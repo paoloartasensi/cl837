@@ -73,6 +73,28 @@ class ChileafExtendedService {
   // Device connection tracking
   bool _isConnected = false;
 
+  // ===== WEARMANAGER COMPATIBLE MULTI-PACKET SYSTEM =====
+  // Variabili per gestire ricezione multi-packet come nel WearManager
+  // ignore: constant_identifier_names
+  static const int END_TAG = 0xFFFFFFFF;
+  final List<List<int>> _hrRecordPackages = [];
+  final List<List<int>> _hrDataPackages = [];
+  final List<Map<String, dynamic>> _hrRecords = [];
+  final List<Map<String, dynamic>> _hrDataList = [];
+  int _hrDataStamp = 0;
+  bool _isHRDataStamp = false;
+
+  // ===== SLEEP AND STEPS DATA SYSTEM =====
+  // Variabili per Sleep e Steps data (WearManager compatible)
+  final List<List<int>> _sleepPackages = [];
+  final List<List<int>> _stepsPackages = [];
+  final List<Map<String, dynamic>> _sleepDataList = [];
+  final List<Map<String, dynamic>> _stepsDataList = [];
+  int _sleepDataStamp = 0;
+  int _stepsDataStamp = 0;
+  bool _isSleepDataStamp = false;
+  bool _isStepsDataStamp = false;
+
   // Historical data service with optimized checksum
   late final HistoricalDataService _historicalDataService;
 
@@ -157,7 +179,7 @@ class ChileafExtendedService {
       Duration(minutes: 5); // 5 min cooldown
 
   // ===== LATEST HR TIMESTAMPS FOR SEQUENTIAL ACCESS =====
-  List<int> _lastRawTimestamps = [];
+  final List<int> _lastRawTimestamps = [];
 
   // Debug logging control - VERY AGGRESSIVE THROTTLING
   final bool _enableVerboseLogging = false; // Set to true for detailed logs
@@ -182,6 +204,12 @@ class ChileafExtendedService {
       StreamController<HeartRateHistoryList>.broadcast();
   final StreamController<HeartRateHistoryData> _hrHistoryDataController =
       StreamController<HeartRateHistoryData>.broadcast();
+
+  // Sleep and Steps streams
+  final StreamController<List<SleepHistoryEntry>> _sleepHistoryController =
+      StreamController<List<SleepHistoryEntry>>.broadcast();
+  final StreamController<List<StepIntervalEntry>> _stepsHistoryController =
+      StreamController<List<StepIntervalEntry>>.broadcast();
 
   // Rope skipping streams
   final StreamController<RopeSkippingData> _ropeStatusController =
@@ -232,6 +260,12 @@ class ChileafExtendedService {
       _hrHistoryListController.stream;
   Stream<HeartRateHistoryData> get hrHistoryDataStream =>
       _hrHistoryDataController.stream;
+
+  // Sleep and Steps streams
+  Stream<List<SleepHistoryEntry>> get sleepHistoryStream =>
+      _sleepHistoryController.stream;
+  Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
+      _stepsHistoryController.stream;
 
   // Real-time Heart Rate streams (SDK section 4.8)
   Stream<int> get realTimeHeartRateStream => _realTimeHeartRateController.stream;
@@ -612,11 +646,22 @@ class ChileafExtendedService {
           _hardwareVersionController.add(hardwareVersion);
         }
         break;
-      case 0x05: // Device Name
-        debugPrint('📱 DEVICE NAME: Processing device name');
-        var deviceName = DeviceInfoProcessor.processDeviceName(data);
-        if (deviceName != null) {
-          _deviceNameController.add(deviceName);
+      case 0x05: // Device Name OR Sleep Data - Context dependent
+        debugPrint('📱🌙 DEVICE NAME/SLEEP (0x05): Checking data context...');
+        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+        
+        // Check if this looks like sleep data vs device name
+        if (data.length > 15) {
+          // Likely sleep historical data (longer packets)
+          debugPrint('🌙 SLEEP DATA: Processing sleep history (longer packet detected)');
+          _processSleepHistoryData(data);
+        } else {
+          // Likely device name (shorter response)
+          debugPrint('📱 DEVICE NAME: Processing device name');
+          var deviceName = DeviceInfoProcessor.processDeviceName(data);
+          if (deviceName != null) {
+            _deviceNameController.add(deviceName);
+          }
         }
         break;
       case 0x06: // MAC Address
@@ -689,37 +734,13 @@ class ChileafExtendedService {
           debugPrint('📊 ⚠️ No valid exercise history entries found');
         }
         break;
-      case 0x21: // HR History List
-        debugPrint('💓 HR HISTORY LIST: Processing HR timestamp list');
-        var hrHistoryList = HistoricalDataProcessor.processHRHistoryList(
-            Uint8List.fromList(data));
-        
-        // Handle end of data or valid sessions
-        if (hrHistoryList.isEndOfData) {
-          debugPrint('📭 No HR history data available on device');
-          // Send empty list to UI to show "no data" message
-          _hrHistoryListController.add(const HeartRateHistoryList(
-            timestamps: [],
-            isEndOfData: true, rawTimestamps: [],
-          ));
-        } else if (hrHistoryList.timestamps.isNotEmpty) {
-          // Store raw timestamps for sequential access
-          _lastRawTimestamps = hrHistoryList.rawTimestamps;
-          _hrHistoryListController.add(hrHistoryList);
-          // Auto-request detailed data for each timestamp
-          _requestDetailedHRData(hrHistoryList);
-        } else {
-          debugPrint('💓 ⚠️ No valid HR sessions found in response');
-        }
+      case 0x21: // HR History Record List (WearManager compatible)
+        debugPrint('� HR RECORD LIST: Processing HR timestamp list (WearManager mode)');
+        _processHRRecordList(data);
         break;
-      case 0x22: // HR History Data
-        debugPrint(
-            '💓✅ HR HISTORY DATA: Processing detailed HR historical data (SUCCESS!)');
-        debugPrint('💓📦 Raw data received: ${data.map((e) => '0x${e.toRadixString(16).padLeft(2, '0')}').join(' ')}');
-        var hrHistoryData = HistoricalDataProcessor.processHRHistoryData(
-            Uint8List.fromList(data));
-        debugPrint('💓📊 Processed HR data: $hrHistoryData');
-        _hrHistoryDataController.add(hrHistoryData);
+      case 0x22: // HR History Data (WearManager compatible)
+        debugPrint('💓 HR HISTORY DATA: Processing detailed HR data (WearManager mode)');
+        _processHRHistoryData(data);
         break;
       case 0x23: // HR History End Signal
         debugPrint(
@@ -728,11 +749,22 @@ class ChileafExtendedService {
         debugPrint('🏁💭 This means the device has NO DATA for the requested timestamp');
         // Signal that HR history transfer is complete
         break;
-      case 0x40: // Rope Status
-        debugPrint('🪢 ROPE STATUS: Processing rope skipping status data');
-        var ropeStatus = RopeSkippingProcessor.processRopeStatus(data);
-        if (ropeStatus != null) {
-          _ropeStatusController.add(ropeStatus);
+      case 0x40: // Rope Status OR Steps Interval - Context dependent
+        debugPrint('🪢👟 ROPE/STEPS (0x40): Processing rope or steps data (context-dependent)...');
+        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+        
+        // Try to determine context by analyzing data patterns
+        if (data.length > 10) {
+          // Likely steps interval data (longer packets)
+          debugPrint('👟 STEPS DATA: Processing step intervals (longer packet detected)');
+          _processStepsIntervalData(data);
+        } else {
+          // Likely rope status (shorter packets)
+          debugPrint('🪢 ROPE STATUS: Processing rope skipping status data');
+          var ropeStatus = RopeSkippingProcessor.processRopeStatus(data);
+          if (ropeStatus != null) {
+            _ropeStatusController.add(ropeStatus);
+          }
         }
         break;
       case 0x41: // Rope Realtime
@@ -878,6 +910,653 @@ class ChileafExtendedService {
   // Process RR intervals from heart rate data for HRV calculation
   void processRRIntervalsForHRV(HeartRateData heartRateData) {
     _healthProcessor.processRRIntervalsForHRV(heartRateData);
+  }
+
+  // ===== WEARMANAGER COMPATIBLE HR HISTORY METHODS =====
+  // Implementazione secondo WearManager_HR_Analysis.md
+
+  /// Imposta l'ora UTC sul dispositivo (equivalente a setUTCTime() nel WearManager)
+  /// Comando: 0x08 (8)
+  /// Formato: [0xFF, 0x09, 0x08, utc_bytes(4), checksum]
+  Future<void> setUTCTime([int? customTimestamp]) async {
+    debugPrint('⏰ Setting UTC time on device (WearManager compatible)...');
+    
+    try {
+      // Usa timestamp custom o quello corrente
+      int utcTimestamp = customTimestamp ?? _getZoneUTC();
+      
+      debugPrint('🕒 UTC timestamp to send: $utcTimestamp');
+      debugPrint('🕒 Human readable: ${DateTime.fromMillisecondsSinceEpoch(utcTimestamp * 1000)}');
+      
+      // Costruisci comando secondo formato WearManager
+      List<int> utcBytes = _utcToBytes(utcTimestamp);
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(8, utcBytes);
+      
+      debugPrint('📡 UTC sync command: ${_commandToHexString(command)}');
+      
+      await _sendCommand(command);
+      debugPrint('✅ UTC time sync command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to set UTC time: $e');
+      rethrow;
+    }
+  }
+
+  /// Ottiene timestamp UTC corrente (equivalente a DateUtil.getZoneUTC())
+  int _getZoneUTC() {
+    DateTime now = DateTime.now();
+    
+    // Ottieni offset timezone e DST
+    int zoneOffset = now.timeZoneOffset.inMilliseconds;
+    
+    // Applica offset per ottenere UTC
+    DateTime utcTime = now.add(Duration(milliseconds: zoneOffset));
+    
+    // Ritorna in secondi (come nel WearManager)
+    return utcTime.millisecondsSinceEpoch ~/ 1000;
+  }
+
+  /// Converte timestamp UTC in array di 4 bytes (equivalente a utc2Bytes())
+  List<int> _utcToBytes(int timestamp) {
+    return [
+      (timestamp >> 24) & 0xFF,
+      (timestamp >> 16) & 0xFF,
+      (timestamp >> 8) & 0xFF,
+      timestamp & 0xFF,
+    ];
+  }
+
+  /// Richiede la lista dei record HR storici (equivalente a getHistoryOfHRRecord())
+  /// Comando: 0x21 (33)
+  /// Formato: [0xFF, 0x04, 0x21, 0x00, checksum]
+  Future<void> getHistoryOfHRRecord() async {
+    debugPrint('📋 Requesting HR history record list (WearManager compatible)...');
+    
+    try {
+      // Clear type per ricevere solo dati HR record (mode 33)
+      // Equivalente a this.mReceivedDataCallback.clearType(4);
+      
+      // Costruisci comando secondo formato WearManager: comando 33 con parametro 0
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(33, [0]);
+      
+      debugPrint('📡 HR record command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: mode 33 with HR timestamp list');
+      debugPrint('🔍 Each record: 4 bytes timestamp UTC (big-endian)');
+      debugPrint('🔍 End marker: 0xFFFFFFFF indicates end of transmission');
+      
+      await _sendCommand(command);
+      debugPrint('✅ HR history record command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history records: $e');
+      rethrow;
+    }
+  }
+
+  /// Richiede dati HR dettagliati per timestamp specifico (equivalente a getHistoryOfHRData(long stamp))
+  /// Comando: 0x22 (34)
+  /// Formato: [0xFF, length, 0x22, 0x01, utc_bytes(4), checksum]
+  Future<void> getHistoryOfHRData(int timestamp) async {
+    debugPrint('💓 Requesting HR history data for timestamp: $timestamp (WearManager compatible)...');
+    
+    try {
+      // Clear type per ricevere solo dati HR dettagliati (mode 34)
+      // Equivalente a this.mReceivedDataCallback.clearType(6);
+      
+      // Costruisci parametri: 1 + timestamp in bytes
+      List<int> timestampBytes = _utcToBytes(timestamp);
+      List<int> parameters = [1] + timestampBytes;
+      
+      // Costruisci comando secondo formato WearManager
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(34, parameters);
+      
+      debugPrint('📡 HR data command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Timestamp: $timestamp (${DateTime.fromMillisecondsSinceEpoch(timestamp * 1000)})');
+      debugPrint('🔍 Expected response: mode 34 with HR measurements');
+      debugPrint('🔍 Format: skip 4 bytes, then 1 byte per HR value');
+      debugPrint('🔍 End marker: 0xFFFFFFFF indicates end of transmission');
+      
+      await _sendCommand(command);
+      debugPrint('✅ HR history data command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request HR history data: $e');
+      rethrow;
+    }
+  }
+
+  /// Richiede tutti i dati HR (equivalente a getHistoryOfHRData() senza parametri)
+  /// Comando: 0x22 (34)
+  /// Formato: [0xFF, 0x04, 0x22, 0x00, checksum]
+  Future<void> getHistoryOfHRDataAll() async {
+    debugPrint('💓 Requesting ALL HR history data (WearManager compatible)...');
+    
+    try {
+      // Clear type per ricevere solo dati HR (mode 34)
+      // Equivalente a this.mReceivedDataCallback.clearType(2);
+      
+      // Costruisci comando: comando 34 con parametro 0 (tutti i dati)
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(34, [0]);
+      
+      debugPrint('📡 HR data ALL command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: mode 34 with all available HR data');
+      debugPrint('🔍 Multi-packet response expected');
+      
+      await _sendCommand(command);
+      debugPrint('✅ HR history data ALL command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request all HR history data: $e');
+      rethrow;
+    }
+  }
+
+  /// Converte comando in stringa hex per debug
+  String _commandToHexString(List<int> command) {
+    return command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
+  }
+
+  /// Sequenza completa di recupero HR history seguendo protocollo WearManager
+  /// 1. Sync UTC per sbloccare dati storici
+  /// 2. Richiedi lista timestamp HR
+  /// 3. Richiedi dati dettagliati per ogni timestamp
+  Future<void> performCompleteHRHistorySequence() async {
+    debugPrint('🔄 Starting COMPLETE HR history sequence (WearManager protocol)...');
+    
+    try {
+      // Step 1: Sync UTC per sbloccare dati storici del dispositivo
+      debugPrint('🔐 Step 1: UTC sync to unlock historical data...');
+      await setUTCTime();
+      
+      // Attendi che la sincronizzazione sia processata dal dispositivo
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Step 2: Richiedi lista timestamp HR disponibili
+      debugPrint('📋 Step 2: Requesting HR record timestamps...');
+      await getHistoryOfHRRecord();
+      
+      // Attendi che i timestamp arrivino
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
+      // Step 3: Richiedi tutti i dati HR (approccio alternativo)
+      debugPrint('💓 Step 3: Requesting all HR data...');
+      await getHistoryOfHRDataAll();
+      
+      // Attendi che i dati arrivino
+      await Future.delayed(const Duration(milliseconds: 3000));
+      
+      debugPrint('✅ Complete HR history sequence finished!');
+      debugPrint('📊 Check logs for HR record timestamps and data responses');
+      
+    } catch (e) {
+      debugPrint('❌ Complete HR history sequence failed: $e');
+      rethrow;
+    }
+  }
+
+  // ===== SLEEP AND STEPS DATA METHODS (WearManager compatible) =====
+
+  /// Richiede dati del sonno dal dispositivo (comando 0x05)
+  /// Equivalente a getHistoryOfSleep() nel WearManager
+  Future<void> getHistoryOfSleep() async {
+    debugPrint('🌙 Requesting sleep history data (WearManager compatible)...');
+    
+    try {
+      // Costruisci comando secondo formato WearManager
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(5, []);
+      
+      debugPrint('📡 Sleep data command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: mode 5 with sleep action indices');
+      debugPrint('🔍 Format: >20=awake, <20=light sleep, 3 consecutive 0s=deep sleep');
+      debugPrint('🔍 End marker: 0xFFFFFFFF indicates end of transmission');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Sleep history command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request sleep history: $e');
+      rethrow;
+    }
+  }
+
+  /// Richiede dati del contapassi dal dispositivo (comando 0x40)  
+  /// Equivalente a getIntervalSteps() nel WearManager
+  Future<void> getIntervalSteps() async {
+    debugPrint('👟 Requesting steps interval data (WearManager compatible)...');
+    
+    try {
+      // Costruisci comando secondo formato WearManager
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(64, []);
+      
+      debugPrint('📡 Steps data command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: mode 64 with step intervals');
+      debugPrint('🔍 Format: timestamp + step count per interval');
+      debugPrint('🔍 End marker: 0xFFFFFFFF indicates end of transmission');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Steps interval command sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request steps data: $e');
+      rethrow;
+    }
+  }
+
+  /// Sequenza completa per ottenere tutti i dati (HR + Sleep + Steps)
+  Future<void> performCompleteDataSequence() async {
+    debugPrint('🔄 Starting COMPLETE data sequence (HR + Sleep + Steps)...');
+    
+    try {
+      // Step 1: UTC sync per sbloccare tutti i dati storici
+      debugPrint('🔐 Step 1: UTC sync to unlock all historical data...');
+      await setUTCTime();
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Step 2: Richiedi dati HR
+      debugPrint('💓 Step 2: Requesting HR data...');
+      await getHistoryOfHRRecord();
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
+      // Step 3: Richiedi dati del sonno
+      debugPrint('🌙 Step 3: Requesting sleep data...');
+      await getHistoryOfSleep();
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
+      // Step 4: Richiedi dati dei passi
+      debugPrint('👟 Step 4: Requesting steps data...');
+      await getIntervalSteps();
+      await Future.delayed(const Duration(milliseconds: 1500));
+      
+      debugPrint('✅ Complete data sequence finished!');
+      debugPrint('📊 Check logs and UI for HR, Sleep, and Steps data');
+      
+    } catch (e) {
+      debugPrint('❌ Complete data sequence failed: $e');
+      rethrow;
+    }
+  }
+
+  // ===== WEARMANAGER DATA PARSING METHODS =====
+
+  /// Processa lista di record HR (mode 0x21) secondo logica WearManager
+  void _processHRRecordList(List<int> data) {
+    debugPrint('📋 Processing HR record list (WearManager style)...');
+    debugPrint('📋 Raw data: ${_commandToHexString(data)}');
+    
+    if (data.length < 7) {
+      debugPrint('❌ HR record data too short: ${data.length} bytes');
+      return;
+    }
+    
+    // Parse UTC tag (bytes 3-6, big-endian)
+    int utcTag = _getLongParse(data, 3, 4);
+    debugPrint('📋 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
+    
+    if (utcTag != END_TAG) {
+      // Accumula pacchetti fino al tag di fine
+      debugPrint('📋 Accumulating packet (${data.length} bytes)');
+      _hrRecordPackages.add(List.from(data));
+    } else {
+      debugPrint('📋 End tag received, processing accumulated packets...');
+      debugPrint('📋 Total packets accumulated: ${_hrRecordPackages.length}');
+      
+      // Processa tutti i pacchetti accumulati
+      _hrRecords.clear();
+      
+      for (int index = 0; index < _hrRecordPackages.length; index++) {
+        List<int> packet = _hrRecordPackages[index];
+        List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
+        
+        debugPrint('📋 Processing packet $index: ${slice.length} bytes payload');
+        
+        // Ogni record HR è esattamente 4 bytes (timestamp UTC)
+        for (int i = 0; i < slice.length ~/ 4; i++) {
+          int offset = i * 4;
+          if (offset + 4 <= slice.length) {
+            int stamp = _getLongParse(slice, offset, 4); // Big-endian parsing
+            int record = _restoreZoneUTC(stamp); // UTC → Local time
+            
+            debugPrint('📋 HR Record ${_hrRecords.length + 1}: stamp=$stamp, local=$record');
+            debugPrint('📋 → ${DateTime.fromMillisecondsSinceEpoch(record)}');
+            
+            _hrRecords.add({
+              'originalStamp': stamp,
+              'localTime': record,
+              'dateTime': DateTime.fromMillisecondsSinceEpoch(record),
+            });
+          }
+        }
+      }
+      
+      debugPrint('✅ HR Record processing complete: ${_hrRecords.length} records found');
+      
+      // Invia i dati al stream per l'UI
+      if (_hrRecords.isNotEmpty) {
+        debugPrint('📋 HR Records available for detailed data requests - sending to UI stream');
+        
+        // Converti i timestamp in formato HeartRateHistoryList
+        List<DateTime> timestamps = _hrRecords.map((record) {
+          return record['dateTime'] as DateTime;
+        }).toList();
+        
+        List<int> rawTimestamps = _hrRecords.map((record) {
+          return record['originalStamp'] as int;
+        }).toList();
+        
+        HeartRateHistoryList historyList = HeartRateHistoryList(
+          timestamps: timestamps,
+          rawTimestamps: rawTimestamps,
+          isEndOfData: true, // Assumiamo fine dati per ora
+        );
+        
+        // Emetti la lista nel stream
+        _hrHistoryListController.add(historyList);
+        debugPrint('📤 Sent ${timestamps.length} HR record timestamps to UI stream');
+        
+      } else {
+        debugPrint('📋 No HR records found in device');
+      }
+      
+      // Clear packages per prossima richiesta
+      _hrRecordPackages.clear();
+    }
+  }
+
+  /// Processa dati HR dettagliati (mode 0x22) secondo logica WearManager
+  void _processHRHistoryData(List<int> data) {
+    debugPrint('💓 Processing HR history data (WearManager style)...');
+    debugPrint('💓 Raw data: ${_commandToHexString(data)}');
+    
+    if (data.length < 7) {
+      debugPrint('❌ HR data too short: ${data.length} bytes');
+      return;
+    }
+    
+    // Parse UTC tag (bytes 3-6, big-endian)  
+    int utcTag = _getLongParse(data, 3, 4);
+    debugPrint('💓 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
+    
+    if (utcTag != END_TAG) {
+      // Accumula pacchetti fino al tag di fine
+      debugPrint('💓 Accumulating packet (${data.length} bytes)');
+      _hrDataPackages.add(List.from(data));
+    } else {
+      debugPrint('💓 End tag received, processing accumulated packets...');
+      debugPrint('💓 Total packets accumulated: ${_hrDataPackages.length}');
+      
+      // Processa tutti i pacchetti per dati HR dettagliati
+      _hrDataList.clear();
+      
+      for (int index = 0; index < _hrDataPackages.length; index++) {
+        List<int> packet = _hrDataPackages[index];
+        List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
+        
+        debugPrint('💓 Processing packet $index: ${slice.length} bytes payload');
+        
+        // Inizializza timestamp se è il primo pacchetto
+        if (!_isHRDataStamp && slice.length >= 4) {
+          _hrDataStamp = _getLongParse(slice, 0, 4);
+          _isHRDataStamp = true;
+          debugPrint('💓 Initial timestamp: $_hrDataStamp');
+        }
+        
+        // Skip 4 bytes iniziali, poi 1 byte per valore HR
+        for (int i = 4; i < slice.length; i++) {
+          int heartRate = slice[i] & 0xFF; // 1 byte per valore HR
+          int localStamp = _restoreZoneUTC(_hrDataStamp);
+          
+          debugPrint('💓 HR Value ${_hrDataList.length + 1}: $heartRate bpm at stamp $_hrDataStamp');
+          debugPrint('💓 → ${DateTime.fromMillisecondsSinceEpoch(localStamp)}');
+          
+          _hrDataList.add({
+            'heartRate': heartRate,
+            'stamp': _hrDataStamp,
+            'localTime': localStamp,
+            'dateTime': DateTime.fromMillisecondsSinceEpoch(localStamp),
+          });
+          
+          _hrDataStamp++; // Incrementa timestamp per record successivo
+        }
+      }
+      
+      debugPrint('✅ HR Data processing complete: ${_hrDataList.length} measurements found');
+      
+      // Invia i dati processati al stream per l'UI
+      if (_hrDataList.isNotEmpty) {
+        debugPrint('💓 HR measurements available for analysis - sending to UI stream');
+        
+        // Converti i dati nel formato HeartRateHistoryData
+        List<HeartRateHistoryEntry> entries = _hrDataList.map((data) {
+          return HeartRateHistoryEntry(
+            heartRate: data['heartRate'],
+            time: data['dateTime'],
+            activityIndex: 0, // Default activity index
+          );
+        }).toList();
+        
+        HeartRateHistoryData historyData = HeartRateHistoryData(
+          timestamp: DateTime.now(),
+          entries: entries,
+        );
+        
+        // Emetti i dati nel stream
+        _hrHistoryDataController.add(historyData);
+        debugPrint('📤 Sent ${entries.length} HR entries to UI stream');
+        
+      } else {
+        debugPrint('💓 No HR measurements found in response');
+      }
+      
+      // Reset per prossima richiesta
+      _hrDataPackages.clear();
+      _isHRDataStamp = false;
+      _hrDataStamp = 0;
+    }
+  }
+
+  // ===== UTILITY METHODS (WearManager compatible) =====
+
+  /// Parse big-endian multi-byte value (equivalente a getLongParse())
+  int _getLongParse(List<int> bytes, int pos, int len) {
+    int val = 0;
+    int end = pos + len;
+    for (int i = pos; i < end && i < bytes.length; i++) {
+      val <<= 8;
+      val |= bytes[i] & 0xFF;
+    }
+    return val;
+  }
+
+  /// Skip header bytes (equivalente a subSlice())
+  List<int> _subSlice(int start, List<int> data) {
+    if (start >= data.length) return [];
+    return data.sublist(start);
+  }
+
+  /// Converte timestamp UTC in timestamp locale (equivalente a restoreZoneUTC())
+  int _restoreZoneUTC(int stamp) {
+    // Converte da secondi UTC a millisecondi locali
+    DateTime utcTime = DateTime.fromMillisecondsSinceEpoch(stamp * 1000, isUtc: true);
+    DateTime localTime = utcTime.toLocal();
+    return localTime.millisecondsSinceEpoch;
+  }
+
+  // ===== SLEEP AND STEPS DATA PROCESSING METHODS =====
+
+  /// Processa dati del sonno (mode 0x05) secondo logica WearManager
+  void _processSleepHistoryData(List<int> data) {
+    debugPrint('🌙 Processing sleep history data (WearManager style)...');
+    debugPrint('🌙 Raw data: ${_commandToHexString(data)}');
+    
+    if (data.length < 7) {
+      debugPrint('❌ Sleep data too short: ${data.length} bytes');
+      return;
+    }
+    
+    // Parse UTC tag (bytes 3-6, big-endian)
+    int utcTag = _getLongParse(data, 3, 4);
+    debugPrint('🌙 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
+    
+    if (utcTag != END_TAG) {
+      // Accumula pacchetti fino al tag di fine
+      debugPrint('🌙 Accumulating sleep packet (${data.length} bytes)');
+      _sleepPackages.add(List.from(data));
+    } else {
+      debugPrint('🌙 End tag received, processing accumulated sleep packets...');
+      debugPrint('🌙 Total packets accumulated: ${_sleepPackages.length}');
+      
+      // Processa tutti i pacchetti per dati del sonno
+      _sleepDataList.clear();
+      
+      for (int index = 0; index < _sleepPackages.length; index++) {
+        List<int> packet = _sleepPackages[index];
+        List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
+        
+        debugPrint('🌙 Processing sleep packet $index: ${slice.length} bytes payload');
+        
+        // Inizializza timestamp se è il primo pacchetto
+        if (!_isSleepDataStamp && slice.length >= 4) {
+          _sleepDataStamp = _getLongParse(slice, 0, 4);
+          _isSleepDataStamp = true;
+          debugPrint('🌙 Initial sleep timestamp: $_sleepDataStamp');
+        }
+        
+        // Skip 4 bytes iniziali, poi processa action indices
+        List<int> actions = [];
+        for (int i = 4; i < slice.length; i++) {
+          int actionIndex = slice[i] & 0xFF;
+          actions.add(actionIndex);
+        }
+        
+        if (actions.isNotEmpty) {
+          int localStamp = _restoreZoneUTC(_sleepDataStamp);
+          DateTime sleepTime = DateTime.fromMillisecondsSinceEpoch(localStamp);
+          
+          debugPrint('🌙 Sleep session: ${actions.length} actions at $sleepTime');
+          debugPrint('🌙 Action pattern: ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
+          
+          _sleepDataList.add({
+            'timestamp': sleepTime,
+            'actions': actions,
+            'stamp': _sleepDataStamp,
+          });
+          
+          _sleepDataStamp++; // Incrementa per sessione successiva
+        }
+      }
+      
+      debugPrint('✅ Sleep data processing complete: ${_sleepDataList.length} sessions found');
+      
+      // Invia i dati processati al stream per l'UI
+      if (_sleepDataList.isNotEmpty) {
+        debugPrint('🌙 Sleep sessions available - sending to UI stream');
+        
+        List<SleepHistoryEntry> entries = _sleepDataList.map((data) {
+          return SleepHistoryEntry(
+            timestamp: data['timestamp'],
+            count: (data['actions'] as List<int>).length,
+            actions: data['actions'],
+          );
+        }).toList();
+        
+        _sleepHistoryController.add(entries);
+        debugPrint('📤 Sent ${entries.length} sleep sessions to UI stream');
+        
+      } else {
+        debugPrint('🌙 No sleep sessions found in response');
+      }
+      
+      // Reset per prossima richiesta
+      _sleepPackages.clear();
+      _isSleepDataStamp = false;
+      _sleepDataStamp = 0;
+    }
+  }
+
+  /// Processa dati del contapassi (mode 0x40) secondo logica WearManager
+  void _processStepsIntervalData(List<int> data) {
+    debugPrint('👟 Processing steps interval data (WearManager style)...');
+    debugPrint('👟 Raw data: ${_commandToHexString(data)}');
+    
+    if (data.length < 7) {
+      debugPrint('❌ Steps data too short: ${data.length} bytes');
+      return;
+    }
+    
+    // Parse UTC tag (bytes 3-6, big-endian)
+    int utcTag = _getLongParse(data, 3, 4);
+    debugPrint('👟 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
+    
+    if (utcTag != END_TAG) {
+      // Accumula pacchetti fino al tag di fine
+      debugPrint('👟 Accumulating steps packet (${data.length} bytes)');
+      _stepsPackages.add(List.from(data));
+    } else {
+      debugPrint('👟 End tag received, processing accumulated steps packets...');
+      debugPrint('👟 Total packets accumulated: ${_stepsPackages.length}');
+      
+      // Processa tutti i pacchetti per dati dei passi
+      _stepsDataList.clear();
+      
+      for (int index = 0; index < _stepsPackages.length; index++) {
+        List<int> packet = _stepsPackages[index];
+        List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
+        
+        debugPrint('👟 Processing steps packet $index: ${slice.length} bytes payload');
+        
+        // Inizializza timestamp se è il primo pacchetto
+        if (!_isStepsDataStamp && slice.length >= 4) {
+          _stepsDataStamp = _getLongParse(slice, 0, 4);
+          _isStepsDataStamp = true;
+          debugPrint('👟 Initial steps timestamp: $_stepsDataStamp');
+        }
+        
+        // Skip 4 bytes iniziali, poi processa step counts (2 bytes per valore)
+        for (int i = 4; i < slice.length; i += 2) {
+          if (i + 1 < slice.length) {
+            int stepCount = _getLongParse(slice, i, 2); // 2 bytes per step count
+            int localStamp = _restoreZoneUTC(_stepsDataStamp);
+            DateTime stepTime = DateTime.fromMillisecondsSinceEpoch(localStamp);
+            
+            debugPrint('👟 Step interval: $stepCount steps at $stepTime');
+            
+            _stepsDataList.add({
+              'timestamp': stepTime,
+              'steps': stepCount,
+              'stamp': _stepsDataStamp,
+            });
+            
+            _stepsDataStamp += 300; // Incrementa di 5 minuti (300 secondi) per intervallo
+          }
+        }
+      }
+      
+      debugPrint('✅ Steps data processing complete: ${_stepsDataList.length} intervals found');
+      
+      // Invia i dati processati al stream per l'UI
+      if (_stepsDataList.isNotEmpty) {
+        debugPrint('👟 Step intervals available - sending to UI stream');
+        
+        List<StepIntervalEntry> entries = _stepsDataList.map((data) {
+          return StepIntervalEntry(
+            timestamp: data['timestamp'],
+            steps: data['steps'],
+          );
+        }).toList();
+        
+        _stepsHistoryController.add(entries);
+        debugPrint('📤 Sent ${entries.length} step intervals to UI stream');
+        
+      } else {
+        debugPrint('👟 No step intervals found in response');
+      }
+      
+      // Reset per prossima richiesta
+      _stepsPackages.clear();
+      _isStepsDataStamp = false;
+      _stepsDataStamp = 0;
+    }
   }
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====
@@ -1883,61 +2562,6 @@ class ChileafExtendedService {
     }
 
     debugPrint('=' * 70);
-  }
-
-  /// Richiede automaticamente i dati HR dettagliati per ogni timestamp nella lista
-  Future<void> _requestDetailedHRData(
-      HeartRateHistoryList hrHistoryList) async {
-    debugPrint(
-        '💓 Auto-requesting detailed HR data for ${hrHistoryList.timestamps.length} timestamps');
-
-    if (hrHistoryList.timestamps.isEmpty) {
-      debugPrint('💓 ⚠️ No HR timestamps found in list');
-      return;
-    }
-
-    // � DISABILITATO TEMPORANEAMENTE: Il sync UTC sembra far sparire i dati HR!
-    // debugPrint('🕐 Performing UTC sync BEFORE requesting historical data...');
-    // try {
-    //   await _syncDeviceTime();
-    //   await Future.delayed(const Duration(milliseconds: 1000)); // Wait for sync to complete
-    //   debugPrint('🕐 ✅ UTC sync completed, now requesting historical data');
-    // } catch (e) {
-    //   debugPrint('🕐 ⚠️ UTC sync failed: $e, continuing anyway...');
-    // }
-    
-    debugPrint('🚫 SKIPPING UTC sync - testing if HR data reappears without it');
-
-    // Prendi TUTTI i timestamp disponibili (senza filtri arbitrari sulla data)
-    const maxRequests = 10; // Aumentato per testare più timestamp
-    final requestTimestamps = hrHistoryList.timestamps.take(maxRequests).toList();
-
-    debugPrint(
-        '💓 Requesting detailed data for ${requestTimestamps.length}/${hrHistoryList.timestamps.length} timestamps (NO DATE FILTERS)');
-
-    for (int i = 0; i < requestTimestamps.length; i++) {
-      try {
-        await Future.delayed(
-            Duration(milliseconds: 500 * (i + 1))); // Delay più breve
-        
-        // Usa direttamente il raw timestamp corrispondente senza conversioni
-        int timestampIndex = hrHistoryList.timestamps.indexOf(requestTimestamps[i]);
-        if (timestampIndex >= 0 && timestampIndex < hrHistoryList.rawTimestamps.length) {
-          int rawTimestamp = hrHistoryList.rawTimestamps[timestampIndex];
-          debugPrint('💓 🔢 Testing RAW timestamp: $rawTimestamp for ${requestTimestamps[i]}');
-          
-          // Prova SOLO la variante Standard per semplicità
-          await requestHRHistoryDataRaw(rawTimestamp);
-          
-        } else {
-          // Fallback to DateTime-based method
-          await requestHRHistoryData(requestTimestamps[i]);
-        }
-      } catch (e) {
-        debugPrint(
-            '❌ Failed to request HR data for timestamp ${requestTimestamps[i]}: $e');
-      }
-    }
   }
 
   /// Test specifico con il timestamp che ha funzionato nei log precedenti

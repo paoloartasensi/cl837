@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<LinearLayout android:orientation="vertical" android:layout_width="fill_parent" android:layout_height="fill_parent" style="?android:buttonBarStyle"
-  xmlns:android="http://schemas.android.com/apk/res/android">
-    <TextView android:id="@id/permission_rationale" android:visibility="gone" android:layout_width="fill_parent" android:layout_height="wrap_content" android:layout_marginBottom="8.0dip" android:text="@string/scanner_permission_rationale" android:paddingStart="26.0dip" android:paddingEnd="26.0dip" />
-    <ListView android:scrollbarStyle="outsideOverlay" android:id="@android:id/list" android:layout_width="fill_parent" android:layout_height="0.0dip" android:layout_weight="1.0" />
-    <Button android:id="@id/action_cancel" android:layout_width="fill_parent" android:layout_height="wrap_content" android:text="@string/scanner_action_scan" />
-</LinearLayout>
