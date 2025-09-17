@@ -735,19 +735,13 @@ class ChileafExtendedService {
         }
         break;
       case 0x21: // HR History Record List (WearManager compatible)
-        debugPrint('� HR RECORD LIST: Processing HR timestamp list (WearManager mode)');
+        debugPrint('📋 HR RECORD LIST: Processing HR timestamp list (WearManager mode)');
         _processHRRecordList(data);
         break;
-      case 0x22: // HR History Data (WearManager compatible)
-        debugPrint('💓 HR HISTORY DATA: Processing detailed HR data (WearManager mode)');
-        _processHRHistoryData(data);
-        break;
-      case 0x23: // HR History End Signal
-        debugPrint(
-            '🏁❌ HR HISTORY END: Received END SIGNAL instead of data (0x23)');
-        debugPrint('🏁📦 End signal data: ${data.map((e) => '0x${e.toRadixString(16).padLeft(2, '0')}').join(' ')}');
-        debugPrint('🏁💭 This means the device has NO DATA for the requested timestamp');
-        // Signal that HR history transfer is complete
+      case 0x22: // HR History Data (WearManager compatible - mode 34)
+      case 0x23: // HR History End/Data (WearManager compatible - mode 35) 
+        debugPrint('💓 HR HISTORY DATA: Processing detailed HR data (WearManager mode ${command == 0x22 ? '34' : '35'})');
+        _processHRHistoryData(data, command);
         break;
       case 0x40: // Rope Status OR Steps Interval - Context dependent
         debugPrint('🪢👟 ROPE/STEPS (0x40): Processing rope or steps data (context-dependent)...');
@@ -1263,9 +1257,9 @@ class ChileafExtendedService {
     }
   }
 
-  /// Processa dati HR dettagliati (mode 0x22) secondo logica WearManager
-  void _processHRHistoryData(List<int> data) {
-    debugPrint('💓 Processing HR history data (WearManager style)...');
+  /// Processa dati HR dettagliati (mode 0x22/0x23) secondo logica WearManager
+  void _processHRHistoryData(List<int> data, int mode) {
+    debugPrint('💓 Processing HR history data (WearManager style) - mode: $mode (0x${mode.toRadixString(16)})');
     debugPrint('💓 Raw data: ${_commandToHexString(data)}');
     
     if (data.length < 7) {
@@ -1273,37 +1267,37 @@ class ChileafExtendedService {
       return;
     }
     
-    // Parse UTC tag (bytes 3-6, big-endian)  
-    int utcTag = _getLongParse(data, 3, 4);
-    debugPrint('💓 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
-    
-    if (utcTag != END_TAG) {
-      // Accumula pacchetti fino al tag di fine
-      debugPrint('💓 Accumulating packet (${data.length} bytes)');
+    if (mode == 0x22) { // Mode 34 - Data packet accumulation
+      debugPrint('💓 Mode 34 (0x22): Accumulating HR data packet...');
+      
+      // Extract timestamp from first packet if not set
+      if (!_isHRDataStamp) {
+        _hrDataStamp = _getLongParse(data, 3, 4);
+        _isHRDataStamp = true;
+        debugPrint('💓 Set initial timestamp: $_hrDataStamp');
+      }
+      
+      // Add packet to accumulator
       _hrDataPackages.add(List.from(data));
-    } else {
-      debugPrint('💓 End tag received, processing accumulated packets...');
+      debugPrint('💓 Accumulated packet ${_hrDataPackages.length} (${data.length} bytes)');
+      
+    } else if (mode == 0x23) { // Mode 35 - Process accumulated data
+      debugPrint('💓 Mode 35 (0x23): Processing all accumulated HR data...');
       debugPrint('💓 Total packets accumulated: ${_hrDataPackages.length}');
       
-      // Processa tutti i pacchetti per dati HR dettagliati
+      // Clear previous data
       _hrDataList.clear();
       
+      // Process all accumulated packets
       for (int index = 0; index < _hrDataPackages.length; index++) {
         List<int> packet = _hrDataPackages[index];
         List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
         
         debugPrint('💓 Processing packet $index: ${slice.length} bytes payload');
         
-        // Inizializza timestamp se è il primo pacchetto
-        if (!_isHRDataStamp && slice.length >= 4) {
-          _hrDataStamp = _getLongParse(slice, 0, 4);
-          _isHRDataStamp = true;
-          debugPrint('💓 Initial timestamp: $_hrDataStamp');
-        }
-        
-        // Skip 4 bytes iniziali, poi 1 byte per valore HR
+        // According to WearManager: skip first 4 bytes, then 1 byte per HR value
         for (int i = 4; i < slice.length; i++) {
-          int heartRate = slice[i] & 0xFF; // 1 byte per valore HR
+          int heartRate = slice[i] & 0xFF; // 1 byte per HR value
           int localStamp = _restoreZoneUTC(_hrDataStamp);
           
           debugPrint('💓 HR Value ${_hrDataList.length + 1}: $heartRate bpm at stamp $_hrDataStamp');
@@ -1316,17 +1310,17 @@ class ChileafExtendedService {
             'dateTime': DateTime.fromMillisecondsSinceEpoch(localStamp),
           });
           
-          _hrDataStamp++; // Incrementa timestamp per record successivo
+          _hrDataStamp++; // Increment timestamp for next record
         }
       }
       
       debugPrint('✅ HR Data processing complete: ${_hrDataList.length} measurements found');
       
-      // Invia i dati processati al stream per l'UI
+      // Send processed data to UI stream
       if (_hrDataList.isNotEmpty) {
-        debugPrint('💓 HR measurements available for analysis - sending to UI stream');
+        debugPrint('💓 HR measurements available - sending to UI stream');
         
-        // Converti i dati nel formato HeartRateHistoryData
+        // Convert to HeartRateHistoryData format
         List<HeartRateHistoryEntry> entries = _hrDataList.map((data) {
           return HeartRateHistoryEntry(
             heartRate: data['heartRate'],
@@ -1340,15 +1334,15 @@ class ChileafExtendedService {
           entries: entries,
         );
         
-        // Emetti i dati nel stream
+        // Emit to stream
         _hrHistoryDataController.add(historyData);
-        debugPrint('📤 Sent ${entries.length} HR entries to UI stream');
+        debugPrint('📤 Sent ${entries.length} HR measurements to UI stream');
         
       } else {
-        debugPrint('💓 No HR measurements found in response');
+        debugPrint('💓 No HR measurements found in accumulated data');
       }
       
-      // Reset per prossima richiesta
+      // Clear accumulators for next request
       _hrDataPackages.clear();
       _isHRDataStamp = false;
       _hrDataStamp = 0;

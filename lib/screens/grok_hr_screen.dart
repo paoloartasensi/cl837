@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 
@@ -26,6 +27,8 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
   // HR Data variables
   List<HeartRateHistoryData> _hrHistoryData = [];
   List<DateTime> _hrRecordList = [];
+  List<int> _hrRawTimestamps = []; // Store raw timestamps for HR data requests
+  int? _selectedTimestamp; // Currently selected HR session timestamp
   
   // Sleep and Steps data variables
   final List<SleepHistoryEntry> _sleepHistoryData = [];
@@ -82,6 +85,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     _hrListSubscription = _service.hrHistoryListStream.listen((list) {
       setState(() {
         _hrRecordList = list.timestamps;
+        _hrRawTimestamps = list.rawTimestamps; // Store raw timestamps for HR data requests
         _statusMessage = 'HR record list received - ${list.timestamps.length} timestamps';
       });
     });
@@ -311,9 +315,20 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     try {
       debugPrint('💓 Testing HR data (WearManager getHistoryOfHRData)');
       
-      // Test con timestamp recente
-      int recentTimestamp = DateTime.now().subtract(const Duration(days: 1)).millisecondsSinceEpoch ~/ 1000;
-      await _service.getHistoryOfHRData(recentTimestamp);
+      // Use the most recent timestamp from the HR record list if available
+      int targetTimestamp;
+      if (_hrRawTimestamps.isNotEmpty) {
+        // Use the most recent timestamp from the device
+        targetTimestamp = _hrRawTimestamps.last;
+        debugPrint('💓 Using most recent timestamp from device records: $targetTimestamp');
+      } else {
+        // Fallback to known good timestamp from your logs
+        targetTimestamp = 1758127172; // 2025-09-17 18:39:32
+        debugPrint('💓 Using fallback timestamp: $targetTimestamp');
+      }
+      
+      debugPrint('💓 Requesting HR data for: ${DateTime.fromMillisecondsSinceEpoch(targetTimestamp * 1000)}');
+      await _service.getHistoryOfHRData(targetTimestamp);
       
       setState(() {
         _isDownloading = false;
@@ -394,6 +409,76 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  Future<void> _downloadCompleteHRHistory() async {
+    if (connectedDevice == null) {
+      setState(() {
+        _statusMessage = 'No device connected';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Downloading COMPLETE HR history automatically...';
+    });
+
+    try {
+      debugPrint('🚀 AUTOMATIC HR HISTORY DOWNLOAD STARTED');
+      
+      // Step 1: Get HR record timestamps first
+      setState(() {
+        _statusMessage = 'Step 1/3: Getting HR record timestamps...';
+      });
+      
+      debugPrint('📋 Step 1: Getting HR record list...');
+      await _service.getHistoryOfHRRecord();
+      
+      // Wait for timestamps to arrive
+      await Future.delayed(const Duration(milliseconds: 2000));
+      
+      // Step 2: Check if we have timestamps to download
+      if (_hrRawTimestamps.isEmpty) {
+        setState(() {
+          _isDownloading = false;
+          _statusMessage = 'No HR timestamps found on device';
+        });
+        debugPrint('❌ No HR timestamps available for download');
+        return;
+      }
+      
+      setState(() {
+        _statusMessage = 'Step 2/3: Found ${_hrRawTimestamps.length} HR sessions. Downloading latest...';
+      });
+      
+      // Step 3: Download HR data for the LATEST timestamp (most recent session)
+      int latestTimestamp = _hrRawTimestamps.last; // Get most recent timestamp
+      setState(() {
+        _selectedTimestamp = latestTimestamp; // Auto-select the latest session
+      });
+      
+      debugPrint('💓 Step 3: Getting HR data for latest timestamp: $latestTimestamp');
+      await _service.getHistoryOfHRData(latestTimestamp);
+      
+      // Wait for HR data to arrive
+      await Future.delayed(const Duration(milliseconds: 3000));
+      
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Latest HR session downloaded! Check chart below. ${_hrRawTimestamps.length} sessions available for selection.';
+      });
+      
+      debugPrint('✅ AUTOMATIC HR HISTORY DOWNLOAD COMPLETED!');
+      debugPrint('📊 HR Chart should now be populated with latest session data');
+      
+    } catch (e) {
+      debugPrint('❌ Automatic HR history download failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Automatic HR download failed: $e';
+      });
+    }
+  }
+
   Future<void> _downloadAllData() async {
     if (connectedDevice == null) {
       setState(() {
@@ -424,6 +509,373 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
         _statusMessage = 'Complete data sequence failed: $e';
       });
     }
+  }
+
+  // ===== HR SESSION SELECTOR =====
+  Widget _buildHRSessionSelector() {
+    if (_hrRecordList.isEmpty) {
+      return const SizedBox.shrink(); // Hide if no sessions available
+    }
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '📅 HR Session Selector',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.blue,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                const Icon(Icons.access_time, size: 20, color: Colors.grey),
+                const SizedBox(width: 8),
+                Text(
+                  'Found ${_hrRecordList.length} HR sessions',
+                  style: const TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              decoration: const InputDecoration(
+                labelText: 'Select HR Session',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.favorite),
+              ),
+              value: _selectedTimestamp,
+              hint: const Text('Choose a session to view HR chart'),
+              items: _hrRawTimestamps.map((timestamp) {
+                final dateTime = DateTime.fromMillisecondsSinceEpoch(timestamp * 1000);
+                final index = _hrRawTimestamps.indexOf(timestamp);
+                return DropdownMenuItem<int>(
+                  value: timestamp,
+                  child: Text(
+                    '${DateFormat('MMM dd, yyyy - HH:mm').format(dateTime)} (Session ${index + 1})',
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                );
+              }).toList(),
+              onChanged: (int? newTimestamp) async {
+                if (newTimestamp != null) {
+                  setState(() {
+                    _selectedTimestamp = newTimestamp;
+                    _isDownloading = true;
+                    _statusMessage = 'Loading HR data for selected session...';
+                  });
+                  
+                  try {
+                    debugPrint('📊 Loading HR data for timestamp: $newTimestamp');
+                    await _service.getHistoryOfHRData(newTimestamp);
+                    
+                    // Wait for data to arrive
+                    await Future.delayed(const Duration(milliseconds: 2000));
+                    
+                    setState(() {
+                      _isDownloading = false;
+                      _statusMessage = 'HR session loaded successfully!';
+                    });
+                  } catch (e) {
+                    setState(() {
+                      _isDownloading = false;
+                      _statusMessage = 'Failed to load HR session: $e';
+                    });
+                  }
+                }
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===== HR CHART WIDGET =====
+  Widget _buildHRChart() {
+    if (_hrHistoryData.isEmpty) {
+      return Card(
+        child: Container(
+          height: 300,
+          padding: const EdgeInsets.all(16.0),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.show_chart,
+                  size: 64,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'No HR data available for chart',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Connect to device and click "HR History Data"\nto retrieve HR measurements for visualization',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Prepare data for chart
+    List<FlSpot> hrSpots = [];
+    List<String> timeLabels = [];
+    
+    for (int i = 0; i < _hrHistoryData.length; i++) {
+      final hrData = _hrHistoryData[i];
+      for (int j = 0; j < hrData.entries.length; j++) {
+        final entry = hrData.entries[j];
+        final timeIndex = (i * hrData.entries.length + j).toDouble();
+        hrSpots.add(FlSpot(timeIndex, entry.heartRate.toDouble()));
+        
+        // Add time label (show only some to avoid overcrowding)
+        if (j % 5 == 0 || j == hrData.entries.length - 1) {
+          timeLabels.add(DateFormat('HH:mm').format(entry.time));
+        }
+      }
+    }
+
+    if (hrSpots.isEmpty) {
+      return Card(
+        child: Container(
+          height: 300,
+          padding: const EdgeInsets.all(16.0),
+          child: const Center(
+            child: Text(
+              'No HR measurements in data',
+              style: TextStyle(fontSize: 16, color: Colors.grey),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Calculate Y-axis range
+    double minHR = hrSpots.map((spot) => spot.y).reduce((a, b) => a < b ? a : b);
+    double maxHR = hrSpots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
+    double range = maxHR - minHR;
+    double padding = range * 0.1;
+    
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '📈 Heart Rate Chart',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red,
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 300,
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: 10,
+                    verticalInterval: hrSpots.length > 10 ? hrSpots.length / 10 : 1,
+                    getDrawingHorizontalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade300,
+                        strokeWidth: 1,
+                      );
+                    },
+                    getDrawingVerticalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade300,
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 30,
+                        interval: hrSpots.length > 10 ? hrSpots.length / 5 : 1,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index >= 0 && index < timeLabels.length) {
+                            return SideTitleWidget(
+                              meta: meta,
+                              child: Text(
+                                timeLabels[index],
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 10,
+                        reservedSize: 42,
+                        getTitlesWidget: (value, meta) {
+                          return Text(
+                            '${value.toInt()}',
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: Colors.grey.shade400),
+                  ),
+                  minX: 0,
+                  maxX: hrSpots.length.toDouble() - 1,
+                  minY: minHR - padding,
+                  maxY: maxHR + padding,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: hrSpots,
+                      isCurved: true,
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.red.shade400,
+                          Colors.red.shade600,
+                        ],
+                      ),
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, barData, index) {
+                          return FlDotCirclePainter(
+                            radius: 3,
+                            color: Colors.red.shade600,
+                            strokeWidth: 1,
+                            strokeColor: Colors.white,
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.red.shade200.withOpacity(0.3),
+                            Colors.red.shade100.withOpacity(0.1),
+                          ],
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                        ),
+                      ),
+                    ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                        return touchedBarSpots.map((barSpot) {
+                          final flSpot = barSpot;
+                          return LineTooltipItem(
+                            '${flSpot.y.toInt()} BPM',
+                            const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _buildStatChip('Min', '${minHR.toInt()} BPM', Colors.blue),
+                _buildStatChip('Max', '${maxHR.toInt()} BPM', Colors.red),
+                _buildStatChip('Avg', '${(hrSpots.map((s) => s.y).reduce((a, b) => a + b) / hrSpots.length).toInt()} BPM', Colors.green),
+                _buildStatChip('Points', '${hrSpots.length}', Colors.purple),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatChip(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -571,11 +1023,25 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
               const SizedBox(height: 12),
 
-              // HR Data Test
+              // HR Complete History - AUTOMATIC DOWNLOAD
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _downloadCompleteHRHistory,
+                icon: const Icon(Icons.favorite_border),
+                label: const Text('💓 Get COMPLETE HR History (Auto)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // HR Data Test (manual)
               ElevatedButton.icon(
                 onPressed: _isDownloading ? null : _testHRData,
                 icon: const Icon(Icons.data_usage),
-                label: const Text('💓 Get HR Data (0x22)'),
+                label: const Text('💓 Get HR Data (0x22) - Manual'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green.shade700,
                   foregroundColor: Colors.white,
@@ -723,6 +1189,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 ),
               ),
             ),
+            
+            const SizedBox(height: 16),
+
+            // HR Session Selector (only visible when sessions are available)
+            _buildHRSessionSelector(),
+            
+            // HR Chart
+            _buildHRChart(),
             
             const SizedBox(height: 16),
             
