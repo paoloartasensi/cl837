@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 
@@ -511,6 +516,161 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  /// Esporta i dati HR correnti in formato CSV o JSON
+  Future<void> _exportHRData(String format) async {
+    if (_hrHistoryData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Nessun dato HR da esportare. Scarica prima i dati.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    try {
+      setState(() {
+        _statusMessage = 'Creazione file ${format.toUpperCase()}...';
+      });
+
+      String content;
+      String fileName;
+      
+      if (format.toLowerCase() == 'csv') {
+        content = _generateCSVContent();
+        fileName = 'HR_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
+      } else if (format.toLowerCase() == 'json') {
+        content = _generateJSONContent();
+        fileName = 'HR_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
+      } else {
+        throw Exception('Formato non supportato: $format');
+      }
+
+      // Ottieni la directory per salvare il file
+      final directory = await getApplicationDocumentsDirectory();
+      final file = File('${directory.path}/$fileName');
+      
+      // Scrivi il file
+      await file.writeAsString(content);
+      
+      // Conta il numero totale di misurazioni
+      int totalMeasurements = 0;
+      for (var data in _hrHistoryData) {
+        totalMeasurements += data.entries.length;
+      }
+      
+      setState(() {
+        _statusMessage = '${format.toUpperCase()} creato con successo: $totalMeasurements misurazioni';
+      });
+
+      // Condividi il file
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: 'Dati HR CL837 - $totalMeasurements misurazioni',
+        subject: 'Esportazione Dati Heart Rate (${format.toUpperCase()})',
+      );
+
+      // Mostra messaggio di successo
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ File ${format.toUpperCase()} esportato: $fileName'),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: 'OK',
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+
+    } catch (e) {
+      debugPrint('❌ Errore esportazione ${format.toUpperCase()}: $e');
+      setState(() {
+        _statusMessage = 'Errore esportazione ${format.toUpperCase()}: $e';
+      });
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Errore esportazione: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Genera il contenuto CSV per l'esportazione
+  String _generateCSVContent() {
+    StringBuffer csvContent = StringBuffer();
+    
+    // Header CSV
+    csvContent.writeln('DateTime,Heart_Rate_BPM,Activity_Index,Session_Info');
+    
+    // Informazioni sessione
+    String sessionInfo = _selectedTimestamp != null 
+        ? 'Session_${DateFormat('yyyyMMdd_HHmm').format(DateTime.fromMillisecondsSinceEpoch(_selectedTimestamp! * 1000))}'
+        : 'HR_Data';
+        
+    // Dati CSV
+    for (var data in _hrHistoryData) {
+      for (var entry in data.entries) {
+        String dateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(entry.time);
+        csvContent.writeln('$dateTime,${entry.heartRate},${entry.activityIndex},$sessionInfo');
+      }
+    }
+    
+    return csvContent.toString();
+  }
+
+  /// Genera il contenuto JSON per l'esportazione
+  String _generateJSONContent() {
+    // Informazioni sessione
+    String sessionInfo = _selectedTimestamp != null 
+        ? 'Session_${DateFormat('yyyyMMdd_HHmm').format(DateTime.fromMillisecondsSinceEpoch(_selectedTimestamp! * 1000))}'
+        : 'HR_Data';
+    
+    // Conta il numero totale di misurazioni
+    int totalMeasurements = 0;
+    for (var data in _hrHistoryData) {
+      totalMeasurements += data.entries.length;
+    }
+    
+    // Crea la struttura JSON
+    Map<String, dynamic> jsonData = {
+      'export_info': {
+        'exported_at': DateTime.now().toIso8601String(),
+        'total_entries': totalMeasurements,
+        'device': 'CL837',
+        'data_type': 'heart_rate_history',
+        'session_info': sessionInfo,
+        'selected_timestamp': _selectedTimestamp
+      },
+      'data': []
+    };
+    
+    // Aggiungi i dati HR
+    for (var data in _hrHistoryData) {
+      for (var entry in data.entries) {
+        jsonData['data'].add({
+          'timestamp': entry.time.millisecondsSinceEpoch ~/ 1000,
+          'datetime': entry.time.toIso8601String(),
+          'heart_rate_bpm': entry.heartRate,
+          'activity_index': entry.activityIndex
+        });
+      }
+    }
+    
+    // Ordina i dati per timestamp
+    (jsonData['data'] as List).sort((a, b) => a['timestamp'].compareTo(b['timestamp']));
+    
+    // Codifica con formattazione indentata
+    const encoder = JsonEncoder.withIndent('  ');
+    return encoder.convert(jsonData);
+  }
+
+
   // ===== HR SESSION SELECTOR =====
   Widget _buildHRSessionSelector() {
     if (_hrRecordList.isEmpty) {
@@ -614,10 +774,13 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
   // ===== HR CHART WIDGET =====
   Widget _buildHRChart() {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final chartHeight = (screenHeight * 0.35).clamp(250.0, 400.0); // 35% dello schermo, min 250, max 400
+    
     if (_hrHistoryData.isEmpty) {
       return Card(
         child: Container(
-          height: 300,
+          height: chartHeight,
           padding: const EdgeInsets.all(16.0),
           child: const Center(
             child: Column(
@@ -674,7 +837,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     if (hrSpots.isEmpty) {
       return Card(
         child: Container(
-          height: 300,
+          height: chartHeight,
           padding: const EdgeInsets.all(16.0),
           child: const Center(
             child: Text(
@@ -708,7 +871,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             ),
             const SizedBox(height: 16),
             SizedBox(
-              height: 300,
+              height: chartHeight,
               child: LineChart(
                 LineChartData(
                   gridData: FlGridData(
@@ -896,17 +1059,25 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('CL837 WearManager HR Test'),
-        backgroundColor: Colors.blue.shade700,
+        backgroundColor: Colors.blue.shade700.withOpacity(0.9),
         foregroundColor: Colors.white,
+        elevation: 0,
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('lib/assets/background.jpg'),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Connection Status Card
-            Card(
-              color: _getConnectionStatusColor(),
+            // Connection Status Card with Blur Effect
+            _buildBlurCard(
+              backgroundColor: _getConnectionStatusColor().withOpacity(0.3),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -917,12 +1088,28 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
                       ),
                     ),
                     if (connectedDevice != null)
                       Text(
                         'Device: ${connectedDevice!.platformName}',
-                        style: const TextStyle(color: Colors.white70),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          shadows: [
+                            Shadow(
+                              offset: Offset(1, 1),
+                              blurRadius: 2,
+                              color: Colors.black54,
+                            ),
+                          ],
+                        ),
                       ),
                   ],
                 ),
@@ -1050,6 +1237,39 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
               const SizedBox(height: 12),
 
+              // Export HR Data Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _hrHistoryData.isEmpty ? null : () => _exportHRData('csv'),
+                      icon: const Icon(Icons.table_chart),
+                      label: const Text('📊 Export CSV'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.orange.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _hrHistoryData.isEmpty ? null : () => _exportHRData('json'),
+                      icon: const Icon(Icons.code),
+                      label: const Text('🔗 Export JSON'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.deepOrange.shade700,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
               // HR Data Test (manual)
               ElevatedButton.icon(
                 onPressed: _isDownloading ? null : _testHRData,
@@ -1133,8 +1353,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             
             const SizedBox(height: 16),
             
-            // HR Data Display
-            Card(
+            // HR Data Display with Blur Effect
+            _buildBlurCard(
+              backgroundColor: Colors.blue.withOpacity(0.2),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1145,6 +1366,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1213,8 +1442,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             
             const SizedBox(height: 16),
             
-            // HR Record List Display
-            Card(
+            // HR Record List Display with Blur Effect
+            _buildBlurCard(
+              backgroundColor: Colors.green.withOpacity(0.2),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1225,6 +1455,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1277,8 +1515,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             
             const SizedBox(height: 16),
             
-            // Sleep Data Display
-            Card(
+            // Sleep Data Display with Blur Effect
+            _buildBlurCard(
+              backgroundColor: Colors.purple.withOpacity(0.2),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1289,6 +1528,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1348,8 +1595,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             
             const SizedBox(height: 16),
             
-            // Steps Data Display
-            Card(
+            // Steps Data Display with Blur Effect
+            _buildBlurCard(
+              backgroundColor: Colors.orange.withOpacity(0.2),
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -1360,6 +1608,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 16),
@@ -1412,6 +1668,30 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
               ),
             ),
           ],
+        ),
+        ),
+      ),
+    );
+  }
+
+  /// Widget helper per creare card con effetto blur
+  Widget _buildBlurCard({
+    required Widget child,
+    Color? backgroundColor,
+    double borderRadius = 25,
+    double sigmaX = 15,
+    double sigmaY = 15,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(borderRadius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: sigmaX, sigmaY: sigmaY),
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(borderRadius),
+            color: backgroundColor ?? Colors.black45,
+          ),
+          child: child,
         ),
       ),
     );

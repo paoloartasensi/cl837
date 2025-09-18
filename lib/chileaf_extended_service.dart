@@ -1097,8 +1097,15 @@ class ChileafExtendedService {
     debugPrint('🌙 Requesting sleep history data (WearManager compatible)...');
     
     try {
-      // Costruisci comando secondo formato WearManager
-      List<int> command = OfficialChileafCommands.buildOfficialCommand(5, []);
+      // Clear dei dati precedenti (equivalente a clearType(22) nel WearManager)
+      _sleepPackages.clear();
+      _sleepDataList.clear();
+      _sleepDataStamp = 0;
+      _isSleepDataStamp = false;
+      debugPrint('🧹 Cleared previous sleep data (clearType 22)');
+      
+      // Costruisci comando secondo formato WearManager: sendCommand((byte)5, new int[] { 2 });
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(5, [2]);
       
       debugPrint('📡 Sleep data command: ${_commandToHexString(command)}');
       debugPrint('🔍 Expected response: mode 5 with sleep action indices');
