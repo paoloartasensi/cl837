@@ -650,14 +650,29 @@ class ChileafExtendedService {
         debugPrint('📱🌙 DEVICE NAME/SLEEP (0x05): Checking data context...');
         debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
         
-        // Check if this looks like sleep data vs device name
-        if (data.length > 15) {
-          // Likely sleep historical data (longer packets)
-          debugPrint('🌙 SLEEP DATA: Processing sleep history (longer packet detected)');
-          _processSleepHistoryData(data);
+        // Verifica se è una risposta del sonno controllando il cmd byte (come nel WearManager)
+        if (data.length > 3) {
+          int cmd = data[3] & 0xFF;
+          debugPrint('🔍 Command byte: $cmd (0x${cmd.toRadixString(16)})');
+          
+          if (cmd == 3) {
+            // Sleep data response (WearManager exact match: mode 5, cmd 3)
+            debugPrint('🌙 SLEEP DATA: Processing sleep history (cmd 3 detected - WearManager format)');
+            _processSleepHistoryDataExact(data);
+          } else if (data.length > 15) {
+            // Fallback: longer packets might be sleep data
+            debugPrint('🌙 SLEEP DATA: Processing sleep history (longer packet detected)');
+            _processSleepHistoryData(data);
+          } else {
+            // Device name (shorter response)
+            debugPrint('📱 DEVICE NAME: Processing device name');
+            var deviceName = DeviceInfoProcessor.processDeviceName(data);
+            if (deviceName != null) {
+              _deviceNameController.add(deviceName);
+            }
+          }
         } else {
-          // Likely device name (shorter response)
-          debugPrint('📱 DEVICE NAME: Processing device name');
+          debugPrint('📱 DEVICE NAME: Processing device name (short packet)');
           var deviceName = DeviceInfoProcessor.processDeviceName(data);
           if (deviceName != null) {
             _deviceNameController.add(deviceName);
@@ -1108,15 +1123,56 @@ class ChileafExtendedService {
       List<int> command = OfficialChileafCommands.buildOfficialCommand(5, [2]);
       
       debugPrint('📡 Sleep data command: ${_commandToHexString(command)}');
-      debugPrint('🔍 Expected response: mode 5 with sleep action indices');
-      debugPrint('🔍 Format: >20=awake, <20=light sleep, 3 consecutive 0s=deep sleep');
-      debugPrint('🔍 End marker: 0xFFFFFFFF indicates end of transmission');
+      debugPrint('🔍 Expected response: mode 5, cmd 3 with sleep action indices');
+      debugPrint('🔍 Java format: len + utc(4 bytes) + actions[len]');
+      debugPrint('🔍 Time correction: utc *= 1000, utc -= 28800000 (8h offset)');
       
       await _sendCommand(command);
       debugPrint('✅ Sleep history command sent successfully');
       
     } catch (e) {
       debugPrint('❌ Failed to request sleep history: $e');
+      rethrow;
+    }
+  }
+
+  /// Test completo per il sonno - prova diversi comandi e parametri
+  Future<void> testAllSleepCommands() async {
+    debugPrint('🌙🧪 COMPREHENSIVE SLEEP TEST - Testing all possible commands...');
+    
+    try {
+      // Test 1: Comando WearManager standard
+      debugPrint('🧪 TEST 1/4: Standard WearManager command (5, [2])');
+      await Future.delayed(const const Duration(milliseconds: 500));
+      List<int> cmd1 = OfficialChileafCommands.buildOfficialCommand(5, [2]);
+      debugPrint('📡 CMD1: ${_commandToHexString(cmd1)}');
+      await _sendCommand(cmd1);
+      await Future.delayed(const const Duration(seconds: 2));
+      
+      // Test 2: Prova con parametro 3 (cmd che cerca il parser)
+      debugPrint('🧪 TEST 2/4: Alternative parameter (5, [3])');
+      List<int> cmd2 = OfficialChileafCommands.buildOfficialCommand(5, [3]);
+      debugPrint('📡 CMD2: ${_commandToHexString(cmd2)}');
+      await _sendCommand(cmd2);
+      await Future.delayed(const const Duration(seconds: 2));
+      
+      // Test 3: Prova senza parametri
+      debugPrint('🧪 TEST 3/4: No parameters (5, [])');
+      List<int> cmd3 = OfficialChileafCommands.buildOfficialCommand(5, []);
+      debugPrint('📡 CMD3: ${_commandToHexString(cmd3)}');
+      await _sendCommand(cmd3);
+      await Future.delayed(const const Duration(seconds: 2));
+      
+      // Test 4: Prova con parametri multipli
+      debugPrint('🧪 TEST 4/4: Multiple parameters (5, [2, 3])');
+      List<int> cmd4 = OfficialChileafCommands.buildOfficialCommand(5, [2, 3]);
+      debugPrint('📡 CMD4: ${_commandToHexString(cmd4)}');
+      await _sendCommand(cmd4);
+      
+      debugPrint('✅ All sleep command tests completed! Check logs for responses.');
+      
+    } catch (e) {
+      debugPrint('❌ Sleep test failed: $e');
       rethrow;
     }
   }
@@ -1463,6 +1519,91 @@ class ChileafExtendedService {
   }
 
   // ===== SLEEP AND STEPS DATA PROCESSING METHODS =====
+
+  /// Processa dati del sonno con parsing esatto dal WearManager Java
+  void _processSleepHistoryDataExact(List<int> data) {
+    debugPrint('🌙 Processing sleep history data (EXACT WearManager Java format)...');
+    debugPrint('🌙 Raw data: ${_commandToHexString(data)}');
+    
+    if (data.length < 4) {
+      debugPrint('❌ Sleep data too short: ${data.length} bytes');
+      return;
+    }
+    
+    List<int> value = data;
+    int cmd = value[3] & 0xFF;
+    
+    if (cmd == 3) {
+      debugPrint('🌙 Processing cmd 3 - Sleep history data');
+      
+      List<SleepHistoryEntry> sleepSessions = [];
+      
+      // Parsing esatto dal WearManager Java (linee 112-129)
+      for (int j = 4; j < value.length; j++) {
+        int len = value[j] & 0xFF;
+        debugPrint('🌙 Sleep entry length: $len at position $j');
+        
+        if (len >= 1) {
+          j++;
+          if (j + 4 >= value.length) {
+            debugPrint('❌ Not enough data for UTC timestamp');
+            break;
+          }
+          
+          // long utc = getLongParse(value, j, 4);
+          int utc = _getLongParse(value, j, 4);
+          j += 4;
+          
+          // utc *= 1000L; utc -= 28800000L; (Java time correction)
+          int utcMillis = utc * 1000;
+          utcMillis -= 28800000; // 8 hours offset correction
+          
+          debugPrint('🌙 Sleep session UTC: $utc -> $utcMillis (${DateTime.fromMillisecondsSinceEpoch(utcMillis)})');
+          
+          if (j + len > value.length) {
+            debugPrint('❌ Not enough data for actions array');
+            break;
+          }
+          
+          // int[] actions = new int[len];
+          List<int> actions = [];
+          for (int i = 0; i < len; i++) {
+            int action = value[i + j] & 0xFF;
+            actions.add(action);
+          }
+          j += len - 1;
+          
+          debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
+          
+          // HistorySleep historySleep = new HistorySleep(utc, actions);
+          SleepHistoryEntry sleepEntry = SleepHistoryEntry(
+            timestamp: DateTime.fromMillisecondsSinceEpoch(utcMillis),
+            count: actions.length,
+            actions: actions,
+          );
+          
+          sleepSessions.add(sleepEntry);
+          
+          // if (j == value.length - 2) break; (Java exit condition)
+          if (j >= value.length - 2) {
+            debugPrint('🌙 Reached end of data');
+            break;
+          }
+        }
+      }
+      
+      debugPrint('✅ Sleep parsing complete: ${sleepSessions.length} sessions found');
+      
+      if (sleepSessions.isNotEmpty) {
+        _sleepHistoryController.add(sleepSessions);
+        debugPrint('📤 Sent ${sleepSessions.length} sleep sessions to UI stream');
+      } else {
+        debugPrint('🌙 No valid sleep sessions found');
+      }
+    } else {
+      debugPrint('❌ Expected cmd 3 for sleep data, got cmd $cmd');
+    }
+  }
 
   /// Processa dati del sonno (mode 0x05) secondo logica WearManager
   void _processSleepHistoryData(List<int> data) {

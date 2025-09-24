@@ -382,6 +382,38 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  Future<void> _testAllSleepCommands() async {
+    if (connectedDevice == null) {
+      setState(() {
+        _statusMessage = 'No device connected';
+      });
+      return;
+    }
+
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Testing ALL sleep commands (comprehensive test)...';
+    });
+
+    try {
+      debugPrint('🌙🧪 Starting comprehensive sleep command test');
+      await _service.testAllSleepCommands();
+      
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'All sleep command tests completed! Check logs for responses.';
+      });
+      
+      debugPrint('✅ All sleep command tests completed!');
+    } catch (e) {
+      debugPrint('❌ Sleep command test failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Sleep command test failed: $e';
+      });
+    }
+  }
+
   Future<void> _testStepsData() async {
     if (connectedDevice == null) {
       setState(() {
@@ -1302,6 +1334,20 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 label: const Text('🌙 Get Sleep Data (0x05)'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.purple.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Comprehensive Sleep Test
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _testAllSleepCommands,
+                icon: const Icon(Icons.science),
+                label: const Text('🧪 Test ALL Sleep Commands'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.indigo.shade700,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
