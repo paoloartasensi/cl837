@@ -1581,8 +1581,7 @@ class ChileafExtendedService {
           // Check if we have enough data for actions, but don't break - skip invalid entries
           if (j + len > value.length) {
             debugPrint('❌ Not enough data for actions array (need $len, have ${value.length - j} remaining), skipping this entry');
-            // Skip this invalid entry by finding next length byte or end
-            j = value.length; // Skip to end to avoid further parsing of this packet
+            // Skip this invalid entry - continue to next iteration
             continue;
           }
           
@@ -1592,7 +1591,7 @@ class ChileafExtendedService {
             int action = value[i + j] & 0xFF;
             actions.add(action);
           }
-          j += len; // Move past the actions array
+          j += len - 1; // Move to the last action byte (loop will increment to next len)
           
           debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
           
