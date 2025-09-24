@@ -1931,6 +1931,125 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
             
             const SizedBox(height: 16),
             
+            // Sleep Data Display with Blur Effect
+            _buildBlurCard(
+              backgroundColor: Colors.purple.withOpacity(0.2),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '🌙 Sleep Data (${_sleepHistoryData.length} sessions)',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                        shadows: [
+                          Shadow(
+                            offset: Offset(1, 1),
+                            blurRadius: 2,
+                            color: Colors.black54,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      height: 250, // Fixed height for sleep list
+                      child: _sleepHistoryData.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'No sleep data downloaded yet.\nUse "Get Sleep Data" button to download.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: _sleepHistoryData.length,
+                              itemBuilder: (context, index) {
+                                final sleep = _sleepHistoryData[index];
+                                final phases = sleep.calculateSleepPhases();
+                                final totalSleepMinutes = phases.lightSleep + phases.deepSleep;
+                                
+                                return Card(
+                                  color: Colors.white.withOpacity(0.1),
+                                  child: ListTile(
+                                    leading: CircleAvatar(
+                                      backgroundColor: _getSleepQualityColor(phases),
+                                      child: Icon(
+                                        _getSleepIcon(phases),
+                                        color: Colors.white,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      '🌙 Sleep Session ${index + 1}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Time: ${DateFormat('MMM dd, HH:mm').format(sleep.timestamp)}',
+                                          style: const TextStyle(color: Colors.white70),
+                                        ),
+                                        Text(
+                                          'Duration: ${totalSleepMinutes ~/ 60}h ${totalSleepMinutes % 60}m',
+                                          style: const TextStyle(color: Colors.white70),
+                                        ),
+                                        Row(
+                                          children: [
+                                            Text(
+                                              'Light: ${phases.lightSleep}min',
+                                              style: const TextStyle(
+                                                color: Colors.blue,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Deep: ${phases.deepSleep}min',
+                                              style: const TextStyle(
+                                                color: Colors.purple,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              'Awake: ${phases.awake}min',
+                                              style: const TextStyle(
+                                                color: Colors.orange,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    trailing: IconButton(
+                                      icon: const Icon(Icons.bar_chart, color: Colors.white),
+                                      onPressed: () => _showSleepDetails(sleep, phases),
+                                      tooltip: 'View sleep details',
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            
+            const SizedBox(height: 16),
+            
             // Steps Data Display with Blur Effect
             _buildBlurCard(
               backgroundColor: Colors.orange.withOpacity(0.2),
@@ -2059,5 +2178,86 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     if (steps < 500) return Colors.blue;
     if (steps < 1000) return Colors.green;
     return Colors.purple;
+  }
+
+  Color _getSleepQualityColor(SleepPhases phases) {
+    final totalSleep = phases.lightSleep + phases.deepSleep;
+    final deepSleepRatio = phases.deepSleep / totalSleep;
+    
+    if (deepSleepRatio > 0.25 && totalSleep > 360) return Colors.green; // Good sleep
+    if (deepSleepRatio > 0.15 && totalSleep > 240) return Colors.blue; // Decent sleep
+    if (totalSleep > 180) return Colors.orange; // Poor sleep
+    return Colors.red; // Very poor sleep
+  }
+
+  IconData _getSleepIcon(SleepPhases phases) {
+    final totalSleep = phases.lightSleep + phases.deepSleep;
+    final deepSleepRatio = phases.deepSleep / totalSleep;
+    
+    if (deepSleepRatio > 0.25 && totalSleep > 360) return Icons.nightlight; // Excellent
+    if (deepSleepRatio > 0.15 && totalSleep > 240) return Icons.bedtime; // Good
+    if (totalSleep > 180) return Icons.hotel; // Fair
+    return Icons.snooze; // Poor
+  }
+
+  void _showSleepDetails(SleepHistoryEntry sleep, SleepPhases phases) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('🌙 Sleep Session Details'),
+        content: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Session Time: ${DateFormat('MMM dd, yyyy - HH:mm').format(sleep.timestamp)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              const Text('Sleep Phases:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              _buildSleepPhaseRow('Light Sleep', phases.lightSleep, Colors.blue),
+              _buildSleepPhaseRow('Deep Sleep', phases.deepSleep, Colors.purple),
+              _buildSleepPhaseRow('Awake', phases.awake, Colors.orange),
+              const SizedBox(height: 16),
+              Text('Total Measurements: ${sleep.actions.length}'),
+              Text('Sleep Efficiency: ${((phases.lightSleep + phases.deepSleep) / sleep.actions.length * 100).toStringAsFixed(1)}%'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepPhaseRow(String phase, int minutes, Color color) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$phase: ${minutes ~/ 60}h ${minutes % 60}m',
+              style: TextStyle(color: color, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
