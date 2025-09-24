@@ -1143,25 +1143,25 @@ class ChileafExtendedService {
     try {
       // Test 1: Comando WearManager standard
       debugPrint('🧪 TEST 1/4: Standard WearManager command (5, [2])');
-      await Future.delayed(const const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 500));
       List<int> cmd1 = OfficialChileafCommands.buildOfficialCommand(5, [2]);
       debugPrint('📡 CMD1: ${_commandToHexString(cmd1)}');
       await _sendCommand(cmd1);
-      await Future.delayed(const const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 2));
       
       // Test 2: Prova con parametro 3 (cmd che cerca il parser)
       debugPrint('🧪 TEST 2/4: Alternative parameter (5, [3])');
       List<int> cmd2 = OfficialChileafCommands.buildOfficialCommand(5, [3]);
       debugPrint('📡 CMD2: ${_commandToHexString(cmd2)}');
       await _sendCommand(cmd2);
-      await Future.delayed(const const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 2));
       
       // Test 3: Prova senza parametri
       debugPrint('🧪 TEST 3/4: No parameters (5, [])');
       List<int> cmd3 = OfficialChileafCommands.buildOfficialCommand(5, []);
       debugPrint('📡 CMD3: ${_commandToHexString(cmd3)}');
       await _sendCommand(cmd3);
-      await Future.delayed(const const Duration(seconds: 2));
+      await Future.delayed(const Duration(seconds: 2));
       
       // Test 4: Prova con parametri multipli
       debugPrint('🧪 TEST 4/4: Multiple parameters (5, [2, 3])');
