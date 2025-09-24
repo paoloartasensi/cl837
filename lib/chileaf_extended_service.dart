@@ -1556,6 +1556,11 @@ class ChileafExtendedService {
         int len = value[j] & 0xFF;
         debugPrint('🌙 Sleep entry length: $len at position $j');
         
+        if (len == 0) {
+          debugPrint('🌙 Skipping empty sleep entry (length 0)');
+          continue;
+        }
+        
         if (len >= 1) {
           j++;
           if (j + 4 >= value.length) {
@@ -1573,9 +1578,12 @@ class ChileafExtendedService {
           
           debugPrint('🌙 Sleep session UTC: $utc -> $utcMillis (${DateTime.fromMillisecondsSinceEpoch(utcMillis)})');
           
+          // Check if we have enough data for actions, but don't break - skip invalid entries
           if (j + len > value.length) {
-            debugPrint('❌ Not enough data for actions array');
-            break;
+            debugPrint('❌ Not enough data for actions array (need $len, have ${value.length - j} remaining), skipping this entry');
+            // Skip this invalid entry by finding next length byte or end
+            j = value.length; // Skip to end to avoid further parsing of this packet
+            continue;
           }
           
           // int[] actions = new int[len];
@@ -1584,7 +1592,7 @@ class ChileafExtendedService {
             int action = value[i + j] & 0xFF;
             actions.add(action);
           }
-          j += len - 1;
+          j += len; // Move past the actions array
           
           debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
           
@@ -1597,8 +1605,8 @@ class ChileafExtendedService {
           
           sleepSessions.add(sleepEntry);
           
-          // if (j == value.length - 2) break; (Java exit condition)
-          if (j >= value.length - 2) {
+          // Check exit condition
+          if (j >= value.length - 1) {
             debugPrint('🌙 Reached end of data');
             break;
           }
