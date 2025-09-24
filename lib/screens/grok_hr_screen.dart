@@ -1,6 +1,7 @@
+// ignore_for_file: unused_element
+
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -8,8 +9,6 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 
@@ -98,13 +97,27 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     
     _sleepDataSubscription = _service.sleepHistoryStream.listen((sleepData) {
       setState(() {
+        _sleepHistoryData.clear();
+        _sleepHistoryData.addAll(sleepData);
         _isDownloading = false;
         _statusMessage = 'Sleep data received - ${sleepData.length} sessions';
       });
+      
+      // Debug: print received data
+      debugPrint('🌙 Received ${sleepData.length} sleep sessions:');
+      for (int i = 0; i < sleepData.length; i++) {
+        final session = sleepData[i];
+        debugPrint('  Session $i: ${session.timestamp} - ${session.actions.length} actions');
+        if (session.actions.isNotEmpty) {
+          debugPrint('    First 10 actions: ${session.actions.take(10).toList()}');
+        }
+      }
     });
     
     _stepsDataSubscription = _service.stepsHistoryStream.listen((stepsData) {
       setState(() {
+        _stepsHistoryData.clear();
+        _stepsHistoryData.addAll(stepsData);
         _isDownloading = false;
         _statusMessage = 'Steps data received - ${stepsData.length} intervals';
       });
@@ -224,214 +237,6 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
-  // ===== WEARMANAGER TEST METHODS =====
-
-  Future<void> _testUTCSync() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing UTC synchronization...';
-    });
-
-    try {
-      debugPrint('⏰ Testing UTC sync (WearManager setUTCTime)');
-      await _service.setUTCTime();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'UTC sync completed! Check logs for details.';
-      });
-      
-      debugPrint('✅ UTC sync test completed!');
-    } catch (e) {
-      debugPrint('❌ UTC sync failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'UTC sync failed: $e';
-      });
-    }
-  }
-
-  Future<void> _testHRRecordList() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing HR record list (0x21)...';
-    });
-
-    try {
-      debugPrint('📋 Testing HR record list (WearManager getHistoryOfHRRecord)');
-      await _service.getHistoryOfHRRecord();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'HR record list test completed! Check logs for timestamps.';
-      });
-      
-      debugPrint('✅ HR record list test completed!');
-    } catch (e) {
-      debugPrint('❌ HR record list test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'HR record list test failed: $e';
-      });
-    }
-  }
-
-  Future<void> _testHRData() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing HR data retrieval (0x22)...';
-    });
-
-    try {
-      debugPrint('💓 Testing HR data (WearManager getHistoryOfHRData)');
-      
-      // Use the most recent timestamp from the HR record list if available
-      int targetTimestamp;
-      if (_hrRawTimestamps.isNotEmpty) {
-        // Use the most recent timestamp from the device
-        targetTimestamp = _hrRawTimestamps.last;
-        debugPrint('💓 Using most recent timestamp from device records: $targetTimestamp');
-      } else {
-        // Fallback to known good timestamp from your logs
-        targetTimestamp = 1758127172; // 2025-09-17 18:39:32
-        debugPrint('💓 Using fallback timestamp: $targetTimestamp');
-      }
-      
-      debugPrint('💓 Requesting HR data for: ${DateTime.fromMillisecondsSinceEpoch(targetTimestamp * 1000)}');
-      await _service.getHistoryOfHRData(targetTimestamp);
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'HR data test completed! Check logs for HR measurements.';
-      });
-      
-      debugPrint('✅ HR data test completed!');
-    } catch (e) {
-      debugPrint('❌ HR data test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'HR data test failed: $e';
-      });
-    }
-  }
-
-  Future<void> _testSleepData() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing sleep data retrieval (0x05)...';
-    });
-
-    try {
-      debugPrint('🌙 Testing sleep data (WearManager getHistoryOfSleep)');
-      await _service.getHistoryOfSleep();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'Sleep data test completed! Check logs for sleep sessions.';
-      });
-      
-      debugPrint('✅ Sleep data test completed!');
-    } catch (e) {
-      debugPrint('❌ Sleep data test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'Sleep data test failed: $e';
-      });
-    }
-  }
-
-  Future<void> _testAllSleepCommands() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing ALL sleep commands (comprehensive test)...';
-    });
-
-    try {
-      debugPrint('🌙🧪 Starting comprehensive sleep command test');
-      await _service.testAllSleepCommands();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'All sleep command tests completed! Check logs for responses.';
-      });
-      
-      debugPrint('✅ All sleep command tests completed!');
-    } catch (e) {
-      debugPrint('❌ Sleep command test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'Sleep command test failed: $e';
-      });
-    }
-  }
-
-  Future<void> _testStepsData() async {
-    if (connectedDevice == null) {
-      setState(() {
-        _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing steps data retrieval (0x40)...';
-    });
-
-    try {
-      debugPrint('👟 Testing steps data (WearManager getIntervalSteps)');
-      await _service.getIntervalSteps();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'Steps data test completed! Check logs for step intervals.';
-      });
-      
-      debugPrint('✅ Steps data test completed!');
-    } catch (e) {
-      debugPrint('❌ Steps data test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'Steps data test failed: $e';
-      });
-    }
-  }
-
   Future<void> _downloadCompleteHRHistory() async {
     if (connectedDevice == null) {
       setState(() {
@@ -502,7 +307,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
-  Future<void> _downloadAllData() async {
+  Future<void> _downloadSleepData() async {
     if (connectedDevice == null) {
       setState(() {
         _statusMessage = 'No device connected';
@@ -512,112 +317,34 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
     setState(() {
       _isDownloading = true;
-      _statusMessage = 'Downloading ALL data (HR + Sleep + Steps)...';
+      _statusMessage = 'Downloading sleep data...';
     });
 
     try {
-      debugPrint('🔄 Starting complete data sequence (HR + Sleep + Steps)');
-      await _service.performCompleteDataSequence();
+      debugPrint('🌙 SLEEP DATA DOWNLOAD STARTED');
+      
+      // Request sleep history data
+      await _service.requestOptimizedSleepHistory();
+      
+      // Wait for sleep data to arrive
+      await Future.delayed(const Duration(milliseconds: 3000));
       
       setState(() {
         _isDownloading = false;
-        _statusMessage = 'Complete data sequence finished! Check UI sections below.';
+        _statusMessage = 'Sleep data downloaded! Check sleep chart below.';
       });
       
-      debugPrint('✅ Complete data sequence completed!');
+      debugPrint('✅ SLEEP DATA DOWNLOAD COMPLETED!');
+      
     } catch (e) {
-      debugPrint('❌ Complete data sequence failed: $e');
+      debugPrint('❌ Sleep data download failed: $e');
       setState(() {
         _isDownloading = false;
-        _statusMessage = 'Complete data sequence failed: $e';
+        _statusMessage = 'Sleep data download failed: $e';
       });
     }
   }
 
-  /// Esporta i dati HR correnti in formato CSV o JSON
-  Future<void> _exportHRData(String format) async {
-    if (_hrHistoryData.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Nessun dato HR da esportare. Scarica prima i dati.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-      return;
-    }
-
-    try {
-      setState(() {
-        _statusMessage = 'Creazione file ${format.toUpperCase()}...';
-      });
-
-      String content;
-      String fileName;
-      
-      if (format.toLowerCase() == 'csv') {
-        content = _generateCSVContent();
-        fileName = 'HR_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.csv';
-      } else if (format.toLowerCase() == 'json') {
-        content = _generateJSONContent();
-        fileName = 'HR_Export_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.json';
-      } else {
-        throw Exception('Formato non supportato: $format');
-      }
-
-      // Ottieni la directory per salvare il file
-      final directory = await getApplicationDocumentsDirectory();
-      final file = File('${directory.path}/$fileName');
-      
-      // Scrivi il file
-      await file.writeAsString(content);
-      
-      // Conta il numero totale di misurazioni
-      int totalMeasurements = 0;
-      for (var data in _hrHistoryData) {
-        totalMeasurements += data.entries.length;
-      }
-      
-      setState(() {
-        _statusMessage = '${format.toUpperCase()} creato con successo: $totalMeasurements misurazioni';
-      });
-
-      // Condividi il file
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: 'Dati HR CL837 - $totalMeasurements misurazioni',
-        subject: 'Esportazione Dati Heart Rate (${format.toUpperCase()})',
-      );
-
-      // Mostra messaggio di successo
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ File ${format.toUpperCase()} esportato: $fileName'),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: 'OK',
-              onPressed: () {},
-            ),
-          ),
-        );
-      }
-
-    } catch (e) {
-      debugPrint('❌ Errore esportazione ${format.toUpperCase()}: $e');
-      setState(() {
-        _statusMessage = 'Errore esportazione ${format.toUpperCase()}: $e';
-      });
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Errore esportazione: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
 
   /// Genera il contenuto CSV per l'esportazione
   String _generateCSVContent() {
@@ -899,21 +626,16 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
+            const Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   '📈 Advanced Heart Rate Analysis',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: Colors.red,
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.info_outline),
-                  onPressed: () => _showHRChartInfo(context),
-                  tooltip: 'Chart Information',
                 ),
               ],
             ),
@@ -1318,36 +1040,537 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     return sqrt(sumSquaredDiffs / values.length);
   }
 
-  void _showHRChartInfo(BuildContext context) {
+  // ===== SLEEP CHART WIDGET =====
+  Widget _buildSleepChart() {
+    if (_sleepHistoryData.isEmpty) {
+      return Card(
+        child: Container(
+          height: 300,
+          padding: const EdgeInsets.all(16.0),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.nightlight_round,
+                  size: 64,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'No sleep data available for chart',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Connect to device and click "Download Sleep Data"\nto retrieve sleep measurements for visualization',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Get the most recent sleep session for charting
+    final sleepEntry = _sleepHistoryData.first; // Most recent session
+    
+    // Check if the session has valid actions
+    if (sleepEntry.actions.isEmpty) {
+      return Card(
+        child: Container(
+          height: 300,
+          padding: const EdgeInsets.all(16.0),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.nightlight_round,
+                  size: 64,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'Sleep session has no action data',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+    
+    final phases = sleepEntry.calculateSleepPhases();
+
+    // Prepare data for sleep phases chart
+    List<FlSpot> awakeSpots = [];
+    List<FlSpot> lightSleepSpots = [];
+    List<FlSpot> deepSleepSpots = [];
+
+    // Analyze each action in the sleep data
+    for (int i = 0; i < sleepEntry.actions.length; i++) {
+      int action = sleepEntry.actions[i];
+      double timeIndex = i.toDouble();
+
+      if (action == 0) {
+        // Check for deep sleep (3+ consecutive zeros)
+        int consecutiveZeros = 1;
+        for (int j = i + 1; j < sleepEntry.actions.length && sleepEntry.actions[j] == 0; j++) {
+          consecutiveZeros++;
+        }
+
+        if (consecutiveZeros >= 3) {
+          // Deep sleep
+          deepSleepSpots.add(FlSpot(timeIndex, 3));
+          i += consecutiveZeros - 1; // Skip the consecutive zeros
+        } else {
+          // Single or double zeros - treat as deep sleep for better visualization
+          deepSleepSpots.add(FlSpot(timeIndex, 3));
+        }
+      } else if (action > 20) {
+        // Awake
+        awakeSpots.add(FlSpot(timeIndex, 1));
+      } else {
+        // Light sleep (action 1-20)
+        lightSleepSpots.add(FlSpot(timeIndex, 2));
+      }
+    }
+
+    // Debug: print data counts
+    debugPrint('🌙 Sleep chart data - Actions: ${sleepEntry.actions.length}, Deep: ${deepSleepSpots.length}, Light: ${lightSleepSpots.length}, Awake: ${awakeSpots.length}');
+
+    // Check if we have any data to display
+    if (deepSleepSpots.isEmpty && lightSleepSpots.isEmpty && awakeSpots.isEmpty) {
+      return Card(
+        child: Container(
+          height: 300,
+          padding: const EdgeInsets.all(16.0),
+          child: const Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.nightlight_round,
+                  size: 64,
+                  color: Colors.grey,
+                ),
+                SizedBox(height: 16),
+                Text(
+                  'No chartable sleep data found',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey,
+                  ),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Sleep actions may be all zeros or invalid',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '🌙 Sleep Phases Analysis',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.purple,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () => _showSleepChartInfo(context),
+                  tooltip: 'Sleep Chart Information',
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // Sleep phase indicators
+            _buildSleepPhaseIndicators(),
+            const SizedBox(height: 16),
+            SizedBox(
+              height: 250,
+              child: LineChart(
+                LineChartData(
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: true,
+                    horizontalInterval: 1,
+                    verticalInterval: sleepEntry.actions.length > 60 ? sleepEntry.actions.length / 10 : 10,
+                    getDrawingHorizontalLine: (value) {
+                      Color lineColor = Colors.grey.shade200;
+                      if (value == 1) lineColor = Colors.orange.shade200;
+                      if (value == 2) lineColor = Colors.blue.shade200;
+                      if (value == 3) lineColor = Colors.purple.shade200;
+
+                      return FlLine(
+                        color: lineColor,
+                        strokeWidth: value == 1 || value == 2 || value == 3 ? 2 : 1,
+                      );
+                    },
+                    getDrawingVerticalLine: (value) {
+                      return FlLine(
+                        color: Colors.grey.shade200,
+                        strokeWidth: 1,
+                      );
+                    },
+                  ),
+                  titlesData: FlTitlesData(
+                    show: true,
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 35,
+                        interval: sleepEntry.actions.length > 60 ? sleepEntry.actions.length / 10 : 10,
+                        getTitlesWidget: (value, meta) {
+                          final index = value.toInt();
+                          if (index >= 0 && index < sleepEntry.actions.length && index % 30 == 0) {
+                            final time = sleepEntry.timestamp.add(Duration(minutes: index));
+                            return SideTitleWidget(
+                              meta: meta,
+                              child: Text(
+                                DateFormat('HH:mm').format(time),
+                                style: const TextStyle(
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            );
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: 1,
+                        reservedSize: 60,
+                        getTitlesWidget: (value, meta) {
+                          String label;
+                          Color color;
+                          switch (value.toInt()) {
+                            case 1:
+                              label = 'Awake';
+                              color = Colors.orange;
+                              break;
+                            case 2:
+                              label = 'Light';
+                              color = Colors.blue;
+                              break;
+                            case 3:
+                              label = 'Deep';
+                              color = Colors.purple;
+                              break;
+                            default:
+                              return const Text('');
+                          }
+
+                          return SideTitleWidget(
+                            meta: meta,
+                            child: Text(
+                              label,
+                              style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 10,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  borderData: FlBorderData(
+                    show: true,
+                    border: Border.all(color: Colors.grey.shade400, width: 1.5),
+                  ),
+                  minX: 0,
+                  maxX: sleepEntry.actions.length.toDouble() - 1,
+                  minY: 0.5,
+                  maxY: 3.5,
+                  lineBarsData: [
+                    // Deep sleep line
+                    LineChartBarData(
+                      spots: deepSleepSpots,
+                      isCurved: false,
+                      color: Colors.purple.shade700,
+                      barWidth: 3,
+                      dotData: const FlDotData(
+                        show: false,
+                      ),
+                    ),
+                    // Light sleep line
+                    LineChartBarData(
+                      spots: lightSleepSpots,
+                      isCurved: false,
+                      color: Colors.blue.shade600,
+                      barWidth: 3,
+                      dotData: const FlDotData(
+                        show: false,
+                      ),
+                    ),
+                    // Awake line
+                    LineChartBarData(
+                      spots: awakeSpots,
+                      isCurved: false,
+                      color: Colors.orange.shade600,
+                      barWidth: 3,
+                      dotData: const FlDotData(
+                        show: false,
+                      ),
+                    ),
+                  ],
+                  lineTouchData: LineTouchData(
+                    handleBuiltInTouches: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
+                        return touchedBarSpots.map((barSpot) {
+                          final index = barSpot.spotIndex;
+                          final phaseValue = barSpot.y.toInt();
+                          final time = sleepEntry.timestamp.add(Duration(minutes: index));
+
+                          String phaseName;
+                          Color color;
+                          switch (phaseValue) {
+                            case 1:
+                              phaseName = 'Awake';
+                              color = Colors.orange;
+                              break;
+                            case 2:
+                              phaseName = 'Light Sleep';
+                              color = Colors.blue;
+                              break;
+                            case 3:
+                              phaseName = 'Deep Sleep';
+                              color = Colors.purple;
+                              break;
+                            default:
+                              phaseName = 'Unknown';
+                              color = Colors.grey;
+                          }
+
+                          return LineTooltipItem(
+                            '$phaseName\n${DateFormat('HH:mm').format(time)}',
+                            TextStyle(
+                              color: color,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          );
+                        }).toList();
+                      },
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Sleep statistics
+            _buildSleepStatsRow(phases),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSleepPhaseIndicators() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildZoneIndicator('Awake', 'Action > 20', Colors.orange),
+          _buildZoneIndicator('Light Sleep', 'Action 1-20', Colors.blue),
+          _buildZoneIndicator('Deep Sleep', '3+ zeros', Colors.purple),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepStatsRow(SleepPhases phases) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatChip('Total Sleep', '${phases.totalSleep}m', Colors.blue),
+              _buildStatChip('Deep Sleep', '${phases.deepSleep}m', Colors.purple),
+              _buildStatChip('Light Sleep', '${phases.lightSleep}m', Colors.cyan),
+              _buildStatChip('Awake', '${phases.awake}m', Colors.orange),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildSleepQualityIndicator(phases),
+              const SizedBox(width: 16),
+              _buildSleepEfficiencyIndicator(phases),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSleepQualityIndicator(SleepPhases phases) {
+    final totalSleep = phases.lightSleep + phases.deepSleep;
+    final deepSleepRatio = phases.deepSleep / totalSleep;
+
+    String quality;
+    Color color;
+    IconData icon;
+
+    if (deepSleepRatio > 0.25 && totalSleep > 360) {
+      quality = 'Excellent';
+      color = Colors.green;
+      icon = Icons.star;
+    } else if (deepSleepRatio > 0.15 && totalSleep > 240) {
+      quality = 'Good';
+      color = Colors.blue;
+      icon = Icons.thumb_up;
+    } else if (totalSleep > 180) {
+      quality = 'Fair';
+      color = Colors.orange;
+      icon = Icons.thumbs_up_down;
+    } else {
+      quality = 'Poor';
+      color = Colors.red;
+      icon = Icons.thumb_down;
+    }
+
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          'Quality: $quality',
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSleepEfficiencyIndicator(SleepPhases phases) {
+    final totalTime = phases.totalMinutes;
+    final sleepTime = phases.lightSleep + phases.deepSleep;
+    final efficiency = totalTime > 0 ? (sleepTime / totalTime * 100).round() : 0;
+
+    Color color;
+    if (efficiency >= 85) {
+      color = Colors.green;
+    } else if (efficiency >= 75) {
+      color = Colors.blue;
+    } else if (efficiency >= 65) {
+      color = Colors.orange;
+    } else {
+      color = Colors.red;
+    }
+
+    return Row(
+      children: [
+        Icon(Icons.trending_up, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          'Efficiency: $efficiency%',
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _showSleepChartInfo(BuildContext context) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Heart Rate Chart Information'),
+        title: const Text('Sleep Phases Chart Information'),
         content: const SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('📊 Chart Features:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('🌙 Sleep Phase Analysis:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('• Red line: Actual heart rate measurements'),
-              Text('• Blue dashed line: Average heart rate'),
-              Text('• Colored dots: HR zone indicators'),
-              Text('• Touch points for detailed information'),
+              Text('• Purple line: Deep sleep phases'),
+              Text('• Blue line: Light sleep phases'),
+              Text('• Orange line: Awake periods'),
+              Text('• Touch points for detailed timing'),
               SizedBox(height: 12),
-              Text('💓 HR Zones:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('🛌 Sleep Phases:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('• Blue (< 60): Resting zone'),
-              Text('• Green (60-70): Fat burn zone'),
-              Text('• Orange (70-85): Cardio zone'),
-              Text('• Red (> 85): Peak zone'),
+              Text('• Deep Sleep: 3+ consecutive zero actions'),
+              Text('• Light Sleep: Action values 1-20'),
+              Text('• Awake: Action values > 20'),
               SizedBox(height: 12),
-              Text('📈 Statistics:', style: TextStyle(fontWeight: FontWeight.bold)),
+              Text('📊 Statistics:', style: TextStyle(fontWeight: FontWeight.bold)),
               SizedBox(height: 8),
-              Text('• Average: Mean heart rate'),
-              Text('• Std Dev: Heart rate variability'),
-              Text('• Trend: Session progression'),
-              Text('• Duration: Total measurement time'),
+              Text('• Total Sleep: Light + Deep sleep time'),
+              Text('• Quality: Based on deep sleep ratio'),
+              Text('• Efficiency: Sleep time vs total time'),
             ],
           ),
         ),
@@ -1479,6 +1702,20 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 label: const Text('💓 Download HR History'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Sleep Data Download
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _downloadSleepData,
+                icon: const Icon(Icons.nightlight_round),
+                label: const Text('🌙 Download Sleep Data'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple.shade700,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
@@ -1794,6 +2031,11 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 ),
               ),
             ),
+            
+            const SizedBox(height: 16),
+            
+            // Sleep Chart
+            _buildSleepChart(),
             
             const SizedBox(height: 16),
             
