@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -806,9 +807,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
   // ===== HR CHART WIDGET =====
   Widget _buildHRChart() {
-    final screenHeight = MediaQuery.of(context).size.height;
-    final chartHeight = (screenHeight * 0.35).clamp(250.0, 400.0); // 35% dello schermo, min 250, max 400
-    
+    final screenWidth = MediaQuery.of(context).size.width;
+    final chartHeight = screenWidth > 600 ? 400.0 : 300.0;
+
     if (_hrHistoryData.isEmpty) {
       return Card(
         child: Container(
@@ -848,20 +849,28 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
       );
     }
 
-    // Prepare data for chart
+    // Prepare data for chart with enhanced features
     List<FlSpot> hrSpots = [];
     List<String> timeLabels = [];
-    
+    List<String> fullTimeLabels = [];
+    List<int> activityIndices = [];
+
     for (int i = 0; i < _hrHistoryData.length; i++) {
       final hrData = _hrHistoryData[i];
       for (int j = 0; j < hrData.entries.length; j++) {
         final entry = hrData.entries[j];
         final timeIndex = (i * hrData.entries.length + j).toDouble();
         hrSpots.add(FlSpot(timeIndex, entry.heartRate.toDouble()));
-        
-        // Add time label (show only some to avoid overcrowding)
-        if (j % 5 == 0 || j == hrData.entries.length - 1) {
+        activityIndices.add(entry.activityIndex);
+
+        // Full time label for tooltips
+        fullTimeLabels.add(DateFormat('HH:mm:ss').format(entry.time));
+
+        // Sparse time labels for axis (every 10th point or key points)
+        if (j % 10 == 0 || j == hrData.entries.length - 1) {
           timeLabels.add(DateFormat('HH:mm').format(entry.time));
+        } else {
+          timeLabels.add('');
         }
       }
     }
@@ -881,26 +890,51 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
       );
     }
 
-    // Calculate Y-axis range
+    // Calculate Y-axis range with better padding
     double minHR = hrSpots.map((spot) => spot.y).reduce((a, b) => a < b ? a : b);
     double maxHR = hrSpots.map((spot) => spot.y).reduce((a, b) => a > b ? a : b);
     double range = maxHR - minHR;
-    double padding = range * 0.1;
-    
+    double padding = range * 0.15; // Increased padding for better visualization
+
+    // Calculate HR zones
+    double restingZone = 60; // Resting HR
+    double fatBurnZone = 70; // Fat burn zone start
+    double cardioZone = 85; // Cardio zone start
+    double peakZone = 100; // Peak zone start
+
+    // Calculate statistics
+    double avgHR = hrSpots.map((s) => s.y).reduce((a, b) => a + b) / hrSpots.length;
+    double stdDev = _calculateStandardDeviation(hrSpots.map((s) => s.y).toList());
+
     return Card(
+      elevation: 4,
+      margin: const EdgeInsets.symmetric(vertical: 8),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '📈 Heart Rate Chart',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.red,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  '📈 Advanced Heart Rate Analysis',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: () => _showHRChartInfo(context),
+                  tooltip: 'Chart Information',
+                ),
+              ],
             ),
+            const SizedBox(height: 8),
+            // HR Zone indicators
+            _buildHRZoneIndicators(),
             const SizedBox(height: 16),
             SizedBox(
               height: chartHeight,
@@ -909,17 +943,25 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                   gridData: FlGridData(
                     show: true,
                     drawVerticalLine: true,
-                    horizontalInterval: 10,
-                    verticalInterval: hrSpots.length > 10 ? hrSpots.length / 10 : 1,
+                    horizontalInterval: 5, // More frequent horizontal lines
+                    verticalInterval: hrSpots.length > 20 ? hrSpots.length / 10 : 2,
                     getDrawingHorizontalLine: (value) {
+                      Color lineColor = Colors.grey.shade200;
+                      // Highlight HR zone lines
+                      if ((value - restingZone).abs() < 1) lineColor = Colors.blue.shade200;
+                      if ((value - fatBurnZone).abs() < 1) lineColor = Colors.green.shade200;
+                      if ((value - cardioZone).abs() < 1) lineColor = Colors.orange.shade200;
+                      if ((value - peakZone).abs() < 1) lineColor = Colors.red.shade200;
+
                       return FlLine(
-                        color: Colors.grey.shade300,
-                        strokeWidth: 1,
+                        color: lineColor,
+                        strokeWidth: (value - restingZone).abs() < 1 || (value - fatBurnZone).abs() < 1 ||
+                                    (value - cardioZone).abs() < 1 || (value - peakZone).abs() < 1 ? 2 : 1,
                       );
                     },
                     getDrawingVerticalLine: (value) {
                       return FlLine(
-                        color: Colors.grey.shade300,
+                        color: Colors.grey.shade200,
                         strokeWidth: 1,
                       );
                     },
@@ -935,11 +977,11 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                     bottomTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 30,
-                        interval: hrSpots.length > 10 ? hrSpots.length / 5 : 1,
+                        reservedSize: 35,
+                        interval: hrSpots.length > 20 ? hrSpots.length / 10 : 2,
                         getTitlesWidget: (value, meta) {
                           final index = value.toInt();
-                          if (index >= 0 && index < timeLabels.length) {
+                          if (index >= 0 && index < timeLabels.length && timeLabels[index].isNotEmpty) {
                             return SideTitleWidget(
                               meta: meta,
                               child: Text(
@@ -947,7 +989,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                                 style: const TextStyle(
                                   color: Colors.grey,
                                   fontWeight: FontWeight.bold,
-                                  fontSize: 12,
+                                  fontSize: 11,
                                 ),
                               ),
                             );
@@ -960,14 +1002,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                       sideTitles: SideTitles(
                         showTitles: true,
                         interval: 10,
-                        reservedSize: 42,
+                        reservedSize: 45,
                         getTitlesWidget: (value, meta) {
                           return Text(
                             '${value.toInt()}',
                             style: const TextStyle(
                               color: Colors.grey,
                               fontWeight: FontWeight.bold,
-                              fontSize: 12,
+                              fontSize: 11,
                             ),
                           );
                         },
@@ -976,13 +1018,14 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                   ),
                   borderData: FlBorderData(
                     show: true,
-                    border: Border.all(color: Colors.grey.shade400),
+                    border: Border.all(color: Colors.grey.shade400, width: 1.5),
                   ),
                   minX: 0,
                   maxX: hrSpots.length.toDouble() - 1,
-                  minY: minHR - padding,
-                  maxY: maxHR + padding,
+                  minY: (minHR - padding).clamp(40, 200), // Reasonable HR range
+                  maxY: (maxHR + padding).clamp(60, 220),
                   lineBarsData: [
+                    // Main HR line
                     LineChartBarData(
                       spots: hrSpots,
                       isCurved: true,
@@ -990,17 +1033,18 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                         colors: [
                           Colors.red.shade400,
                           Colors.red.shade600,
+                          Colors.red.shade800,
                         ],
                       ),
-                      barWidth: 3,
+                      barWidth: 2.5,
                       isStrokeCapRound: true,
                       dotData: FlDotData(
-                        show: true,
+                        show: hrSpots.length <= 50, // Show dots only for smaller datasets
                         getDotPainter: (spot, percent, barData, index) {
                           return FlDotCirclePainter(
                             radius: 3,
-                            color: Colors.red.shade600,
-                            strokeWidth: 1,
+                            color: _getHRColor(spot.y.toInt()),
+                            strokeWidth: 1.5,
                             strokeColor: Colors.white,
                           );
                         },
@@ -1009,7 +1053,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                         show: true,
                         gradient: LinearGradient(
                           colors: [
-                            Colors.red.shade200.withOpacity(0.3),
+                            Colors.red.shade200.withOpacity(0.4),
                             Colors.red.shade100.withOpacity(0.1),
                           ],
                           begin: Alignment.topCenter,
@@ -1017,17 +1061,31 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                         ),
                       ),
                     ),
+                    // Average line
+                    LineChartBarData(
+                      spots: List.generate(hrSpots.length, (index) => FlSpot(index.toDouble(), avgHR)),
+                      isCurved: false,
+                      color: Colors.blue.shade600,
+                      barWidth: 1.5,
+                      dashArray: [5, 5], // Dashed line
+                      dotData: const FlDotData(show: false),
+                    ),
                   ],
                   lineTouchData: LineTouchData(
                     handleBuiltInTouches: true,
                     touchTooltipData: LineTouchTooltipData(
                       getTooltipItems: (List<LineBarSpot> touchedBarSpots) {
                         return touchedBarSpots.map((barSpot) {
-                          final flSpot = barSpot;
+                          final index = barSpot.spotIndex;
+                          final hr = barSpot.y.toInt();
+                          final time = index < fullTimeLabels.length ? fullTimeLabels[index] : 'N/A';
+                          final activity = index < activityIndices.length ? activityIndices[index] : 0;
+
                           return LineTooltipItem(
-                            '${flSpot.y.toInt()} BPM',
+                            'HR: $hr BPM\nTime: $time\nActivity: $activity',
                             const TextStyle(
                               color: Colors.white,
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                             ),
                           );
@@ -1038,16 +1096,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildStatChip('Min', '${minHR.toInt()} BPM', Colors.blue),
-                _buildStatChip('Max', '${maxHR.toInt()} BPM', Colors.red),
-                _buildStatChip('Avg', '${(hrSpots.map((s) => s.y).reduce((a, b) => a + b) / hrSpots.length).toInt()} BPM', Colors.green),
-                _buildStatChip('Points', '${hrSpots.length}', Colors.purple),
-              ],
-            ),
+            const SizedBox(height: 12),
+            // Enhanced statistics row
+            _buildEnhancedStatsRow(avgHR, stdDev, hrSpots.length),
           ],
         ),
       ),
@@ -1080,6 +1131,245 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
               fontWeight: FontWeight.bold,
               color: color,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHRZoneIndicators() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          _buildZoneIndicator('Resting', '< 60', Colors.blue),
+          _buildZoneIndicator('Fat Burn', '60-70', Colors.green),
+          _buildZoneIndicator('Cardio', '70-85', Colors.orange),
+          _buildZoneIndicator('Peak', '> 85', Colors.red),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildZoneIndicator(String zone, String range, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$zone: $range',
+          style: TextStyle(
+            fontSize: 11,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildEnhancedStatsRow(double avgHR, double stdDev, int count) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatChip('Average', '${avgHR.toInt()} BPM', Colors.blue),
+              _buildStatChip('Std Dev', stdDev.toStringAsFixed(1), Colors.purple),
+              _buildStatChip('Samples', '$count', Colors.teal),
+              _buildStatChip('Duration', _calculateDuration(), Colors.indigo),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildTrendIndicator(),
+              const SizedBox(width: 16),
+              _buildHRVariabilityIndicator(stdDev),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTrendIndicator() {
+    // Simple trend analysis - compare first half vs second half
+    if (_hrHistoryData.isEmpty) return const SizedBox.shrink();
+
+    List<double> allHR = [];
+    for (var data in _hrHistoryData) {
+      allHR.addAll(data.entries.map((e) => e.heartRate.toDouble()));
+    }
+
+    if (allHR.length < 4) return const SizedBox.shrink();
+
+    int mid = allHR.length ~/ 2;
+    double firstHalf = allHR.sublist(0, mid).reduce((a, b) => a + b) / mid;
+    double secondHalf = allHR.sublist(mid).reduce((a, b) => a + b) / (allHR.length - mid);
+    double trend = secondHalf - firstHalf;
+
+    IconData icon;
+    Color color;
+    String text;
+
+    if (trend.abs() < 2) {
+      icon = Icons.trending_flat;
+      color = Colors.grey;
+      text = 'Stable';
+    } else if (trend > 0) {
+      icon = Icons.trending_up;
+      color = Colors.red;
+      text = 'Increasing';
+    } else {
+      icon = Icons.trending_down;
+      color = Colors.green;
+      text = 'Decreasing';
+    }
+
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHRVariabilityIndicator(double stdDev) {
+    String variability;
+    Color color;
+
+    if (stdDev < 5) {
+      variability = 'Low';
+      color = Colors.green;
+    } else if (stdDev < 15) {
+      variability = 'Moderate';
+      color = Colors.orange;
+    } else {
+      variability = 'High';
+      color = Colors.red;
+    }
+
+    return Row(
+      children: [
+        Icon(Icons.vibration, size: 16, color: color),
+        const SizedBox(width: 4),
+        Text(
+          'HRV: $variability',
+          style: TextStyle(
+            fontSize: 12,
+            color: color,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _calculateDuration() {
+    if (_hrHistoryData.isEmpty) return '0m';
+
+    DateTime? startTime;
+    DateTime? endTime;
+
+    for (var data in _hrHistoryData) {
+      for (var entry in data.entries) {
+        if (startTime == null || entry.time.isBefore(startTime)) {
+          startTime = entry.time;
+        }
+        if (endTime == null || entry.time.isAfter(endTime)) {
+          endTime = entry.time;
+        }
+      }
+    }
+
+    if (startTime == null || endTime == null) return '0m';
+
+    Duration duration = endTime.difference(startTime);
+    int minutes = duration.inMinutes;
+    int seconds = duration.inSeconds % 60;
+
+    if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
+  }
+
+  double _calculateStandardDeviation(List<double> values) {
+    if (values.isEmpty) return 0.0;
+
+    double mean = values.reduce((a, b) => a + b) / values.length;
+    double sumSquaredDiffs = values.map((value) => (value - mean) * (value - mean)).reduce((a, b) => a + b);
+    return sqrt(sumSquaredDiffs / values.length);
+  }
+
+  void _showHRChartInfo(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Heart Rate Chart Information'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('📊 Chart Features:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('• Red line: Actual heart rate measurements'),
+              Text('• Blue dashed line: Average heart rate'),
+              Text('• Colored dots: HR zone indicators'),
+              Text('• Touch points for detailed information'),
+              SizedBox(height: 12),
+              Text('💓 HR Zones:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('• Blue (< 60): Resting zone'),
+              Text('• Green (60-70): Fat burn zone'),
+              Text('• Orange (70-85): Cardio zone'),
+              Text('• Red (> 85): Peak zone'),
+              SizedBox(height: 12),
+              Text('📈 Statistics:', style: TextStyle(fontWeight: FontWeight.bold)),
+              SizedBox(height: 8),
+              Text('• Average: Mean heart rate'),
+              Text('• Std Dev: Heart rate variability'),
+              Text('• Trend: Session progression'),
+              Text('• Duration: Total measurement time'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
