@@ -201,40 +201,25 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
-  Future<void> _downloadHRData() async {
-    if (connectedDevice == null) {
+  Future<void> _disconnectDevice() async {
+    if (connectedDevice != null) {
+      try {
+        await connectedDevice!.disconnect();
+        setState(() {
+          connectedDevice = null;
+          connectionStatus = 'Disconnected';
+          _statusMessage = 'Device disconnected successfully';
+          _hrHistoryData.clear();
+          _sleepHistoryData.clear();
+        });
+      } catch (e) {
+        setState(() {
+          _statusMessage = 'Error disconnecting: $e';
+        });
+      }
+    } else {
       setState(() {
         _statusMessage = 'No device connected';
-      });
-      return;
-    }
-
-    setState(() {
-      _isDownloading = true;
-      _statusMessage = 'Testing WearManager protocol...';
-    });
-
-    try {
-      debugPrint('🫀 WEARMANAGER PROTOCOL TEST');
-      
-      // Test completo del protocollo WearManager
-      setState(() {
-        _statusMessage = 'Running complete WearManager sequence...';
-      });
-      
-      await _service.performCompleteHRHistorySequence();
-      
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'WearManager protocol test completed! Check logs.';
-      });
-      
-      debugPrint('✅ WearManager protocol test completed!');
-    } catch (e) {
-      debugPrint('❌ WearManager protocol test failed: $e');
-      setState(() {
-        _isDownloading = false;
-        _statusMessage = 'WearManager protocol test failed: $e';
       });
     }
   }
@@ -1487,69 +1472,11 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
               ],
             ] else ...[
               // Connected Device Controls
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _downloadHRData,
-                icon: _isDownloading 
-                    ? const SizedBox(
-                        width: 16, 
-                        height: 16, 
-                        child: CircularProgressIndicator(strokeWidth: 2)
-                      )
-                    : const Icon(Icons.download),
-                label: Text(_isDownloading ? 'Running...' : '🔄 Complete WearManager Test'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // WearManager HR Test Section
-              const Text(
-                '🫀 HR History Test (WearManager Compatible):',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.blue,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // UTC Sync Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testUTCSync,
-                icon: const Icon(Icons.sync),
-                label: const Text('⏰ Sync UTC Time (0x08)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // HR Record List Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testHRRecordList,
-                icon: const Icon(Icons.schedule),
-                label: const Text('📋 Get HR Record List (0x21)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.blue.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
               // HR Complete History - AUTOMATIC DOWNLOAD
               ElevatedButton.icon(
                 onPressed: _isDownloading ? null : _downloadCompleteHRHistory,
                 icon: const Icon(Icons.favorite_border),
-                label: const Text('💓 Get COMPLETE HR History (Auto)'),
+                label: const Text('💓 Download HR History'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade700,
                   foregroundColor: Colors.white,
@@ -1559,115 +1486,15 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
               const SizedBox(height: 12),
 
-              // Export HR Data Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _hrHistoryData.isEmpty ? null : () => _exportHRData('csv'),
-                      icon: const Icon(Icons.table_chart),
-                      label: const Text('📊 Export CSV'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.orange.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: _hrHistoryData.isEmpty ? null : () => _exportHRData('json'),
-                      icon: const Icon(Icons.code),
-                      label: const Text('🔗 Export JSON'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.deepOrange.shade700,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 12),
-
-              // HR Data Test (manual)
+              // Disconnect Device
               ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testHRData,
-                icon: const Icon(Icons.data_usage),
-                label: const Text('💓 Get HR Data (0x22) - Manual'),
+                onPressed: _disconnectDevice,
+                icon: const Icon(Icons.bluetooth_disabled),
+                label: const Text('🔌 Disconnect Device'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green.shade700,
+                  backgroundColor: Colors.red.shade600,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 20),
-
-              // Sleep and Steps Test Section
-              const Text(
-                '🌙👟 Sleep & Steps Test (WearManager Compatible):',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.purple,
-                ),
-              ),
-              const SizedBox(height: 8),
-
-              // Sleep Data Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testSleepData,
-                icon: const Icon(Icons.nightlight_round),
-                label: const Text('🌙 Get Sleep Data (0x05)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-
-              // Comprehensive Sleep Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testAllSleepCommands,
-                icon: const Icon(Icons.science),
-                label: const Text('🧪 Test ALL Sleep Commands'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Steps Data Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _testStepsData,
-                icon: const Icon(Icons.directions_walk),
-                label: const Text('👟 Get Steps Data (0x40)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.teal.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // Complete Data Test
-              ElevatedButton.icon(
-                onPressed: _isDownloading ? null : _downloadAllData,
-                icon: const Icon(Icons.download_for_offline),
-                label: const Text('📊 Download ALL Data (HR+Sleep+Steps)'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.indigo.shade700,
-                  foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ],
@@ -1840,86 +1667,6 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                                     style: TextStyle(color: Colors.grey[600]),
                                   ),
                                   trailing: const Icon(Icons.schedule, color: Colors.blue),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            
-            const SizedBox(height: 16),
-            
-            // Sleep Data Display with Blur Effect
-            _buildBlurCard(
-              backgroundColor: Colors.purple.withOpacity(0.2),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Sleep History (${_sleepHistoryData.length} sessions)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            offset: Offset(1, 1),
-                            blurRadius: 2,
-                            color: Colors.black54,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    SizedBox(
-                      height: 250, // Fixed height for sleep list
-                      child: _sleepHistoryData.isEmpty
-                          ? const Center(
-                              child: Text(
-                                'No sleep data downloaded yet.\nUse "Get Sleep Data" button to download.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                            )
-                          : ListView.builder(
-                              itemCount: _sleepHistoryData.length,
-                              itemBuilder: (context, index) {
-                                final sleep = _sleepHistoryData[index];
-                                final phases = sleep.calculateSleepPhases();
-                                return Card(
-                                  margin: const EdgeInsets.symmetric(vertical: 4),
-                                  child: ExpansionTile(
-                                    title: Text(
-                                      'Sleep ${DateFormat('MMM dd, HH:mm').format(sleep.timestamp)}',
-                                      style: const TextStyle(fontWeight: FontWeight.bold),
-                                    ),
-                                    subtitle: Text(
-                                      'Total: ${phases.totalSleep}min (Light: ${phases.lightSleep}min, Deep: ${phases.deepSleep}min)',
-                                    ),
-                                    children: [
-                                      Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('💤 Sleep Efficiency: ${phases.sleepEfficiency.toStringAsFixed(1)}%'),
-                                            Text('⏰ Total Duration: ${phases.totalMinutes} minutes'),
-                                            Text('🌙 Light Sleep: ${phases.lightSleep} minutes'),
-                                            Text('🌊 Deep Sleep: ${phases.deepSleep} minutes'),
-                                            Text('😴 Awake Time: ${phases.awake} minutes'),
-                                            Text('📊 Actions Recorded: ${sleep.actions.length}'),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
                                 );
                               },
                             ),
