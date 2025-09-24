@@ -783,6 +783,45 @@ class ChileafExtendedService {
           _ropeRealtimeController.add(ropeRealtime);
         }
         break;
+      case 0x47: // Sleep Status/Configuration Response
+        debugPrint('🌙💤 SLEEP STATUS (0x47): Processing sleep-related response');
+        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+        
+        // Check if this contains ASCII text (like "clear_sleep_")
+        if (data.length >= 10) {
+          try {
+            // Try to decode as ASCII string starting from byte 3
+            List<int> asciiBytes = data.sublist(3, data.length > 15 ? 15 : data.length);
+            String asciiText = String.fromCharCodes(asciiBytes.where((b) => b >= 32 && b <= 126));
+            if (asciiText.isNotEmpty) {
+              debugPrint('🔍 ASCII content: "$asciiText"');
+              
+              if (asciiText.contains('clear_sleep')) {
+                debugPrint('🧹 SLEEP CLEAR: Device is clearing sleep data (normal operation)');
+              } else if (asciiText.contains('sleep')) {
+                debugPrint('🌙 SLEEP STATUS: Sleep-related status message received');
+              }
+            }
+          } catch (e) {
+            debugPrint('🔍 Could not decode ASCII content: $e');
+          }
+        }
+        
+        // Log detailed analysis for debugging
+        if (data.length == 23) {
+          debugPrint('🔍 COMMAND 0x47 RAW BYTES (23 bytes - Sleep/HR Config):');
+          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+          debugPrint('🔍 Full response: $hexString');
+          
+          // Look for HR threshold patterns (typical values 40-200) or sleep data
+          for (int i = 3; i < data.length; i++) {
+            int value = data[i];
+            if (value >= 40 && value <= 200) {
+              debugPrint('🔍 Potential HR value at byte $i: $value BPM');
+            }
+          }
+        }
+        break;
       default:
         debugPrint(
             'Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
@@ -886,32 +925,6 @@ class ChileafExtendedService {
               debugPrint('🔄 Internal HR configuration updated');
             }
           }
-        }
-        
-        // SPECIAL HANDLER for command 0x47 (HR configuration response - 23 bytes)
-        if (command == 0x47 && data.length == 23) {
-          debugPrint('🔍 COMMAND 0x47 RAW BYTES (HR CONFIG):');
-          String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
-          debugPrint('🔍 Full 23 bytes: $hexString');
-          
-          // Try to decode HR configuration
-          debugPrint('🔍 DECODING HR CONFIG:');
-          debugPrint('🔍 Byte 0-2: Header ${data[0].toRadixString(16)} ${data[1].toRadixString(16)} ${data[2].toRadixString(16)}');
-          
-          if (data.length >= 10) {
-            debugPrint('🔍 Byte 3-6: ${data[3]} ${data[4]} ${data[5]} ${data[6]} (potential HR values)');
-            debugPrint('🔍 Byte 7-10: ${data[7]} ${data[8]} ${data[9]} ${data[10]} (potential thresholds)');
-          }
-          
-          // Look for HR threshold patterns (typical values 40-200)
-          for (int i = 3; i < data.length; i++) {
-            int value = data[i];
-            if (value >= 40 && value <= 200) {
-              debugPrint('🔍 Potential HR value at byte $i: $value BPM');
-            }
-          }
-          
-          debugPrint('🔍 Raw decimal values: ${data.sublist(3).join(', ')}');
         }
     }
   }

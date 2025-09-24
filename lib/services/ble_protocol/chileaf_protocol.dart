@@ -26,6 +26,7 @@ class ChileafProtocol {
   static const int commandRopeRealtime = 0x41; // Realtime rope notifications
   static const int commandRopeSetMode = 0x42; // Set rope mode
   static const int commandRopeClearData = 0x45; // Clear rope data
+  static const int commandSleepStatus = 0x47; // Sleep status/configuration response
 
   /// Costruisce un frame di protocollo Chileaf
   static List<int> buildProtocolFrame(List<int> data) {
@@ -111,6 +112,8 @@ class ChileafProtocol {
         return 'Rope Set Mode (0x42)';
       case commandRopeClearData:
         return 'Rope Clear Data (0x45)';
+      case commandSleepStatus:
+        return 'Sleep Status (0x47)';
       default:
         return 'Unknown (0x${command.toRadixString(16)})';
     }
