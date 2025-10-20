@@ -184,8 +184,7 @@ class HistoricalDataProcessor {
   }
 
   /// Processes Exercise History (0x40) according to CL831 spec
-  // ignore: unintended_html_in_doc_comment
-  /// Returns List<ExerciseHistoryData> with exercise session data
+  /// Returns `List<ExerciseHistoryData>` with exercise session data
   static List<ExerciseHistoryData> processExerciseHistory(Uint8List data) {
     print('💓 Processing Exercise History (0x40) - ${data.length} bytes');
 

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'grok_hr_screen.dart';
-import 'sleep_analysis_screen.dart';
+import 'sleep_premium_screen.dart';
 import '../chileaf_extended_service.dart';
 
 /// Schermata di navigazione principale per selezionare il tipo di analisi
@@ -76,10 +76,10 @@ class NavigationScreen extends StatelessWidget {
                 // Sleep Analysis Card
                 _buildAnalysisCard(
                   context: context,
-                  title: 'Analisi del Sonno',
-                  subtitle: 'Esplora le fasi del sonno e la qualità del riposo',
-                  icon: Icons.bedtime,
-                  color: Colors.indigo,
+                  title: '✨ Premium Sleep Analytics',
+                  subtitle: 'Score, Trends, Readiness & Smart Alarm (Whoop/Oura style)',
+                  icon: Icons.nightlight_round,
+                  color: Colors.deepPurple,
                   onTap: () {
                     // Crea una nuova istanza del servizio per Sleep Analysis
                     final chileafService = ChileafExtendedService();
@@ -87,7 +87,7 @@ class NavigationScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => SleepAnalysisScreen(
+                        builder: (context) => SleepPremiumScreen(
                           chileafService: chileafService,
                         ),
                       ),
