@@ -5,7 +5,7 @@ import '../chileaf_extended_service.dart';
 class DeviceInfoWidget extends StatefulWidget {
   final ChileafExtendedService service;
 
-  const DeviceInfoWidget({Key? key, required this.service}) : super(key: key);
+  const DeviceInfoWidget({super.key, required this.service});
 
   @override
   State<DeviceInfoWidget> createState() => _DeviceInfoWidgetState();

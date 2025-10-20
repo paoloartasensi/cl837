@@ -7,9 +7,9 @@ class SpO2DisplayWidget extends StatefulWidget {
   final SpO2Service spO2Service;
 
   const SpO2DisplayWidget({
-    Key? key,
+    super.key,
     required this.spO2Service,
-  }) : super(key: key);
+  });
 
   @override
   State<SpO2DisplayWidget> createState() => _SpO2DisplayWidgetState();

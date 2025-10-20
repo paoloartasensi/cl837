@@ -3,7 +3,7 @@ import '../models/heart_rate_data.dart';
 
 class HeartRateWidget extends StatelessWidget {
     final HeartRateData? latestData;
-    const HeartRateWidget({Key? key, required this.latestData, required bool isConnected}) : super(key: key);
+    const HeartRateWidget({super.key, required this.latestData, required bool isConnected});
 
     @override
     Widget build(BuildContext context) {

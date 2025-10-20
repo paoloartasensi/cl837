@@ -8,9 +8,9 @@ class FeedbackTestScreen extends StatelessWidget {
   final ChileafExtendedService service;
 
   const FeedbackTestScreen({
-    Key? key,
+    super.key,
     required this.service,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

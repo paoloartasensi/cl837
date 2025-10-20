@@ -1,5 +1,6 @@
 /// Implementazione dei comandi ufficiali basati sul SDK Android Chileaf
 /// Basato sull'analisi di WearManager.java v3.0.4
+library;
 
 class OfficialChileafCommands {
   

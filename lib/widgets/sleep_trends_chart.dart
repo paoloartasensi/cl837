@@ -9,6 +9,7 @@
 /// - Average line indicator
 /// - Color coding by score quality
 /// - Interactive tooltips
+library;
 
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -20,10 +21,10 @@ class SleepTrendsChart extends StatelessWidget {
   final SleepTrendPeriod period;
 
   const SleepTrendsChart({
-    Key? key,
+    super.key,
     required this.scores,
     this.period = SleepTrendPeriod.week,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

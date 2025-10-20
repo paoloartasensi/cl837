@@ -8,6 +8,7 @@
 /// - Component breakdown (Sleep/HRV/HR)
 /// - Activity recommendation
 /// - Color-coded by level
+library;
 
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
@@ -17,9 +18,9 @@ class ReadinessDashboard extends StatelessWidget {
   final ReadinessScore? readinessScore;
 
   const ReadinessDashboard({
-    Key? key,
+    super.key,
     this.readinessScore,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

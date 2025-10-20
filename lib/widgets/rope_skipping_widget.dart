@@ -5,7 +5,7 @@ import '../chileaf_extended_service.dart';
 class RopeSkippingWidget extends StatefulWidget {
   final ChileafExtendedService service;
 
-  const RopeSkippingWidget({Key? key, required this.service}) : super(key: key);
+  const RopeSkippingWidget({super.key, required this.service});
 
   @override
   State<RopeSkippingWidget> createState() => _RopeSkippingWidgetState();

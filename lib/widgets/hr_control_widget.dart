@@ -8,9 +8,9 @@ class HRControlWidget extends StatefulWidget {
   final ChileafExtendedService service;
 
   const HRControlWidget({
-    Key? key,
+    super.key,
     required this.service,
-  }) : super(key: key);
+  });
 
   @override
   State<HRControlWidget> createState() => _HRControlWidgetState();

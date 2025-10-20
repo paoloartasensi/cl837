@@ -9,6 +9,7 @@
 /// - Device vibration toggle
 /// - Phone notification toggle
 /// - Visual preview of wake window
+library;
 
 import 'package:flutter/material.dart';
 import '../models/smart_alarm.dart';
@@ -18,7 +19,7 @@ import '../services/sleep_notification_service.dart';
 class AlarmConfigScreen extends StatefulWidget {
   final SmartAlarm? existingAlarm;
 
-  const AlarmConfigScreen({Key? key, this.existingAlarm}) : super(key: key);
+  const AlarmConfigScreen({super.key, this.existingAlarm});
 
   @override
   State<AlarmConfigScreen> createState() => _AlarmConfigScreenState();

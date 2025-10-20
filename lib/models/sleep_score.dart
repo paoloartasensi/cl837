@@ -6,6 +6,7 @@
 /// - Efficiency Score (0-30 points): Time asleep vs in bed
 /// - Quality Score (0-25 points): Deep/Light sleep ratio
 /// - Consistency Score (0-10 points): Interruptions/awakenings
+library;
 
 class SleepScore {
   /// Overall sleep score (0-100)

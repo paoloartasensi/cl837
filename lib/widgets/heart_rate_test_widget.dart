@@ -8,7 +8,7 @@ import '../models/heart_rate_config.dart';
 class HeartRateTestWidget extends StatefulWidget {
   final ChileafExtendedService service;
 
-  const HeartRateTestWidget({Key? key, required this.service}) : super(key: key);
+  const HeartRateTestWidget({super.key, required this.service});
 
   @override
   State<HeartRateTestWidget> createState() => _HeartRateTestWidgetState();

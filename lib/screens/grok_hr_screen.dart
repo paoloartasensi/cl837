@@ -179,8 +179,8 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
         await connectedDevice!.disconnect();
       }
 
-      // Connect to new device
-      await device.connect(timeout: const Duration(seconds: 15));
+      // Connect to new device  
+      await device.connect(mtu: null, license: License.free);
       
       // Listen to connection state
       _connectionSubscription = device.connectionState.listen((state) {

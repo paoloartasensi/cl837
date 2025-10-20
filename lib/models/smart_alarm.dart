@@ -2,6 +2,7 @@
 /// 
 /// Represents a smart alarm that wakes user during optimal sleep phase
 /// (light sleep) within a configurable time window
+library;
 
 class SmartAlarm {
   /// Desired wake time set by user

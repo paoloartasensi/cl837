@@ -20,11 +20,11 @@ class ManualTestsWidget extends StatefulWidget {
   final Stream<HeartRateData?>? heartRateStream; // Stream principale per RR intervals
 
   const ManualTestsWidget({
-    Key? key,
+    super.key,
     required this.extendedService,
     this.hrvService,
     this.heartRateStream, // Accesso diretto al stream del heart rate
-  }) : super(key: key);
+  });
 
   @override
   State<ManualTestsWidget> createState() => _ManualTestsWidgetState();

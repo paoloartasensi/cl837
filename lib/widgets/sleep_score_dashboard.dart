@@ -7,6 +7,7 @@
 /// - Breakdown of score components
 /// - Actionable insights
 /// - Emoji feedback
+library;
 
 import 'package:flutter/material.dart';
 import '../models/sleep_score.dart';
@@ -18,10 +19,10 @@ class SleepScoreDashboard extends StatelessWidget {
   final SleepScore? preCalculatedScore;
 
   const SleepScoreDashboard({
-    Key? key,
+    super.key,
     this.sleepData,
     this.preCalculatedScore,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

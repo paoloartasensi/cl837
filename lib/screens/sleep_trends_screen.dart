@@ -7,6 +7,7 @@
 /// - Statistics cards
 /// - Best/Worst nights
 /// - Trend indicator
+library;
 
 import 'package:flutter/material.dart';
 import '../models/sleep_score.dart';
@@ -15,7 +16,7 @@ import '../services/sleep_score_calculator.dart';
 import '../widgets/sleep_trends_chart.dart';
 
 class SleepTrendsScreen extends StatefulWidget {
-  const SleepTrendsScreen({Key? key}) : super(key: key);
+  const SleepTrendsScreen({super.key});
 
   @override
   State<SleepTrendsScreen> createState() => _SleepTrendsScreenState();

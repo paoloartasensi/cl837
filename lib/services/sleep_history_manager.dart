@@ -9,6 +9,7 @@
 /// - Query by date range
 /// - Calculate trends and averages
 /// - Export data
+library;
 
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';

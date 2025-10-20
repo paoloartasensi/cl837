@@ -7,6 +7,7 @@
 /// - Sleep score available
 /// 
 /// Uses flutter_local_notifications for cross-platform support
+library;
 
 import 'dart:typed_data';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -149,8 +150,6 @@ class SleepNotificationService {
         vibration: true,
       ),
       androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
       payload: 'scheduled_alarm:${scheduledTime.toIso8601String()}',
     );
   }

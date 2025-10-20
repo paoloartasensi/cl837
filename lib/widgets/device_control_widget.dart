@@ -13,11 +13,11 @@ class DeviceControlWidget extends StatefulWidget {
   final String? deviceName;
 
   const DeviceControlWidget({
-    Key? key,
+    super.key,
     required this.extendedService,
     required this.isConnected,
     this.deviceName,
-  }) : super(key: key);
+  });
 
   @override
   State<DeviceControlWidget> createState() => _DeviceControlWidgetState();

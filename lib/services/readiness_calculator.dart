@@ -6,6 +6,7 @@
 /// - Resting heart rate (20% weight)
 /// 
 /// Similar to Whoop Recovery, Oura Readiness
+library;
 
 import '../models/sleep_score.dart';
 import '../models/hrv_data.dart';

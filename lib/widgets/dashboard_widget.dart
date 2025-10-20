@@ -15,13 +15,13 @@ class DashboardWidget extends StatefulWidget {
   final VoidCallback? onSettings;
 
   const DashboardWidget({
-    Key? key,
+    super.key,
     required this.isConnected,
     this.deviceName,
     required this.sensorData,
     this.onRefresh,
     this.onSettings,
-  }) : super(key: key);
+  });
 
   @override
   State<DashboardWidget> createState() => _DashboardWidgetState();

@@ -10,6 +10,7 @@
 /// 4. Triggers alarm at optimal time
 /// 
 /// Based on research showing waking during light sleep reduces grogginess
+library;
 
 import 'dart:async';
 import '../models/smart_alarm.dart';

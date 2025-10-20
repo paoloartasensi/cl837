@@ -1,6 +1,7 @@
 /// Controller per il LED di status esterno del dispositivo CL837
 /// Questo LED (non quello SpO2) cambia colore in base agli stati del dispositivo
 /// Basato sul reverse engineering degli SDK CL831_INFO + XFITNESS2
+library;
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';

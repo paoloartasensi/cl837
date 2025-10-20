@@ -2413,13 +2413,14 @@ class ChileafExtendedService {
         _isConnected = false;
         
         // Attempt reconnection
-        await device.connect();
+        await device.connect(mtu: null, license: License.free);
         await Future.delayed(const Duration(milliseconds: 1000));
         
         // Re-discover services and characteristics
         final services = await device.discoverServices();
         final customService = services.firstWhere(
           (s) => s.uuid.toString().toLowerCase() == _customServiceUuid.toLowerCase(),
+          orElse: () => throw Exception('Custom service not found'),
         );
         
         await _setupCharacteristics(customService);

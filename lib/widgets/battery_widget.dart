@@ -8,12 +8,12 @@ class BatteryWidget extends StatefulWidget {
     final VoidCallback? onTap;
     
     const BatteryWidget({
-        Key? key, 
+        super.key, 
         required this.latestData,
         this.isConnected = false,
         this.isCharging = false,
         this.onTap,
-    }) : super(key: key);
+    });
 
     @override
     State<BatteryWidget> createState() => _BatteryWidgetState();

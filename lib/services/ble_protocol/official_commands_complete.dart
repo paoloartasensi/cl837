@@ -6,6 +6,7 @@
 /// - XFITNESS2 (App ufficiale Chileaf decompilata)
 /// 
 /// Tutti i comandi sono verificati e confermati da entrambe le fonti
+library;
 
 /// Classe contenente tutti i comandi ufficiali del protocollo Chileaf
 /// Estratti dal reverse engineering degli SDK ufficiali Android

@@ -7,6 +7,7 @@
 /// - Consistency (0-10 points): Number of awakenings
 /// 
 /// Algorithm inspired by Whoop, Oura Ring, and sleep science research
+library;
 
 import '../models/historical_data.dart';
 import '../models/sleep_score.dart';

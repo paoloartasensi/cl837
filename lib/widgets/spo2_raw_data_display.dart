@@ -6,9 +6,9 @@ class SpO2RawDataDisplay extends StatelessWidget {
   final Map<String, dynamic>? rawData;
   
   const SpO2RawDataDisplay({
-    Key? key,
+    super.key,
     this.rawData,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {

@@ -365,7 +365,7 @@ class _HistoricalDataWidgetState extends State<HistoricalDataWidget> {
                 ),
               ],
             ),
-          )).toList(),
+          )),
         ],
       );
     }

@@ -186,11 +186,11 @@ class SleepOnsetEvent extends SleepEvent {
   final double confidence;
   
   SleepOnsetEvent({
-    required DateTime timestamp,
+    required super.timestamp,
     required this.initialPhase,
     required this.activityIndex,
     required this.confidence,
-  }) : super(timestamp: timestamp, eventType: 'SLEEP_ONSET');
+  }) : super(eventType: 'SLEEP_ONSET');
   
   @override
   String toString() {
@@ -208,11 +208,11 @@ class SleepWakeEvent extends SleepEvent {
   final int activityIndex;
   
   SleepWakeEvent({
-    required DateTime timestamp,
+    required super.timestamp,
     required this.sessionStartTime,
     required this.duration,
     required this.activityIndex,
-  }) : super(timestamp: timestamp, eventType: 'WAKE_UP');
+  }) : super(eventType: 'WAKE_UP');
   
   @override
   String toString() {
@@ -230,11 +230,11 @@ class SleepPhaseChange extends SleepEvent {
   final int activityIndex;
   
   SleepPhaseChange({
-    required DateTime timestamp,
+    required super.timestamp,
     required this.fromPhase,
     required this.toPhase,
     required this.activityIndex,
-  }) : super(timestamp: timestamp, eventType: 'PHASE_CHANGE');
+  }) : super(eventType: 'PHASE_CHANGE');
   
   @override
   String toString() {
