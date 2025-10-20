@@ -297,11 +297,11 @@ class _AlarmConfigScreenState extends State<AlarmConfigScreen> {
         padding: const EdgeInsets.all(20),
         child: Column(
           children: [
-            Row(
+            const Row(
               children: [
-                const Icon(Icons.info_outline, size: 20),
-                const SizedBox(width: 8),
-                const Text(
+                Icon(Icons.info_outline, size: 20),
+                SizedBox(width: 8),
+                Text(
                   'Wake Window Preview',
                   style: TextStyle(
                     fontSize: 14,
