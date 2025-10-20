@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'screens/navigation_screen.dart';
+import 'screens/unified_home_screen.dart';
 
 void main() async {
     WidgetsFlutterBinding.ensureInitialized();
@@ -17,12 +17,12 @@ class MyApp extends StatelessWidget {
     Widget build(BuildContext context) {
         return MaterialApp(
             debugShowCheckedModeBanner: false,
-            title: 'CL837 GROK HR Test',
+            title: 'CL837 Health Hub',
             theme: ThemeData(
-                primarySwatch: Colors.blue,
+                primarySwatch: Colors.deepPurple,
                 visualDensity: VisualDensity.adaptivePlatformDensity,
             ),
-            home: const NavigationScreen(),
+            home: const UnifiedHomeScreen(),
         );
     }
 }
