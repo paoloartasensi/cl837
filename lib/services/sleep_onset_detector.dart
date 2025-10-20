@@ -9,9 +9,9 @@ class SleepOnsetDetector {
   Function(SleepPhaseChange)? onPhaseChange;
   
   // Thresholds
-  static const int AWAKE_THRESHOLD = 20;
-  static const int LIGHT_SLEEP_MAX = 20;
-  static const int DEEP_SLEEP_PATTERN = 3; // 3 consecutive 0s
+  static const int awakeThreshold = 20;
+  static const int lightSleepMax = 20;
+  static const int deepSleepPattern = 3; // 3 consecutive 0s
   
   // State tracking
   bool _isCurrentlyAsleep = false;
@@ -100,11 +100,11 @@ class SleepOnsetDetector {
   
   /// Determina la fase di sonno basata su activity index
   SleepPhase _determinePhase(int activityIndex, int consecutiveZeros) {
-    if (activityIndex > AWAKE_THRESHOLD) {
+    if (activityIndex > awakeThreshold) {
       return SleepPhase.awake;
-    } else if (activityIndex == 0 && consecutiveZeros >= DEEP_SLEEP_PATTERN - 1) {
+    } else if (activityIndex == 0 && consecutiveZeros >= deepSleepPattern - 1) {
       return SleepPhase.deepSleep;
-    } else if (activityIndex <= LIGHT_SLEEP_MAX) {
+    } else if (activityIndex <= lightSleepMax) {
       return SleepPhase.lightSleep;
     }
     return SleepPhase.awake;
@@ -122,7 +122,7 @@ class SleepOnsetDetector {
     double avgActivity = postOnset.reduce((a, b) => a + b) / postOnset.length;
     
     // Score più alto se l'attività media è bassa dopo onset
-    double confidence = ((AWAKE_THRESHOLD - avgActivity) / AWAKE_THRESHOLD) * 100;
+    double confidence = ((awakeThreshold - avgActivity) / awakeThreshold) * 100;
     return confidence.clamp(0, 100);
   }
   

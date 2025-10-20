@@ -8,6 +8,7 @@
 /// 
 /// Uses flutter_local_notifications for cross-platform support
 
+import 'dart:typed_data';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../models/sleep_score.dart';
 import '../models/smart_alarm.dart';
@@ -81,7 +82,7 @@ class SleepNotificationService {
     if (!_initialized) await initialize();
 
     final timeStr = _formatTime(event.timestamp);
-    final duration = _formatDuration(event.sleepDuration);
+    final duration = _formatDuration(event.duration);
     
     await _notifications.show(
       2,
@@ -109,9 +110,6 @@ class SleepNotificationService {
   Future<void> showSmartAlarmNotification(SmartAlarm alarm) async {
     if (!_initialized) await initialize();
 
-    final timeStr = alarm.optimalWakeTime != null
-        ? _formatTime(alarm.optimalWakeTime!)
-        : _formatTime(alarm.desiredWakeTime);
 
     String body = alarm.optimalWakeTime != null
         ? '⏰ Optimal wake time! You\'re in ${alarm.wakePhase?.displayName ?? "light sleep"}'
