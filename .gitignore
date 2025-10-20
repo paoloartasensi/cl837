@@ -55,6 +55,7 @@ android/app/.cxx/RelWithDebInfo/
 # Project specific directories to ignore
 
 /tools/
+/REVERSE/
 /REVERSE/CL831_DECOMPILED/
 /REVERSE_script/
 /REVERSE/XFITNESS_435_JADX/
