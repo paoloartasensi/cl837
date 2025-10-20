@@ -21,6 +21,7 @@ import 'services/data_processors/health_processor.dart';
 import 'services/historical_data_service.dart';
 import 'services/data_processors/rope_processor.dart';
 import 'services/data_processors/device_info_processor.dart';
+import 'services/sleep_onset_detector.dart';
 
 // Protocol & Commands
 import 'services/ble_protocol/chileaf_protocol.dart';
@@ -97,6 +98,9 @@ class ChileafExtendedService {
 
   // Historical data service with optimized checksum
   late final HistoricalDataService _historicalDataService;
+  
+  // Sleep onset detector
+  late final SleepOnsetDetector _sleepOnsetDetector;
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT SYSTEM =====
   // Stato della misurazione SpO2 ottimizzato seguendo pipeline ufficiale
@@ -216,6 +220,14 @@ class ChileafExtendedService {
   // Sleep 0x31 multi-packet buffer
   final List<SleepData31> _sleepData31Buffer = [];
   bool _isSleepData31Active = false;
+  
+  // Sleep event streams (onset detection)
+  final StreamController<SleepOnsetEvent> _sleepOnsetController =
+      StreamController<SleepOnsetEvent>.broadcast();
+  final StreamController<SleepWakeEvent> _sleepWakeController =
+      StreamController<SleepWakeEvent>.broadcast();
+  final StreamController<SleepPhaseChange> _sleepPhaseChangeController =
+      StreamController<SleepPhaseChange>.broadcast();
 
   // Rope skipping streams
   final StreamController<RopeSkippingData> _ropeStatusController =
@@ -251,6 +263,21 @@ class ChileafExtendedService {
 
     // Initialize historical data service with optimized checksum
     _historicalDataService = HistoricalDataService(_sendCommand);
+    
+    // Initialize sleep onset detector with callbacks
+    _sleepOnsetDetector = SleepOnsetDetector();
+    _sleepOnsetDetector.onSleepOnset = (event) {
+      debugPrint(event.toString());
+      _sleepOnsetController.add(event);
+    };
+    _sleepOnsetDetector.onWakeUp = (event) {
+      debugPrint(event.toString());
+      _sleepWakeController.add(event);
+    };
+    _sleepOnsetDetector.onPhaseChange = (event) {
+      debugPrint(event.toString());
+      _sleepPhaseChangeController.add(event);
+    };
   }
 
   // Public streams - delegate to processors
@@ -274,6 +301,11 @@ class ChileafExtendedService {
       _sleepData31Controller.stream;
   Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
       _stepsHistoryController.stream;
+  
+  // Sleep event streams (real-time onset detection)
+  Stream<SleepOnsetEvent> get sleepOnsetStream => _sleepOnsetController.stream;
+  Stream<SleepWakeEvent> get sleepWakeStream => _sleepWakeController.stream;
+  Stream<SleepPhaseChange> get sleepPhaseChangeStream => _sleepPhaseChangeController.stream;
 
   // Real-time Heart Rate streams (SDK section 4.8)
   Stream<int> get realTimeHeartRateStream => _realTimeHeartRateController.stream;
@@ -1909,6 +1941,10 @@ class ChileafExtendedService {
     // Calcola fasi del sonno per questo pacchetto
     SleepPhases31 phases = sleepData.calculateSleepPhases();
     debugPrint('📈 Packet sleep phases: $phases');
+    
+    // NUOVO: Analizza eventi sleep (onset/wake/phase changes)
+    List<SleepEvent> events = _sleepOnsetDetector.analyzeSleepData(sleepData);
+    debugPrint('🔔 Detected ${events.length} sleep events in this packet');
   }
   
   /// Finalizza e invia i dati sleep quando arriva il segnale 0x32
@@ -2491,6 +2527,9 @@ class ChileafExtendedService {
     _sleepHistoryController.close();
     _sleepData31Controller.close();
     _stepsHistoryController.close();
+    _sleepOnsetController.close();
+    _sleepWakeController.close();
+    _sleepPhaseChangeController.close();
     _ropeStatusController.close();
     _ropeRealtimeController.close();
     _deviceInfoController.close();
