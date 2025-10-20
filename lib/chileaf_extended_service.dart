@@ -217,9 +217,12 @@ class ChileafExtendedService {
   final StreamController<List<StepIntervalEntry>> _stepsHistoryController =
       StreamController<List<StepIntervalEntry>>.broadcast();
   
-  // Sleep 0x31 multi-packet buffer
+  // Sleep 0x31 multi-packet buffer (current session packets)
   final List<SleepData31> _sleepData31Buffer = [];
   bool _isSleepData31Active = false;
+  
+  // Sleep 0x31 completed sessions accumulator (all finalized sessions)
+  final List<SleepHistoryEntry> _sleepData31CompletedSessions = [];
   
   // Sleep event streams (onset detection)
   final StreamController<SleepOnsetEvent> _sleepOnsetController =
@@ -731,8 +734,26 @@ class ChileafExtendedService {
         _processSleepData31(data);
         break;
       case 0x32: // Sleep Data End Signal (OFFICIAL from documentation)
-        debugPrint('🌙✅ SLEEP DATA 0x32: End signal received - all sleep data transmitted');
-        _finalizeSleepData31();
+        debugPrint('🌙✅ SLEEP DATA 0x32: End signal received - ALL sleep data transmitted');
+        
+        // Finalizza l'ultima sessione se presente
+        if (_sleepData31Buffer.isNotEmpty) {
+          debugPrint('🔄 Finalizing last session...');
+          _finalizeSleepData31();
+        }
+        
+        // Log summary totale
+        debugPrint('📊 COMPLETE DOWNLOAD SUMMARY:');
+        debugPrint('   ✅ Total sessions received: ${_sleepData31CompletedSessions.length}');
+        if (_sleepData31CompletedSessions.isNotEmpty) {
+          int totalMinutes = _sleepData31CompletedSessions.fold(0, (sum, s) => sum + (s.actions.length * 5));
+          debugPrint('   ⏱️  Total sleep time: $totalMinutes minutes');
+          debugPrint('   📅 Date range: ${_sleepData31CompletedSessions.first.timestamp} to ${_sleepData31CompletedSessions.last.timestamp}');
+        }
+        
+        // Reset accumulator per il prossimo download
+        _sleepData31CompletedSessions.clear();
+        debugPrint('🧹 Accumulator cleared - ready for next download cycle');
         break;
       case ChileafProtocol.commandSports:
         // SPORTS DATA IGNORED - Focus on medical-grade sensors only
@@ -1869,7 +1890,7 @@ class ChileafExtendedService {
   /// Formato: 0x31 [UTC 4 bytes] [ACT-0] [ACT-1] ... [ACT-n]
   /// Ogni byte ACT rappresenta 5 minuti di activity index
   void _processSleepData31(List<int> data) {
-    debugPrint('🌙💤 Processing Sleep Data 0x31 (OFFICIAL FORMAT)...');
+    debugPrint('🌙💤 Processing Sleep Data 0x31 (OFFICIAL SDK FORMAT)...');
     debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
     debugPrint('🔍 Data length: ${data.length} bytes');
     
@@ -1887,14 +1908,27 @@ class ChileafExtendedService {
     // Parse UTC o sequence number (bytes 3-6, big-endian)
     int utcOrSequence = _getLongParse(data, 3, 4);
     
-    // Determina se è il primo pacchetto (contiene UTC) o successivo (sequence number)
-    bool isFirstPacket = !_isSleepData31Active;
+    // 🎯 LOGICA CORRETTA DALLA SDK:
+    // - Primo pacchetto di OGNI sessione ha UTC timestamp
+    // - Pacchetti successivi della STESSA sessione hanno sequence number
+    // - Quando arriva un NUOVO UTC = NUOVA SESSIONE (finalizza la precedente!)
+    
     DateTime timestamp;
     int sequenceNumber = 0;
     
-    if (isFirstPacket) {
-      // Primo pacchetto: contiene UTC timestamp
-      debugPrint('📅 First packet detected - parsing UTC timestamp');
+    // Controlla se è UTC (valore grande, tipicamente timestamp Unix) o sequence (piccolo, 1, 2, 3...)
+    // UTC è nell'ordine di 1729000000+ (ottobre 2024)
+    // Sequence è nell'ordine di 1, 2, 3, 4...
+    if (utcOrSequence > 1000000000) {
+      // È un UTC timestamp = NUOVA SESSIONE!
+      
+      debugPrint('📅 NEW SESSION detected - UTC timestamp found');
+      
+      // ✅ FINALIZZA la sessione precedente prima di iniziare la nuova
+      if (_isSleepData31Active && _sleepData31Buffer.isNotEmpty) {
+        debugPrint('🔄 Finalizing previous session before starting new one...');
+        _finalizeSleepData31();
+      }
       
       // Converti UTC in DateTime
       int utcMillis = utcOrSequence * 1000;
@@ -1904,20 +1938,25 @@ class ChileafExtendedService {
       _isSleepData31Active = true;
       
     } else {
-      // Pacchetti successivi: contiene sequence number
+      // È un sequence number = CONTINUAZIONE della sessione corrente
       sequenceNumber = utcOrSequence;
-      debugPrint('📦 Continuation packet - sequence number: $sequenceNumber');
+      debugPrint('📦 Continuation packet - sequence: $sequenceNumber');
       
-      // Usa il timestamp del primo pacchetto + offset basato su sequenza
-      if (_sleepData31Buffer.isNotEmpty) {
-        DateTime baseTime = _sleepData31Buffer.first.timestamp;
-        // Ogni pacchetto copre N intervalli da 5 minuti
-        int previousIntervals = _sleepData31Buffer.fold(0, (sum, item) => sum + item.activityIndices.length);
-        timestamp = baseTime.add(Duration(minutes: previousIntervals * 5));
-        debugPrint('🕐 Calculated timestamp from sequence: $timestamp');
-      } else {
-        debugPrint('⚠️ No previous packets in buffer, using current time');
+      if (_sleepData31Buffer.isEmpty) {
+        debugPrint('⚠️ Sequence packet without session start - using current time');
         timestamp = DateTime.now();
+        _isSleepData31Active = true;
+      } else {
+        // ✅ CALCOLA timestamp basandosi sugli activity indices GIÀ RICEVUTI
+        // Ogni activity index = 5 minuti
+        DateTime baseTimestamp = _sleepData31Buffer.first.timestamp;
+        int totalPreviousIndices = _sleepData31Buffer.fold(0, (sum, packet) => sum + packet.activityIndices.length);
+        
+        // Offset in minuti = numero di indici × 5 minuti per indice
+        int offsetMinutes = totalPreviousIndices * 5;
+        timestamp = baseTimestamp.add(Duration(minutes: offsetMinutes));
+        
+        debugPrint('🕐 Calculated timestamp: $timestamp (base + ${offsetMinutes}min from $totalPreviousIndices indices)');
       }
     }
     
@@ -1928,18 +1967,17 @@ class ChileafExtendedService {
       activityIndices.add(activityIndex);
     }
     
-    debugPrint('📊 Activity indices extracted: ${activityIndices.length} intervals (${activityIndices.length * 5} minutes)');
-    debugPrint('📊 Sample indices: ${activityIndices.take(10).join(", ")}${activityIndices.length > 10 ? "..." : ""}');
+    debugPrint('📊 Activity indices: ${activityIndices.length} blocks (${activityIndices.length * 5} minutes)');
+    if (activityIndices.isNotEmpty) {
+      debugPrint('📊 Sample: ${activityIndices.take(10).join(", ")}${activityIndices.length > 10 ? "..." : ""}');
+    }
     
-    // Classifica activity indices secondo documentazione
+    // Classifica activity indices secondo SDK
     int awakeCount = activityIndices.where((idx) => idx > 20).length;
     int lightSleepCount = activityIndices.where((idx) => idx > 0 && idx <= 20).length;
     int deepSleepIndicators = activityIndices.where((idx) => idx == 0).length;
     
-    debugPrint('📊 Activity breakdown:');
-    debugPrint('   😴 Awake intervals (>20): $awakeCount = ${awakeCount * 5} minutes');
-    debugPrint('   🌙 Light sleep intervals (1-20): $lightSleepCount = ${lightSleepCount * 5} minutes');
-    debugPrint('   💤 Deep sleep indicators (0): $deepSleepIndicators = ${deepSleepIndicators * 5} minutes');
+    debugPrint('📊 Breakdown: Awake=$awakeCount×5min, Light=$lightSleepCount×5min, Still=$deepSleepIndicators×5min');
     
     // Crea oggetto SleepData31
     SleepData31 sleepData = SleepData31(
@@ -1948,13 +1986,13 @@ class ChileafExtendedService {
       packetSequence: sequenceNumber,
     );
     
-    // Aggiungi al buffer
+    // Aggiungi al buffer della SESSIONE CORRENTE
     _sleepData31Buffer.add(sleepData);
-    debugPrint('💾 Added to buffer. Total packets: ${_sleepData31Buffer.length}');
+    debugPrint('💾 Added to current session buffer. Total packets: ${_sleepData31Buffer.length}');
     
     // Calcola fasi del sonno per questo pacchetto
     SleepPhases31 phases = sleepData.calculateSleepPhases();
-    debugPrint('📈 Packet sleep phases: $phases');
+    debugPrint('📈 Packet phases: Light=${phases.lightSleepMinutes}min, Deep=${phases.deepSleepMinutes}min, Awake=${phases.awakeMinutes}min');
     
     // NUOVO: Analizza eventi sleep (onset/wake/phase changes)
     List<SleepEvent> events = _sleepOnsetDetector.analyzeSleepData(sleepData);
@@ -1991,21 +2029,55 @@ class ChileafExtendedService {
       totalAwake += phases.awakeMinutes;
     }
     
-    debugPrint('📈 TOTAL SLEEP PHASES:');
+    debugPrint('📈 SESSION TOTAL PHASES:');
     debugPrint('   💤 Deep sleep: $totalDeep minutes');
     debugPrint('   🌙 Light sleep: $totalLight minutes');
     debugPrint('   😴 Awake: $totalAwake minutes');
     debugPrint('   ✅ Sleep efficiency: ${totalLight + totalDeep > 0 ? ((totalLight + totalDeep) / totalMinutes * 100).toStringAsFixed(1) : 0}%');
     
-    // Invia al stream
+    // ✅ UNISCI tutti i pacchetti della STESSA SESSIONE in UNA SOLA SleepHistoryEntry
+    // Tutti i pacchetti nel buffer appartengono alla stessa sessione (stesso UTC timestamp base)
+    if (_sleepData31Buffer.isEmpty) {
+      debugPrint('⚠️ Empty buffer after check - nothing to merge');
+      return;
+    }
+    
+    DateTime sessionTimestamp = _sleepData31Buffer.first.timestamp;
+    List<int> allActivityIndices = [];
+    
+    // Concatena tutti gli activity indices dei pacchetti
+    for (var packet in _sleepData31Buffer) {
+      allActivityIndices.addAll(packet.activityIndices);
+    }
+    
+    debugPrint('🔗 Merged ${_sleepData31Buffer.length} packets into ONE session');
+    debugPrint('📊 Total activity indices: ${allActivityIndices.length} (${allActivityIndices.length * 5} minutes)');
+    
+    // Crea UNA SOLA sessione con TUTTI gli activity indices
+    SleepHistoryEntry sessionEntry = SleepHistoryEntry(
+      timestamp: sessionTimestamp,
+      count: allActivityIndices.length,
+      actions: allActivityIndices,
+    );
+    
+    // ✅ ACCUMULA questa sessione con le precedenti (invece di sovrascrivere)
+    _sleepData31CompletedSessions.add(sessionEntry);
+    
+    debugPrint('✅ Session finalized and added to accumulator');
+    debugPrint('📊 Total sessions accumulated: ${_sleepData31CompletedSessions.length}');
+    
+    // Invia TUTTE le sessioni accumulate al stream PRINCIPALE
+    _sleepHistoryController.add(List.from(_sleepData31CompletedSessions));
+    debugPrint('📤 Sent ${_sleepData31CompletedSessions.length} sleep sessions to MAIN UI stream');
+    
+    // Invia anche allo stream dedicato 0x31 (per compatibilità futura)
     List<SleepData31> sleepSessions = List.from(_sleepData31Buffer);
     _sleepData31Controller.add(sleepSessions);
-    debugPrint('📤 Sent ${sleepSessions.length} sleep packets to UI stream');
     
-    // Reset buffer
+    // Reset buffer della SESSIONE CORRENTE (ma mantieni l'accumulator!)
     _sleepData31Buffer.clear();
     _isSleepData31Active = false;
-    debugPrint('🧹 Buffer cleared and reset');
+    debugPrint('🧹 Current session buffer cleared - ready for next session');
   }
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====
@@ -3890,32 +3962,25 @@ class ChileafExtendedService {
   }
 
   /// Recupera dati di sonno con comando 0x31 (PROTOCOLLO UFFICIALE)
-  /// Questo è il comando REALE usato dall'app ufficiale
+  /// ✅ Questo comando dovrebbe recuperare TUTTO lo storico (non solo oggi)
   /// Documentazione SDK sezione 2.14
   /// Risposta: 0x31 (dati) o 0x32 (fine/no data)
   /// Granularità: 1 byte = 5 minuti di activity index
-  Future<void> requestSleepData31() async {
+  Future<void> requestSleepData31({bool force = false}) async {
     debugPrint('🔄🌙💤 Requesting Sleep Data with OFFICIAL command 0x31...');
     debugPrint('📖 Protocol: SDK 2.14 - Sleep Data Request');
     debugPrint('📊 Granularity: 1 byte = 5 minutes');
     debugPrint('🔍 Response: 0x31 (data) or 0x32 (end signal)');
+    debugPrint('📅 Expected: ALL historical sleep data (multiple days)');
     
-    try {
-      // Reset buffer e stato prima di nuova richiesta
-      _sleepData31Buffer.clear();
-      _isSleepData31Active = false;
-      
-      // Invia comando 0x31
-      List<int> command = OfficialChileafCommands.getSleepData31();
-      debugPrint('📡 Command: ${_commandToHexString(command)}');
-      
-      await _sendCommand(command);
-      debugPrint('✅ Sleep data 0x31 request sent successfully');
-      
-    } catch (e) {
-      debugPrint('❌ Failed to request sleep data 0x31: $e');
-      rethrow;
-    }
+    // ✅ Reset tutti i buffer prima di iniziare nuovo download
+    _sleepData31Buffer.clear();
+    _sleepData31CompletedSessions.clear();
+    _isSleepData31Active = false;
+    debugPrint('🧹 Buffers cleared - starting fresh download');
+    
+    // Usa il nuovo metodo del service
+    await _historicalDataService.requestSleepHistory0x31(force: force);
   }
 
   /// Recupera passi intervallari ottimizzati

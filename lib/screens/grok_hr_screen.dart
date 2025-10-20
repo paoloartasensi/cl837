@@ -348,6 +348,38 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     }
   }
 
+  /// Download sleep data using OFFICIAL 0x31 command (ALL historical data)
+  Future<void> _downloadSleepData0x31() async {
+    setState(() {
+      _isDownloading = true;
+      _statusMessage = 'Downloading FULL sleep history (0x31)...';
+    });
+
+    try {
+      debugPrint('🌙📅 SLEEP HISTORY DOWNLOAD 0x31 STARTED');
+      
+      // Request ALL sleep history data with official 0x31 command
+      await _service.requestSleepData31(force: true);
+      
+      // Wait longer for complete history (may be multiple days)
+      await Future.delayed(const Duration(milliseconds: 5000));
+      
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Full sleep history downloaded! Check data below.';
+      });
+      
+      debugPrint('✅ SLEEP HISTORY DOWNLOAD 0x31 COMPLETED!');
+      
+    } catch (e) {
+      debugPrint('❌ Sleep history 0x31 download failed: $e');
+      setState(() {
+        _isDownloading = false;
+        _statusMessage = 'Sleep history 0x31 download failed: $e';
+      });
+    }
+  }
+
 
   /// Genera il contenuto CSV per l'esportazione
   String _generateCSVContent() {
@@ -1830,13 +1862,27 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
               const SizedBox(height: 12),
 
-              // Sleep Data Download
+              // Sleep Data Download (0x05 Legacy - Recent data)
               ElevatedButton.icon(
                 onPressed: _isDownloading ? null : _downloadSleepData,
                 icon: const Icon(Icons.nightlight_round),
-                label: const Text('🌙 Download Sleep Data'),
+                label: const Text('🌙 Sleep Data (0x05 Recent)'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.purple.shade700,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              // Sleep Data Download (0x31 Official - Full history)
+              ElevatedButton.icon(
+                onPressed: _isDownloading ? null : _downloadSleepData0x31,
+                icon: const Icon(Icons.history),
+                label: const Text('📅 Sleep History (0x31 ALL)'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.purple.shade900,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
                 ),

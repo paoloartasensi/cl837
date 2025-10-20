@@ -126,8 +126,10 @@ class HistoricalDataService {
     }
   }
 
-  /// Recupera dati di sonno storici con comando 0x05 (LEGACY - WearManager format)
-  /// Utilizza comando 0x05 (getHistoryOfSleep) con parsing dell'app originale
+  /// Recupera dati di sonno con comando 0x05 LEGACY (dati recenti)
+  /// ⚠️ Questo comando restituisce solo i dati più recenti, non tutto lo storico
+  /// Granularità: 1 byte = 5 MINUTI (non 1 minuto!)
+  /// Per storico completo, usa requestSleepHistory0x31()
   Future<void> requestSleepHistoryEnhanced({bool force = false}) async {
     if (!force && _shouldThrottleRequest('sleep_history_enhanced')) {
       debugPrint('⏱️ Sleep history request throttled - waiting for cooldown (use force=true to override)');
@@ -135,15 +137,46 @@ class HistoricalDataService {
     }
     
     try {
+      // ⚠️ COMANDO LEGACY 0x05 - Solo dati recenti
       var command = OfficialChileafCommands.getHistoryOfSleep();
-      debugPrint('🌙📡 Sending sleep history command: ${command.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      debugPrint('🌙📡 Sending LEGACY sleep history command 0x05 (recent data only)');
+      debugPrint('📖 Command: ${command.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      debugPrint('📊 Granularity: 1 byte = 5 MINUTES');
+      debugPrint('ℹ️  For full history, use Sleep History 0x31 button');
       
       await _sendCommand(command);
       _updateRequestTime('sleep_history_enhanced');
-      debugPrint('✅ Sleep history command sent successfully');
+      debugPrint('✅ Sleep history command 0x05 sent successfully');
       
     } catch (e) {
       debugPrint('❌ Failed to send sleep history command: $e');
+    }
+  }
+
+  /// Recupera dati di sonno con comando 0x31 UFFICIALE (tutto lo storico)
+  /// ✅ Questo comando dovrebbe restituire TUTTI i dati storici del device
+  /// Granularità: 1 byte = 5 MINUTI
+  /// Risposta: 0x31 (dati) o 0x32 (fine/no data)
+  Future<void> requestSleepHistory0x31({bool force = false}) async {
+    if (!force && _shouldThrottleRequest('sleep_history_0x31')) {
+      debugPrint('⏱️ Sleep history 0x31 request throttled - waiting for cooldown (use force=true to override)');
+      return;
+    }
+    
+    try {
+      // ✅ COMANDO UFFICIALE 0x31 per TUTTI i dati storici
+      var command = OfficialChileafCommands.getSleepData31();
+      debugPrint('🌙📡 Sending OFFICIAL sleep history command 0x31 (ALL historical data)');
+      debugPrint('📖 Command: ${command.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
+      debugPrint('📊 Granularity: 1 byte = 5 MINUTES (SDK spec 2.14)');
+      debugPrint('📅 Expected: Data from multiple days (if available on device)');
+      
+      await _sendCommand(command);
+      _updateRequestTime('sleep_history_0x31');
+      debugPrint('✅ Sleep history command 0x31 sent successfully - waiting for all data...');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to send sleep history command 0x31: $e');
     }
   }
 
