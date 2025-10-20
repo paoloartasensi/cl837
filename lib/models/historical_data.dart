@@ -83,10 +83,11 @@ class SleepHistoryEntry {
   });
   
   /// Calcola le fasi del sonno basandosi sui dati degli indici di azione
+  /// IMPORTANTE: Ogni action index = 5 MINUTI (non 1 minuto!)
   SleepPhases calculateSleepPhases() {
-    int lightSleep = 0;
-    int deepSleep = 0;
-    int awake = 0;
+    int lightSleepBlocks = 0;  // Contatore in blocchi da 5 min
+    int deepSleepBlocks = 0;   // Contatore in blocchi da 5 min
+    int awakeBlocks = 0;       // Contatore in blocchi da 5 min
     
     int consecutiveZeros = 0;
     bool inDeepSleep = false;
@@ -99,30 +100,31 @@ class SleepHistoryEntry {
         if (consecutiveZeros >= 3 && !inDeepSleep) {
           inDeepSleep = true;
           // Convert previous light sleep to deep sleep
-          lightSleep = lightSleep > 3 ? lightSleep - 3 : 0;
-          deepSleep += 3;
+          lightSleepBlocks = lightSleepBlocks > 3 ? lightSleepBlocks - 3 : 0;
+          deepSleepBlocks += 3;
         } else if (inDeepSleep) {
-          deepSleep++;
+          deepSleepBlocks++;
         } else {
-          lightSleep++;
+          lightSleepBlocks++;
         }
       } else {
         consecutiveZeros = 0;
         inDeepSleep = false;
         
         if (action > 20) {
-          awake++;
+          awakeBlocks++;
         } else if (action <= 20) {
-          lightSleep++;
+          lightSleepBlocks++;
         }
       }
     }
     
+    // ✅ Converti blocchi da 5 minuti in minuti totali
     return SleepPhases(
-      lightSleep: lightSleep,
-      deepSleep: deepSleep,
-      awake: awake,
-      totalMinutes: actions.length,
+      lightSleep: lightSleepBlocks * 5,
+      deepSleep: deepSleepBlocks * 5,
+      awake: awakeBlocks * 5,
+      totalMinutes: actions.length * 5,  // ✅ Ogni action = 5 minuti!
     );
   }
   

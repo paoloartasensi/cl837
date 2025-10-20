@@ -424,6 +424,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     
     // Header CSV
     csvContent.writeln('Session_DateTime,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Awake_Minutes,Sleep_Efficiency_%,Sleep_Quality,Action_Index,Action_Timestamp');
+    csvContent.writeln('# NOTE: Each Action Index = 5-MINUTE block (SDK 0x31 specification)');
     
     // Dati per ogni sessione
     for (var sleep in _sleepHistoryData) {
@@ -447,20 +448,20 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
       // Riga sommaria della sessione
       csvContent.writeln('$sessionDateTime,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},${phases.awake},$efficiency,$quality,,');
       
-      // Dettaglio azioni (ogni azione = 1 minuto)
+      // Dettaglio azioni (ogni azione = 5 MINUTI secondo SDK)
       for (int i = 0; i < sleep.actions.length; i++) {
         int action = sleep.actions[i];
-        DateTime actionTime = sleep.timestamp.add(Duration(minutes: i));
+        DateTime actionTime = sleep.timestamp.add(Duration(minutes: i * 5)); // ✅ 5 minuti per action!
         String actionTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(actionTime);
         
-        // Determina fase del sonno per questa azione
+        // Determina fase del sonno per questa azione (5-minute block)
         String phase = 'Unknown';
         if (action == 0) {
-          phase = 'Deep Sleep';
+          phase = 'Very Still (0)';
         } else if (action > 20) {
-          phase = 'Awake';
+          phase = 'Active/Awake';
         } else {
-          phase = 'Light Sleep';
+          phase = 'Light Activity';
         }
         
         csvContent.writeln(',,,,,,,,$action ($phase),$actionTimestamp');
