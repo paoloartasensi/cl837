@@ -132,6 +132,100 @@ class SleepHistoryEntry {
   }
 }
 
+/// Modello per i dati del sonno con comando 0x31 (formato UFFICIALE)
+/// Granularità: 1 byte = 5 minuti di activity index
+class SleepData31 {
+  final DateTime timestamp;
+  final List<int> activityIndices; // Ogni byte rappresenta 5 minuti
+  final int packetSequence; // Numero sequenza pacchetto (0 per il primo)
+  
+  const SleepData31({
+    required this.timestamp,
+    required this.activityIndices,
+    this.packetSequence = 0,
+  });
+  
+  /// Calcola le fasi del sonno basandosi sui dati degli indici di attività
+  /// Ogni indice rappresenta 5 minuti
+  SleepPhases31 calculateSleepPhases() {
+    int lightSleepIntervals = 0;
+    int deepSleepIntervals = 0;
+    int awakeIntervals = 0;
+    
+    int consecutiveZeros = 0;
+    bool inDeepSleep = false;
+    
+    for (int i = 0; i < activityIndices.length; i++) {
+      int activityIndex = activityIndices[i];
+      
+      if (activityIndex == 0) {
+        consecutiveZeros++;
+        if (consecutiveZeros >= 3 && !inDeepSleep) {
+          inDeepSleep = true;
+          // Converti i precedenti intervalli leggeri in profondo
+          lightSleepIntervals = lightSleepIntervals > 3 ? lightSleepIntervals - 3 : 0;
+          deepSleepIntervals += 3;
+        } else if (inDeepSleep) {
+          deepSleepIntervals++;
+        } else {
+          lightSleepIntervals++;
+        }
+      } else {
+        consecutiveZeros = 0;
+        inDeepSleep = false;
+        
+        if (activityIndex > 20) {
+          awakeIntervals++;
+        } else if (activityIndex <= 20) {
+          lightSleepIntervals++;
+        }
+      }
+    }
+    
+    // Converti intervalli di 5 minuti in minuti totali
+    return SleepPhases31(
+      lightSleepMinutes: lightSleepIntervals * 5,
+      deepSleepMinutes: deepSleepIntervals * 5,
+      awakeMinutes: awakeIntervals * 5,
+      totalIntervals: activityIndices.length,
+    );
+  }
+  
+  @override
+  String toString() {
+    return 'SleepData31{timestamp: $timestamp, seq: $packetSequence, indices: ${activityIndices.length} entries (${activityIndices.length * 5} minutes)}';
+  }
+}
+
+/// Fasi del sonno per formato 0x31 (granularità 5 minuti)
+class SleepPhases31 {
+  final int lightSleepMinutes;
+  final int deepSleepMinutes;
+  final int awakeMinutes;
+  final int totalIntervals; // Numero di intervalli da 5 minuti
+  
+  const SleepPhases31({
+    required this.lightSleepMinutes,
+    required this.deepSleepMinutes,
+    required this.awakeMinutes,
+    required this.totalIntervals,
+  });
+  
+  /// Durata totale del sonno in minuti
+  int get totalSleepMinutes => lightSleepMinutes + deepSleepMinutes;
+  
+  /// Durata totale in minuti
+  int get totalMinutes => totalIntervals * 5;
+  
+  /// Efficienza del sonno (percentuale di tempo dormito)
+  double get sleepEfficiency => totalMinutes > 0 ? (totalSleepMinutes / totalMinutes) * 100 : 0;
+  
+  @override
+  String toString() {
+    return 'SleepPhases31{light: ${lightSleepMinutes}min, deep: ${deepSleepMinutes}min, awake: ${awakeMinutes}min, efficiency: ${sleepEfficiency.toStringAsFixed(1)}%}';
+  }
+}
+
 /// Fasi del sonno calcolate dai dati grezzi
 class SleepPhases {
   final int lightSleep;    // minuti di sonno leggero

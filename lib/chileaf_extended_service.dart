@@ -208,8 +208,14 @@ class ChileafExtendedService {
   // Sleep and Steps streams
   final StreamController<List<SleepHistoryEntry>> _sleepHistoryController =
       StreamController<List<SleepHistoryEntry>>.broadcast();
+  final StreamController<List<SleepData31>> _sleepData31Controller =
+      StreamController<List<SleepData31>>.broadcast();
   final StreamController<List<StepIntervalEntry>> _stepsHistoryController =
       StreamController<List<StepIntervalEntry>>.broadcast();
+  
+  // Sleep 0x31 multi-packet buffer
+  final List<SleepData31> _sleepData31Buffer = [];
+  bool _isSleepData31Active = false;
 
   // Rope skipping streams
   final StreamController<RopeSkippingData> _ropeStatusController =
@@ -264,6 +270,8 @@ class ChileafExtendedService {
   // Sleep and Steps streams
   Stream<List<SleepHistoryEntry>> get sleepHistoryStream =>
       _sleepHistoryController.stream;
+  Stream<List<SleepData31>> get sleepData31Stream =>
+      _sleepData31Controller.stream;
   Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
       _stepsHistoryController.stream;
 
@@ -685,6 +693,14 @@ class ChileafExtendedService {
         if (macAddress != null) {
           _macAddressController.add(macAddress);
         }
+        break;
+      case 0x31: // Sleep Data (OFFICIAL COMMAND from documentation 2.14)
+        debugPrint('🌙💤 SLEEP DATA 0x31: Processing official sleep data response');
+        _processSleepData31(data);
+        break;
+      case 0x32: // Sleep Data End Signal (OFFICIAL from documentation)
+        debugPrint('🌙✅ SLEEP DATA 0x32: End signal received - all sleep data transmitted');
+        _finalizeSleepData31();
         break;
       case ChileafProtocol.commandSports:
         // SPORTS DATA IGNORED - Focus on medical-grade sensors only
@@ -1800,6 +1816,148 @@ class ChileafExtendedService {
     }
   }
 
+  // ===== SLEEP DATA 0x31 METHODS (OFFICIAL PROTOCOL) =====
+  
+  /// Processa dati sleep con comando 0x31 (formato UFFICIALE)
+  /// Documentazione SDK sezione 2.14
+  /// Formato: 0x31 [UTC 4 bytes] [ACT-0] [ACT-1] ... [ACT-n]
+  /// Ogni byte ACT rappresenta 5 minuti di activity index
+  void _processSleepData31(List<int> data) {
+    debugPrint('🌙💤 Processing Sleep Data 0x31 (OFFICIAL FORMAT)...');
+    debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+    debugPrint('🔍 Data length: ${data.length} bytes');
+    
+    if (data.length < 8) {
+      debugPrint('❌ Sleep 0x31 data too short: ${data.length} bytes (minimum 8)');
+      return;
+    }
+    
+    // Verifica comando = 0x31
+    if (data[2] != 0x31) {
+      debugPrint('❌ Expected command 0x31, got 0x${data[2].toRadixString(16)}');
+      return;
+    }
+    
+    // Parse UTC o sequence number (bytes 3-6, big-endian)
+    int utcOrSequence = _getLongParse(data, 3, 4);
+    
+    // Determina se è il primo pacchetto (contiene UTC) o successivo (sequence number)
+    bool isFirstPacket = !_isSleepData31Active;
+    DateTime timestamp;
+    int sequenceNumber = 0;
+    
+    if (isFirstPacket) {
+      // Primo pacchetto: contiene UTC timestamp
+      debugPrint('📅 First packet detected - parsing UTC timestamp');
+      
+      // Converti UTC in DateTime
+      int utcMillis = utcOrSequence * 1000;
+      timestamp = DateTime.fromMillisecondsSinceEpoch(utcMillis, isUtc: true);
+      
+      debugPrint('🕐 UTC timestamp: $utcOrSequence → $timestamp');
+      _isSleepData31Active = true;
+      
+    } else {
+      // Pacchetti successivi: contiene sequence number
+      sequenceNumber = utcOrSequence;
+      debugPrint('📦 Continuation packet - sequence number: $sequenceNumber');
+      
+      // Usa il timestamp del primo pacchetto + offset basato su sequenza
+      if (_sleepData31Buffer.isNotEmpty) {
+        DateTime baseTime = _sleepData31Buffer.first.timestamp;
+        // Ogni pacchetto copre N intervalli da 5 minuti
+        int previousIntervals = _sleepData31Buffer.fold(0, (sum, item) => sum + item.activityIndices.length);
+        timestamp = baseTime.add(Duration(minutes: previousIntervals * 5));
+        debugPrint('🕐 Calculated timestamp from sequence: $timestamp');
+      } else {
+        debugPrint('⚠️ No previous packets in buffer, using current time');
+        timestamp = DateTime.now();
+      }
+    }
+    
+    // Estrai activity indices (da byte 7 in poi, fino a checksum escluso)
+    List<int> activityIndices = [];
+    for (int i = 7; i < data.length - 1; i++) { // -1 per escludere checksum
+      int activityIndex = data[i] & 0xFF;
+      activityIndices.add(activityIndex);
+    }
+    
+    debugPrint('📊 Activity indices extracted: ${activityIndices.length} intervals (${activityIndices.length * 5} minutes)');
+    debugPrint('📊 Sample indices: ${activityIndices.take(10).join(", ")}${activityIndices.length > 10 ? "..." : ""}');
+    
+    // Classifica activity indices secondo documentazione
+    int awakeCount = activityIndices.where((idx) => idx > 20).length;
+    int lightSleepCount = activityIndices.where((idx) => idx > 0 && idx <= 20).length;
+    int deepSleepIndicators = activityIndices.where((idx) => idx == 0).length;
+    
+    debugPrint('📊 Activity breakdown:');
+    debugPrint('   😴 Awake intervals (>20): $awakeCount = ${awakeCount * 5} minutes');
+    debugPrint('   🌙 Light sleep intervals (1-20): $lightSleepCount = ${lightSleepCount * 5} minutes');
+    debugPrint('   💤 Deep sleep indicators (0): $deepSleepIndicators = ${deepSleepIndicators * 5} minutes');
+    
+    // Crea oggetto SleepData31
+    SleepData31 sleepData = SleepData31(
+      timestamp: timestamp,
+      activityIndices: activityIndices,
+      packetSequence: sequenceNumber,
+    );
+    
+    // Aggiungi al buffer
+    _sleepData31Buffer.add(sleepData);
+    debugPrint('💾 Added to buffer. Total packets: ${_sleepData31Buffer.length}');
+    
+    // Calcola fasi del sonno per questo pacchetto
+    SleepPhases31 phases = sleepData.calculateSleepPhases();
+    debugPrint('📈 Packet sleep phases: $phases');
+  }
+  
+  /// Finalizza e invia i dati sleep quando arriva il segnale 0x32
+  void _finalizeSleepData31() {
+    debugPrint('🌙✅ Finalizing Sleep Data 0x31...');
+    
+    if (_sleepData31Buffer.isEmpty) {
+      debugPrint('⚠️ No sleep data in buffer - nothing to send');
+      _isSleepData31Active = false;
+      return;
+    }
+    
+    debugPrint('📊 Total sleep packets collected: ${_sleepData31Buffer.length}');
+    
+    // Calcola statistiche totali
+    int totalIntervals = _sleepData31Buffer.fold(0, (sum, item) => sum + item.activityIndices.length);
+    int totalMinutes = totalIntervals * 5;
+    
+    debugPrint('⏱️ Total sleep duration: $totalMinutes minutes ($totalIntervals x 5-minute intervals)');
+    
+    // Calcola fasi totali del sonno
+    int totalLight = 0;
+    int totalDeep = 0;
+    int totalAwake = 0;
+    
+    for (var sleepData in _sleepData31Buffer) {
+      SleepPhases31 phases = sleepData.calculateSleepPhases();
+      totalLight += phases.lightSleepMinutes;
+      totalDeep += phases.deepSleepMinutes;
+      totalAwake += phases.awakeMinutes;
+    }
+    
+    debugPrint('📈 TOTAL SLEEP PHASES:');
+    debugPrint('   💤 Deep sleep: $totalDeep minutes');
+    debugPrint('   🌙 Light sleep: $totalLight minutes');
+    debugPrint('   😴 Awake: $totalAwake minutes');
+    debugPrint('   ✅ Sleep efficiency: ${totalLight + totalDeep > 0 ? ((totalLight + totalDeep) / totalMinutes * 100).toStringAsFixed(1) : 0}%');
+    
+    // Invia al stream
+    List<SleepData31> sleepSessions = List.from(_sleepData31Buffer);
+    _sleepData31Controller.add(sleepSessions);
+    debugPrint('📤 Sent ${sleepSessions.length} sleep packets to UI stream');
+    
+    // Reset buffer
+    _sleepData31Buffer.clear();
+    _isSleepData31Active = false;
+    debugPrint('🧹 Buffer cleared and reset');
+  }
+
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====
   // Seguendo la pipeline completa dell'app ufficiale Android
 
@@ -2330,6 +2488,9 @@ class ChileafExtendedService {
     _exerciseHistoryController.close();
     _hrHistoryListController.close();
     _hrHistoryDataController.close();
+    _sleepHistoryController.close();
+    _sleepData31Controller.close();
+    _stepsHistoryController.close();
     _ropeStatusController.close();
     _ropeRealtimeController.close();
     _deviceInfoController.close();
@@ -3667,10 +3828,40 @@ class ChileafExtendedService {
   }
 
   /// Recupera dati di sonno storici ottimizzati
-  /// Utilizza comando 0x05 con checksum Java ottimizzato
+  /// Utilizza comando 0x05 con checksum Java ottimizzato (LEGACY)
+  /// ⚠️ DEPRECATO: Usa requestSleepData31() per il protocollo ufficiale
   Future<void> requestOptimizedSleepHistory() async {
-    debugPrint('🔄😴 Requesting Sleep History with optimized checksum...');
+    debugPrint('🔄😴 Requesting Sleep History with optimized checksum (LEGACY 0x05)...');
     await _historicalDataService.requestSleepHistoryEnhanced();
+  }
+
+  /// Recupera dati di sonno con comando 0x31 (PROTOCOLLO UFFICIALE)
+  /// Questo è il comando REALE usato dall'app ufficiale
+  /// Documentazione SDK sezione 2.14
+  /// Risposta: 0x31 (dati) o 0x32 (fine/no data)
+  /// Granularità: 1 byte = 5 minuti di activity index
+  Future<void> requestSleepData31() async {
+    debugPrint('🔄🌙💤 Requesting Sleep Data with OFFICIAL command 0x31...');
+    debugPrint('📖 Protocol: SDK 2.14 - Sleep Data Request');
+    debugPrint('📊 Granularity: 1 byte = 5 minutes');
+    debugPrint('🔍 Response: 0x31 (data) or 0x32 (end signal)');
+    
+    try {
+      // Reset buffer e stato prima di nuova richiesta
+      _sleepData31Buffer.clear();
+      _isSleepData31Active = false;
+      
+      // Invia comando 0x31
+      List<int> command = OfficialChileafCommands.getSleepData31();
+      debugPrint('📡 Command: ${_commandToHexString(command)}');
+      
+      await _sendCommand(command);
+      debugPrint('✅ Sleep data 0x31 request sent successfully');
+      
+    } catch (e) {
+      debugPrint('❌ Failed to request sleep data 0x31: $e');
+      rethrow;
+    }
   }
 
   /// Recupera passi intervallari ottimizzati

@@ -835,14 +835,25 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           ),
         ),
         _buildCommandTile(
-          title: 'Sleep History',
-          subtitle: 'Get sleep analysis data (optimized)',
+          title: 'Sleep History (Legacy 0x05)',
+          subtitle: 'Get sleep data with old protocol',
+          icon: Icons.bedtime_outlined,
+          color: Colors.deepPurple.shade300,
+          onTap: () => _executeCommand(
+            'Sleep History (Legacy)',
+            () => widget.extendedService.requestOptimizedSleepHistory(),
+            successMessage: '😴 Legacy sleep request sent (0x05)...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'Sleep Data 0x31 (OFFICIAL) ⭐',
+          subtitle: '5-min granularity - Real protocol from docs',
           icon: Icons.bedtime,
           color: Colors.deepPurple,
           onTap: () => _executeCommand(
-            'Sleep History',
-            () => widget.extendedService.requestOptimizedSleepHistory(),
-            successMessage: '😴 Sleep history request sent with optimized checksum! Loading sleep analysis data...',
+            'Sleep Data 0x31',
+            () => widget.extendedService.requestSleepData31(),
+            successMessage: '🌙💤 OFFICIAL Sleep Data request sent (0x31)! Waiting for response...',
           ),
         ),
         _buildCommandTile(

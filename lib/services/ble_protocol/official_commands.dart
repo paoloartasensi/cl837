@@ -153,10 +153,27 @@ class OfficialChileafCommands {
     return buildOfficialCommand(0x25, params);
   }
 
-  /// Richiede storico sleep (0x05 nel SDK)
+  /// Richiede storico sleep (0x05 nel SDK) - LEGACY METHOD
   /// Equivalente a getHistoryOfSleep() nel WearManager.java
+  /// ⚠️ NOTA: Usa comando 0x05 legacy, preferire getSleepData31() con comando 0x31
   static List<int> getHistoryOfSleep() {
     return buildOfficialCommand(0x05, [2]);
+  }
+
+  /// Richiede dati sleep con comando 0x31 (UFFICIALE da documentazione)
+  /// Questo è il comando REALE usato dall'app ufficiale
+  /// Formato risposta: 0x31 (dati) o 0x32 (fine/no data)
+  /// Granularità: 1 byte = 5 minuti di activity index
+  /// Activity index: >20 = sveglio, <20 = sonno leggero, 3x0 consecutivi = sonno profondo
+  static List<int> getSleepData31() {
+    // Comando 0x31 senza parametri per richiedere tutti i dati sleep
+    return buildOfficialCommand(0x31, []);
+  }
+
+  /// Richiede dati sleep per uno specifico UTC timestamp (comando 0x31)
+  /// @param utcTimestamp: timestamp UTC del periodo sleep da richiedere
+  static List<int> getSleepDataForTimestamp(int utcTimestamp) {
+    return buildOfficialCommand(0x31, utcToBytes(utcTimestamp));
   }
 
   /// Richiede record singolo (0x49 = 73 nel SDK)
