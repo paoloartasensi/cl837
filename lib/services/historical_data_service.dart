@@ -1,5 +1,6 @@
 // ignore_for_file: empty_catches
 
+import 'package:flutter/foundation.dart';
 import 'ble_protocol/official_commands.dart';
 
 /// Servizio ottimizzato per il recupero dei dati storici dal dispositivo CL837
@@ -10,7 +11,7 @@ class HistoricalDataService {
   
   // Cache per evitare richieste duplicate
   final Map<String, DateTime> _lastRequestTime = {};
-  final Duration _minRequestInterval = const Duration(seconds: 30);
+  final Duration _minRequestInterval = const Duration(seconds: 3); // Ridotto a 3 secondi
   
   HistoricalDataService(this._sendCommand);
 
@@ -125,21 +126,24 @@ class HistoricalDataService {
     }
   }
 
-  /// Recupera dati di sonno storici con parser enhanced
+  /// Recupera dati di sonno storici con comando 0x05 (LEGACY - WearManager format)
   /// Utilizza comando 0x05 (getHistoryOfSleep) con parsing dell'app originale
-  Future<void> requestSleepHistoryEnhanced() async {
-    if (_shouldThrottleRequest('sleep_history_enhanced')) {
+  Future<void> requestSleepHistoryEnhanced({bool force = false}) async {
+    if (!force && _shouldThrottleRequest('sleep_history_enhanced')) {
+      debugPrint('⏱️ Sleep history request throttled - waiting for cooldown (use force=true to override)');
       return;
     }
     
     try {
       var command = OfficialChileafCommands.getHistoryOfSleep();
-      
+      debugPrint('🌙📡 Sending sleep history command: ${command.map((e) => e.toRadixString(16).padLeft(2, '0')).join(' ')}');
       
       await _sendCommand(command);
       _updateRequestTime('sleep_history_enhanced');
+      debugPrint('✅ Sleep history command sent successfully');
       
     } catch (e) {
+      debugPrint('❌ Failed to send sleep history command: $e');
     }
   }
 

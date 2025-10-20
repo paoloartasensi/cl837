@@ -1424,8 +1424,11 @@ class ChileafExtendedService {
           int heartRate = slice[i] & 0xFF; // 1 byte per HR value
           int localStamp = _restoreZoneUTC(_hrDataStamp);
           
-          debugPrint('💓 HR Value ${_hrDataList.length + 1}: $heartRate bpm at stamp $_hrDataStamp');
-          debugPrint('💓 → ${DateTime.fromMillisecondsSinceEpoch(localStamp)}');
+          // Reduced logging - only log first and every 100th value
+          if (_hrDataList.isEmpty || _hrDataList.length % 100 == 0) {
+            debugPrint('💓 HR Value ${_hrDataList.length + 1}: $heartRate bpm at stamp $_hrDataStamp');
+            debugPrint('💓 → ${DateTime.fromMillisecondsSinceEpoch(localStamp)}');
+          }
           
           _hrDataList.add({
             'heartRate': heartRate,
@@ -1602,11 +1605,16 @@ class ChileafExtendedService {
       // Parsing esatto dal WearManager Java (linee 112-129)
       for (int j = 4; j < value.length; j++) {
         int len = value[j] & 0xFF;
-        debugPrint('🌙 Sleep entry length: $len at position $j');
         
+        // Reduced logging - only show problematic entries
         if (len == 0) {
-          debugPrint('🌙 Skipping empty sleep entry (length 0)');
+          debugPrint('🌙 Skipping empty sleep entry (length 0) at position $j');
           continue;
+        }
+        
+        // Log only unusual lengths
+        if (len > 50 || sleepSessions.isEmpty) {
+          debugPrint('🌙 Sleep entry length: $len at position $j');
         }
         
         if (len >= 1) {
@@ -1624,7 +1632,10 @@ class ChileafExtendedService {
           int utcMillis = utc * 1000;
           utcMillis -= 28800000; // 8 hours offset correction
           
-          debugPrint('🌙 Sleep session UTC: $utc -> $utcMillis (${DateTime.fromMillisecondsSinceEpoch(utcMillis)})');
+          // Reduced logging - only log every few sessions
+          if (sleepSessions.isEmpty || sleepSessions.length % 3 == 0) {
+            debugPrint('🌙 Sleep session UTC: $utc -> $utcMillis (${DateTime.fromMillisecondsSinceEpoch(utcMillis)})');
+          }
           
           // Check if we have enough data for actions, but don't break - skip invalid entries
           if (j + len > value.length) {
@@ -1641,7 +1652,10 @@ class ChileafExtendedService {
           }
           j += len - 1; // Move to the last action byte (loop will increment to next len)
           
-          debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
+          // Reduced logging - only show first few actions
+          if (sleepSessions.isEmpty || sleepSessions.length % 5 == 0) {
+            debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
+          }
           
           // HistorySleep historySleep = new HistorySleep(utc, actions);
           SleepHistoryEntry sleepEntry = SleepHistoryEntry(
@@ -3870,9 +3884,9 @@ class ChileafExtendedService {
   /// Recupera dati di sonno storici ottimizzati
   /// Utilizza comando 0x05 con checksum Java ottimizzato (LEGACY)
   /// ⚠️ DEPRECATO: Usa requestSleepData31() per il protocollo ufficiale
-  Future<void> requestOptimizedSleepHistory() async {
+  Future<void> requestOptimizedSleepHistory({bool force = false}) async {
     debugPrint('🔄😴 Requesting Sleep History with optimized checksum (LEGACY 0x05)...');
-    await _historicalDataService.requestSleepHistoryEnhanced();
+    await _historicalDataService.requestSleepHistoryEnhanced(force: force);
   }
 
   /// Recupera dati di sonno con comando 0x31 (PROTOCOLLO UFFICIALE)

@@ -9,7 +9,9 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'dart:async';
 import '../chileaf_extended_service.dart';
+import '../models/historical_data.dart';
 import '../models/sleep_score.dart';
 import '../services/sleep_history_manager.dart';
 import '../services/readiness_calculator.dart';
@@ -36,6 +38,7 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   final _readinessCalculator = ReadinessCalculator();
   
   late TabController _tabController;
+  StreamSubscription? _sleepDataSubscription;
   
   SleepScore? _latestScore;
   ReadinessScore? _readinessScore;
@@ -46,13 +49,120 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
+    _setupSleepDataListener();
     _loadSleepData();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _sleepDataSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Setup listener for real-time sleep data from BLE
+  void _setupSleepDataListener() {
+    _sleepDataSubscription = widget.chileafService.sleepHistoryStream.listen((sleepSessions) async {
+      debugPrint('✨ Premium Screen: Received ${sleepSessions.length} sleep sessions from BLE');
+      
+      // Convert and save each session
+      for (final session in sleepSessions) {
+        try {
+          // Convert SleepHistoryEntry to SleepData31 format
+          final sleepData31 = SleepData31(
+            timestamp: session.timestamp,
+            activityIndices: session.actions,
+            packetSequence: 0,
+          );
+          
+          // Save to persistent storage
+          final saved = await _historyManager.saveSleepSession(sleepData31);
+          if (saved) {
+            debugPrint('✨ Saved sleep session: ${session.timestamp}');
+            
+            // Calculate and save sleep score
+            final score = _calculateSleepScore(sleepData31);
+            await _historyManager.saveSleepScore(score);
+            debugPrint('✨ Saved sleep score: ${score.totalScore.toStringAsFixed(1)}');
+          }
+        } catch (e) {
+          debugPrint('❌ Error saving sleep session: $e');
+        }
+      }
+      
+      // Reload data to show new sessions
+      await _loadSleepData();
+    });
+  }
+
+  /// Calculate sleep score from sleep data
+  SleepScore _calculateSleepScore(SleepData31 sleepData) {
+    final phases = sleepData.calculateSleepPhases();
+    final totalSleep = phases.lightSleepMinutes + phases.deepSleepMinutes;
+    final totalTime = phases.totalIntervals * 5;
+    
+    // Calculate efficiency
+    final efficiency = totalTime > 0 ? (totalSleep / totalTime) : 0.0;
+    
+    // Calculate deep sleep percentage
+    final totalSleepDouble = totalSleep.toDouble();
+    final deepSleepPercentage = totalSleep > 0 ? (phases.deepSleepMinutes / totalSleepDouble) : 0.0;
+    final lightSleepPercentage = totalSleep > 0 ? (phases.lightSleepMinutes / totalSleepDouble) : 0.0;
+    final awakePercentage = totalTime > 0 ? (phases.awakeMinutes / totalTime.toDouble()) : 0.0;
+    
+    // Calculate duration score (0-35 points) - target 7-9 hours
+    final hoursSlept = totalSleep / 60;
+    double durationScore = 0.0;
+    if (hoursSlept >= 7 && hoursSlept <= 9) {
+      durationScore = 35;
+    } else if (hoursSlept >= 6 && hoursSlept < 7) {
+      durationScore = 25;
+    } else if (hoursSlept >= 5) {
+      durationScore = 15;
+    } else {
+      durationScore = 5;
+    }
+    
+    // Calculate efficiency score (0-30 points) - target >85%
+    double efficiencyScore = (efficiency * 30).clamp(0, 30);
+    
+    // Calculate quality score (0-25 points) - based on deep sleep percentage
+    double qualityScore = 0.0;
+    if (deepSleepPercentage > 0.20) {
+      qualityScore = 25;
+    } else if (deepSleepPercentage > 0.15) {
+      qualityScore = 18;
+    } else if (deepSleepPercentage > 0.10) {
+      qualityScore = 12;
+    } else {
+      qualityScore = 5;
+    }
+    
+    // Consistency score (0-10 points) - based on awakenings (placeholder for now)
+    double consistencyScore = awakePercentage < 0.1 ? 10 : 5;
+    
+    // Calculate overall score
+    final totalScore = durationScore + efficiencyScore + qualityScore + consistencyScore;
+    
+    return SleepScore(
+      sleepDate: sleepData.timestamp,
+      totalScore: totalScore,
+      durationScore: durationScore,
+      efficiencyScore: efficiencyScore,
+      qualityScore: qualityScore,
+      consistencyScore: consistencyScore,
+      totalSleepTime: Duration(minutes: totalSleep),
+      timeInBed: Duration(minutes: totalTime),
+      sleepEfficiency: efficiency,
+      deepSleepMinutes: phases.deepSleepMinutes,
+      lightSleepMinutes: phases.lightSleepMinutes,
+      awakeMinutes: phases.awakeMinutes,
+      awakenings: 0, // TODO: Calculate from data
+      deepSleepPercentage: deepSleepPercentage,
+      lightSleepPercentage: lightSleepPercentage,
+      awakePercentage: awakePercentage,
+      calculatedAt: DateTime.now(),
+    );
   }
 
   Future<void> _loadSleepData() async {

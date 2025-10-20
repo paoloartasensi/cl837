@@ -2,6 +2,7 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -9,6 +10,8 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 
@@ -323,8 +326,8 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     try {
       debugPrint('🌙 SLEEP DATA DOWNLOAD STARTED');
       
-      // Request sleep history data
-      await _service.requestOptimizedSleepHistory();
+      // Request sleep history data (force=true bypasses throttling when user explicitly clicks)
+      await _service.requestOptimizedSleepHistory(force: true);
       
       // Wait for sleep data to arrive
       await Future.delayed(const Duration(milliseconds: 3000));
@@ -413,6 +416,117 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     // Codifica con formattazione indentata
     const encoder = JsonEncoder.withIndent('  ');
     return encoder.convert(jsonData);
+  }
+
+  /// Genera il contenuto CSV per i dati del sonno
+  String _generateSleepCSVContent() {
+    StringBuffer csvContent = StringBuffer();
+    
+    // Header CSV
+    csvContent.writeln('Session_DateTime,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Awake_Minutes,Sleep_Efficiency_%,Sleep_Quality,Action_Index,Action_Timestamp');
+    
+    // Dati per ogni sessione
+    for (var sleep in _sleepHistoryData) {
+      final phases = sleep.calculateSleepPhases();
+      final totalSleep = phases.lightSleep + phases.deepSleep;
+      final totalMinutes = phases.totalMinutes;
+      final efficiency = totalMinutes > 0 ? ((totalSleep / totalMinutes) * 100).toStringAsFixed(1) : '0';
+      
+      // Determina qualità del sonno
+      String quality = 'Poor';
+      if (totalSleep > 360 && phases.deepSleep > totalSleep * 0.2) {
+        quality = 'Excellent';
+      } else if (totalSleep > 300 && phases.deepSleep > totalSleep * 0.15) {
+        quality = 'Good';
+      } else if (totalSleep > 240) {
+        quality = 'Fair';
+      }
+      
+      String sessionDateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(sleep.timestamp);
+      
+      // Riga sommaria della sessione
+      csvContent.writeln('$sessionDateTime,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},${phases.awake},$efficiency,$quality,,');
+      
+      // Dettaglio azioni (ogni azione = 1 minuto)
+      for (int i = 0; i < sleep.actions.length; i++) {
+        int action = sleep.actions[i];
+        DateTime actionTime = sleep.timestamp.add(Duration(minutes: i));
+        String actionTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(actionTime);
+        
+        // Determina fase del sonno per questa azione
+        String phase = 'Unknown';
+        if (action == 0) {
+          phase = 'Deep Sleep';
+        } else if (action > 20) {
+          phase = 'Awake';
+        } else {
+          phase = 'Light Sleep';
+        }
+        
+        csvContent.writeln(',,,,,,,,$action ($phase),$actionTimestamp');
+      }
+      
+      // Riga vuota tra sessioni
+      csvContent.writeln();
+    }
+    
+    return csvContent.toString();
+  }
+
+  /// Esporta i dati del sonno in CSV
+  Future<void> _exportSleepDataToCSV() async {
+    if (_sleepHistoryData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No sleep data to export'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+    
+    try {
+      // Calcola statistiche per mostrare nell'alert
+      final uniqueDates = _sleepHistoryData
+          .map((s) => DateFormat('yyyy-MM-dd').format(s.timestamp))
+          .toSet()
+          .length;
+      
+      final csvContent = _generateSleepCSVContent();
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = 'CL837_Sleep_Data_$timestamp.csv';
+      
+      // Usa share_plus per condividere il file
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/$filename';
+      final file = File(path);
+      await file.writeAsString(csvContent);
+      
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: 'CL837 Sleep Data Export - ${_sleepHistoryData.length} sessions from $uniqueDates days',
+        subject: filename,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Exported ${_sleepHistoryData.length} sessions from $uniqueDates days'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
 
@@ -1042,7 +1156,10 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
   // ===== SLEEP CHART WIDGET =====
   Widget _buildSleepChart() {
+    debugPrint('📊 Building sleep chart - ${_sleepHistoryData.length} sessions available');
+    
     if (_sleepHistoryData.isEmpty) {
+      debugPrint('📊 No sleep data - showing empty state');
       return Card(
         child: Container(
           height: 300,
@@ -1083,9 +1200,12 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
     // Get the most recent sleep session for charting
     final sleepEntry = _sleepHistoryData.first; // Most recent session
+    debugPrint('📊 Using first session: ${sleepEntry.timestamp} with ${sleepEntry.actions.length} actions');
+    debugPrint('📊 First 10 actions: ${sleepEntry.actions.take(10).toList()}');
     
     // Check if the session has valid actions
     if (sleepEntry.actions.isEmpty) {
+      debugPrint('📊 Session has no actions - showing empty state');
       return Card(
         child: Container(
           height: 300,
@@ -1923,20 +2043,37 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      '🌙 Sleep Data (${_sleepHistoryData.length} sessions)',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                        shadows: [
-                          Shadow(
-                            offset: Offset(1, 1),
-                            blurRadius: 2,
-                            color: Colors.black54,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '🌙 Sleep Data (${_sleepHistoryData.length} sessions)',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                            shadows: [
+                              Shadow(
+                                offset: Offset(1, 1),
+                                blurRadius: 2,
+                                color: Colors.black54,
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                        if (_sleepHistoryData.isNotEmpty)
+                          ElevatedButton.icon(
+                            onPressed: _exportSleepDataToCSV,
+                            icon: const Icon(Icons.download, size: 18),
+                            label: const Text('Export CSV'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green.shade700,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                          ),
+                      ],
                     ),
                     const SizedBox(height: 16),
                     SizedBox(
@@ -1990,27 +2127,36 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                                         ),
                                         Row(
                                           children: [
-                                            Text(
-                                              'Light: ${phases.lightSleep}min',
-                                              style: const TextStyle(
-                                                color: Colors.blue,
-                                                fontSize: 12,
+                                            Flexible(
+                                              child: Text(
+                                                'Light: ${phases.lightSleep}m',
+                                                style: const TextStyle(
+                                                  color: Colors.blue,
+                                                  fontSize: 11,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Deep: ${phases.deepSleep}min',
-                                              style: const TextStyle(
-                                                color: Colors.purple,
-                                                fontSize: 12,
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                'Deep: ${phases.deepSleep}m',
+                                                style: const TextStyle(
+                                                  color: Colors.purple,
+                                                  fontSize: 11,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              'Awake: ${phases.awake}min',
-                                              style: const TextStyle(
-                                                color: Colors.orange,
-                                                fontSize: 12,
+                                            const SizedBox(width: 4),
+                                            Flexible(
+                                              child: Text(
+                                                'Awake: ${phases.awake}m',
+                                                style: const TextStyle(
+                                                  color: Colors.orange,
+                                                  fontSize: 11,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
                                               ),
                                             ),
                                           ],
