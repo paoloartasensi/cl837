@@ -92,6 +92,41 @@ class UserInfo {
     };
   }
 
+  // ===== RECOMMENDED HEART RATE THRESHOLDS =====
+
+  /// Recommended minimum heart rate (resting + 10%)
+  /// Below this value, heart rate is too low for normal activity
+  int get recommendedMinHeartRate {
+    // Resting HR typically 60-100 BPM
+    // Use 50 BPM as safe minimum (or 50% of max HR, whichever is higher)
+    int restingHR = (maxHeartRate * 0.5).round();
+    return restingHR < 50 ? 50 : restingHR;
+  }
+
+  /// Recommended maximum heart rate for safety
+  /// Should not exceed 85-90% of maximum HR during normal workouts
+  int get recommendedMaxHeartRate {
+    // 90% of max HR is a safe upper limit for most workouts
+    return (maxHeartRate * 0.9).round();
+  }
+
+  /// Recommended goal heart rate for fitness
+  /// Typically 70-80% of max HR (aerobic zone)
+  int get recommendedGoalHeartRate {
+    // 75% of max HR - optimal for aerobic fitness
+    return (maxHeartRate * 0.75).round();
+  }
+
+  /// Get all recommended HR settings as a map
+  /// Can be used directly with setHeartRateStatus()
+  Map<String, int> get recommendedHeartRateSettings {
+    return {
+      'min': recommendedMinHeartRate,
+      'max': recommendedMaxHeartRate,
+      'goal': recommendedGoalHeartRate,
+    };
+  }
+
   /// Copy with method for creating modified copies
   UserInfo copyWith({
     int? age,

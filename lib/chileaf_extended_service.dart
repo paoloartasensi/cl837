@@ -4858,6 +4858,43 @@ class ChileafExtendedService {
     await _sendCommand([0xFF, 0x05, 0x45, max, 0x00]);
   }
 
+  /// Auto-configure heart rate thresholds based on user age
+  /// Calculates optimal min/max/goal values using user's profile
+  /// 
+  /// This is a convenience method that:
+  /// 1. Calculates recommended values from UserInfo
+  /// 2. Sets HR min/max/goal (command 0x43)
+  /// 3. Sets max HR by age (command 0x45)
+  /// 
+  /// Example:
+  /// ```dart
+  /// UserInfo user = UserInfo(age: 35, gender: 1, weight: 75, height: 175, userId: 12345);
+  /// await service.autoConfigureHeartRate(user);
+  /// // Sets: min=93 BPM, max=167 BPM, goal=139 BPM (based on age 35)
+  /// ```
+  Future<void> autoConfigureHeartRate(UserInfo userInfo) async {
+    debugPrint('🎯 Auto-configuring heart rate based on user profile:');
+    debugPrint('   Age: ${userInfo.age} years');
+    debugPrint('   Max HR: ${userInfo.maxHeartRate} BPM (220 - age)');
+    
+    final settings = userInfo.recommendedHeartRateSettings;
+    final min = settings['min']!;
+    final max = settings['max']!;
+    final goal = settings['goal']!;
+    
+    debugPrint('   Recommended Min: $min BPM (${((min / userInfo.maxHeartRate) * 100).round()}% max)');
+    debugPrint('   Recommended Goal: $goal BPM (${((goal / userInfo.maxHeartRate) * 100).round()}% max)');
+    debugPrint('   Recommended Max: $max BPM (${((max / userInfo.maxHeartRate) * 100).round()}% max)');
+    
+    // Set HR min/max/goal thresholds
+    await setHeartRateStatus(min, max, goal);
+    
+    // Set max HR by age
+    await setHeartRateMax(userInfo.maxHeartRate);
+    
+    debugPrint('✅ Heart rate auto-configuration complete!');
+  }
+
   // ===== 3D ACCELEROMETER CONTROL =====
 
   /// Get 3D sensor frequency

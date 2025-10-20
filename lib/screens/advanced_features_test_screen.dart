@@ -603,6 +603,26 @@ class _AdvancedFeaturesTestScreenState
                 'Peak Zone',
                 '${_userInfo!.heartRateZones['anaerobic']}-${_userInfo!.heartRateZones['maximum']} BPM',
               ),
+              const Divider(height: 24),
+
+              // Recommended HR Settings
+              const Text(
+                'Recommended HR Thresholds:',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              _buildDataRow(
+                'Min HR',
+                '${_userInfo!.recommendedMinHeartRate} BPM (${(((_userInfo!.recommendedMinHeartRate / _userInfo!.maxHeartRate) * 100).round())}% max)',
+              ),
+              _buildDataRow(
+                'Goal HR',
+                '${_userInfo!.recommendedGoalHeartRate} BPM (${(((_userInfo!.recommendedGoalHeartRate / _userInfo!.maxHeartRate) * 100).round())}% max)',
+              ),
+              _buildDataRow(
+                'Max HR',
+                '${_userInfo!.recommendedMaxHeartRate} BPM (${(((_userInfo!.recommendedMaxHeartRate / _userInfo!.maxHeartRate) * 100).round())}% max)',
+              ),
             ] else
               const Text('No data yet', style: TextStyle(color: Colors.grey)),
 
@@ -725,6 +745,7 @@ class _AdvancedFeaturesTestScreenState
       final height = int.tryParse(heightController.text) ?? 170;
       final userId = int.tryParse(userIdController.text) ?? 12345;
 
+      // Set user info on device
       await widget.service.setUserInfo(
         age,
         gender,
@@ -733,9 +754,27 @@ class _AdvancedFeaturesTestScreenState
         userId,
       );
 
+      // Auto-configure heart rate thresholds based on age
+      final userInfo = UserInfo(
+        age: age,
+        gender: gender,
+        weight: weight,
+        height: height,
+        userId: userId,
+      );
+      await widget.service.autoConfigureHeartRate(userInfo);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User info sent to device')),
+          SnackBar(
+            content: Text(
+              'User info set + HR auto-configured!\n'
+              'Min: ${userInfo.recommendedMinHeartRate} BPM, '
+              'Goal: ${userInfo.recommendedGoalHeartRate} BPM, '
+              'Max: ${userInfo.recommendedMaxHeartRate} BPM',
+            ),
+            duration: const Duration(seconds: 4),
+          ),
         );
       }
     }
