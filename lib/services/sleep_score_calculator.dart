@@ -116,17 +116,17 @@ class SleepScoreCalculator {
       return maxEfficiencyPoints;
     } else if (efficiency >= optimalEfficiency) {
       // Linear interpolation between 85% and 95%
-      final range = 95.0 - optimalEfficiency;
+      const range = 95.0 - optimalEfficiency;
       final position = efficiency - optimalEfficiency;
       return 25 + (position / range * 5);
     } else if (efficiency >= 70.0) {
       // Linear interpolation between 70% and 85%
-      final range = optimalEfficiency - 70.0;
+      const range = optimalEfficiency - 70.0;
       final position = efficiency - 70.0;
       return 15 + (position / range * 10);
     } else {
       // Below 70% - poor efficiency
-      final range = 70.0;
+      const range = 70.0;
       final position = efficiency.clamp(0.0, 70.0);
       return (position / range * 15);
     }

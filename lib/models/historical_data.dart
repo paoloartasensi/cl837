@@ -191,6 +191,24 @@ class SleepData31 {
     );
   }
   
+  /// Convert to JSON for storage
+  Map<String, dynamic> toJson() {
+    return {
+      'timestamp': timestamp.toIso8601String(),
+      'activityIndices': activityIndices,
+      'packetSequence': packetSequence,
+    };
+  }
+
+  /// Create from JSON
+  factory SleepData31.fromJson(Map<String, dynamic> json) {
+    return SleepData31(
+      timestamp: DateTime.parse(json['timestamp']),
+      activityIndices: List<int>.from(json['activityIndices']),
+      packetSequence: json['packetSequence'] ?? 0,
+    );
+  }
+
   @override
   String toString() {
     return 'SleepData31{timestamp: $timestamp, seq: $packetSequence, indices: ${activityIndices.length} entries (${activityIndices.length * 5} minutes)}';

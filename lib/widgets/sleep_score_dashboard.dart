@@ -78,9 +78,9 @@ class SleepScoreDashboard extends StatelessWidget {
                   style: const TextStyle(fontSize: 32),
                 ),
                 const SizedBox(width: 12),
-                Text(
+                const Text(
                   'Sleep Score',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
                     color: Colors.white,
@@ -126,14 +126,14 @@ class SleepScoreDashboard extends StatelessWidget {
         child: Stack(
           children: [
             // Background circle
-            SizedBox(
+            const SizedBox(
               width: 200,
               height: 200,
               child: CircularProgressIndicator(
                 value: 1.0,
                 strokeWidth: 16,
                 backgroundColor: Colors.white12,
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white12),
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white12),
               ),
             ),
             // Score circle

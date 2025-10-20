@@ -88,7 +88,7 @@ class SleepScore {
 
     // Duration insights
     if (durationScore < 20) {
-      final targetMinutes = 480; // 8 hours
+      const targetMinutes = 480; // 8 hours
       final deficit = targetMinutes - totalSleepTime.inMinutes;
       insights.add(SleepInsight(
         type: InsightType.duration,
