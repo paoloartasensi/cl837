@@ -961,7 +961,7 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
   Widget _buildStatChip(String label, String value, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
@@ -973,18 +973,22 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
           Text(
             label,
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.bold,
               color: color,
             ),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
           Text(
             value,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 12,
               fontWeight: FontWeight.bold,
               color: color,
             ),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
         ],
       ),
@@ -1002,10 +1006,10 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _buildZoneIndicator('Resting', '< 60', Colors.blue),
-          _buildZoneIndicator('Fat Burn', '60-70', Colors.green),
-          _buildZoneIndicator('Cardio', '70-85', Colors.orange),
-          _buildZoneIndicator('Peak', '> 85', Colors.red),
+          Flexible(child: _buildZoneIndicator('Resting', '< 60', Colors.blue)),
+          Flexible(child: _buildZoneIndicator('Fat Burn', '60-70', Colors.green)),
+          Flexible(child: _buildZoneIndicator('Cardio', '70-85', Colors.orange)),
+          Flexible(child: _buildZoneIndicator('Peak', '> 85', Colors.red)),
         ],
       ),
     );
@@ -1013,22 +1017,26 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
 
   Widget _buildZoneIndicator(String zone, String range, Color color) {
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 12,
-          height: 12,
+          width: 10,
+          height: 10,
           decoration: BoxDecoration(
             color: color,
             shape: BoxShape.circle,
           ),
         ),
-        const SizedBox(width: 4),
-        Text(
-          '$zone: $range',
-          style: TextStyle(
-            fontSize: 11,
-            color: color,
-            fontWeight: FontWeight.w500,
+        const SizedBox(width: 3),
+        Flexible(
+          child: Text(
+            '$zone: $range',
+            style: TextStyle(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ],
@@ -1048,10 +1056,10 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatChip('Average', '${avgHR.toInt()} BPM', Colors.blue),
-              _buildStatChip('Std Dev', stdDev.toStringAsFixed(1), Colors.purple),
-              _buildStatChip('Samples', '$count', Colors.teal),
-              _buildStatChip('Duration', _calculateDuration(), Colors.indigo),
+              Flexible(child: _buildStatChip('Average', '${avgHR.toInt()} BPM', Colors.blue)),
+              Flexible(child: _buildStatChip('Std Dev', stdDev.toStringAsFixed(1), Colors.purple)),
+              Flexible(child: _buildStatChip('Samples', '$count', Colors.teal)),
+              Flexible(child: _buildStatChip('Duration', _calculateDuration(), Colors.indigo)),
             ],
           ),
           const SizedBox(height: 8),
@@ -1602,10 +1610,10 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _buildStatChip('Total Sleep', '${phases.totalSleep}m', Colors.blue),
-              _buildStatChip('Deep Sleep', '${phases.deepSleep}m', Colors.purple),
-              _buildStatChip('Light Sleep', '${phases.lightSleep}m', Colors.cyan),
-              _buildStatChip('Awake', '${phases.awake}m', Colors.orange),
+              Flexible(child: _buildStatChip('Total Sleep', '${phases.totalSleep}m', Colors.blue)),
+              Flexible(child: _buildStatChip('Deep Sleep', '${phases.deepSleep}m', Colors.purple)),
+              Flexible(child: _buildStatChip('Light Sleep', '${phases.lightSleep}m', Colors.cyan)),
+              Flexible(child: _buildStatChip('Awake', '${phases.awake}m', Colors.orange)),
             ],
           ),
           const SizedBox(height: 8),

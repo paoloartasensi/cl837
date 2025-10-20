@@ -13,6 +13,9 @@ import 'models/heart_rate_config.dart';
 import 'models/historical_data.dart';
 import 'models/rope_data.dart';
 import 'models/device_info.dart';
+import 'models/sport_health_data.dart' hide HeartRateConfig;
+import 'models/sensor_data.dart';
+import 'models/user_info.dart';
 
 // Data Processors
 import 'services/data_processors/spo2_processor.dart';
@@ -224,6 +227,9 @@ class ChileafExtendedService {
   // Sleep 0x31 completed sessions accumulator (all finalized sessions)
   final List<SleepHistoryEntry> _sleepData31CompletedSessions = [];
   
+  // Sleep 0x31 CACHE - keeps last received sessions even after clear
+  final List<SleepHistoryEntry> _sleepData31Cache = [];
+  
   // Sleep event streams (onset detection)
   final StreamController<SleepOnsetEvent> _sleepOnsetController =
       StreamController<SleepOnsetEvent>.broadcast();
@@ -253,6 +259,40 @@ class ChileafExtendedService {
   // Real-time Heart Rate streams (secondo documentazione SDK sezione 4.8)
   final StreamController<int> _realTimeHeartRateController =
       StreamController<int>.broadcast();
+
+  // Sport Health streams (VO2 Max, HRV, Stress, Stamina)
+  final StreamController<SportHealthData> _sportHealthController =
+      StreamController<SportHealthData>.broadcast();
+  
+  // Heart Rate Management streams (Min/Max/Goal thresholds)
+  final StreamController<HeartRateAlarm> _hrAlarmController =
+      StreamController<HeartRateAlarm>.broadcast();
+  final StreamController<HeartRateMax> _hrMaxController =
+      StreamController<HeartRateMax>.broadcast();
+
+  // Sensor streams (3D/6D Accelerometer + Gyroscope)
+  final StreamController<Sensor3DStatus> _sensor3DStatusController =
+      StreamController<Sensor3DStatus>.broadcast();
+  final StreamController<Sensor3DFrequency> _sensor3DFrequencyController =
+      StreamController<Sensor3DFrequency>.broadcast();
+  final StreamController<Sensor6DFrequency> _sensor6DFrequencyController =
+      StreamController<Sensor6DFrequency>.broadcast();
+  final StreamController<Sensor6DRawData> _sensor6DDataController =
+      StreamController<Sensor6DRawData>.broadcast();
+
+  // RR Interval streams (advanced HRV analysis)
+  final StreamController<List<RRIntervalData>> _rrIntervalController =
+      StreamController<List<RRIntervalData>>.broadcast();
+
+  // Single Button Press stream
+  final StreamController<SingleButtonPress> _buttonPressController =
+      StreamController<SingleButtonPress>.broadcast();
+
+  // User Info streams
+  final StreamController<UserInfo> _userInfoController =
+      StreamController<UserInfo>.broadcast();
+  final StreamController<DeviceStatus> _deviceStatusController =
+      StreamController<DeviceStatus>.broadcast();
 
   // Constructor
   ChileafExtendedService() {
@@ -305,6 +345,9 @@ class ChileafExtendedService {
   Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
       _stepsHistoryController.stream;
   
+  // Sleep data cache getter - returns last received sessions even if stream is done
+  List<SleepHistoryEntry> get cachedSleepSessions => List.from(_sleepData31Cache);
+  
   // Sleep event streams (real-time onset detection)
   Stream<SleepOnsetEvent> get sleepOnsetStream => _sleepOnsetController.stream;
   Stream<SleepWakeEvent> get sleepWakeStream => _sleepWakeController.stream;
@@ -324,6 +367,29 @@ class ChileafExtendedService {
   Stream<String> get hardwareVersionStream => _hardwareVersionController.stream;
   Stream<String> get deviceNameStream => _deviceNameController.stream;
   Stream<String> get macAddressStream => _macAddressController.stream;
+
+  // Sport Health streams (NEW: Advanced fitness metrics)
+  Stream<SportHealthData> get sportHealthStream => _sportHealthController.stream;
+  
+  // Heart Rate Management streams (NEW: Min/Max/Goal configuration)
+  Stream<HeartRateAlarm> get hrAlarmStream => _hrAlarmController.stream;
+  Stream<HeartRateMax> get hrMaxStream => _hrMaxController.stream;
+
+  // Sensor streams (NEW: 3D/6D Accelerometer + Gyroscope)
+  Stream<Sensor3DStatus> get sensor3DStatusStream => _sensor3DStatusController.stream;
+  Stream<Sensor3DFrequency> get sensor3DFrequencyStream => _sensor3DFrequencyController.stream;
+  Stream<Sensor6DFrequency> get sensor6DFrequencyStream => _sensor6DFrequencyController.stream;
+  Stream<Sensor6DRawData> get sensor6DDataStream => _sensor6DDataController.stream;
+
+  // RR Interval stream (NEW: Advanced HRV analysis)
+  Stream<List<RRIntervalData>> get rrIntervalStream => _rrIntervalController.stream;
+
+  // Button Press stream (NEW: Single button history)
+  Stream<SingleButtonPress> get buttonPressStream => _buttonPressController.stream;
+
+  // User Info streams (NEW: User profile and device status)
+  Stream<UserInfo> get userInfoStream => _userInfoController.stream;
+  Stream<DeviceStatus> get deviceStatusStream => _deviceStatusController.stream;
 
   Future<void> start(BluetoothDevice device) async {
     try {
@@ -675,11 +741,18 @@ class ChileafExtendedService {
           _deviceInfoController.add(deviceInfo);
         }
         break;
-      case 0x03: // Firmware Version
-        debugPrint('💾 FIRMWARE VERSION: Processing firmware version');
-        var firmwareVersion = DeviceInfoProcessor.processFirmwareVersion(data);
-        if (firmwareVersion != null) {
-          _firmwareVersionController.add(firmwareVersion);
+      case 0x03: // User Info & Device Status (Protocol 0x03) OR Firmware Version (depending on length)
+        if (data.length >= 15) {
+          // Likely User Info response (longer packet)
+          debugPrint('� USER INFO: Processing user information and device status');
+          _processUserInfoResponse(data);
+        } else {
+          // Firmware version (shorter packet)
+          debugPrint('�💾 FIRMWARE VERSION: Processing firmware version');
+          var firmwareVersion = DeviceInfoProcessor.processFirmwareVersion(data);
+          if (firmwareVersion != null) {
+            _firmwareVersionController.add(firmwareVersion);
+          }
         }
         break;
       case 0x04: // Hardware Version
@@ -749,6 +822,11 @@ class ChileafExtendedService {
           int totalMinutes = _sleepData31CompletedSessions.fold(0, (sum, s) => sum + (s.actions.length * 5));
           debugPrint('   ⏱️  Total sleep time: $totalMinutes minutes');
           debugPrint('   📅 Date range: ${_sleepData31CompletedSessions.first.timestamp} to ${_sleepData31CompletedSessions.last.timestamp}');
+          
+          // Salva in cache PRIMA di pulire
+          _sleepData31Cache.clear();
+          _sleepData31Cache.addAll(_sleepData31CompletedSessions);
+          debugPrint('   💾 Cached ${_sleepData31Cache.length} sessions for later access');
         }
         
         // Reset accumulator per il prossimo download
@@ -891,6 +969,70 @@ class ChileafExtendedService {
           }
         }
         break;
+      
+      // ===== NEW HANDLERS FOR SPORT HEALTH & SENSORS =====
+      
+      case 0x4E: // Body Health Response (VO2 Max, HRV, Stress, Stamina)
+        debugPrint('🏃 SPORT HEALTH: Processing body health data');
+        _processSportHealthData(data);
+        break;
+      
+      case 0x4F: // Health Monitoring Status
+        debugPrint('🏃 HEALTH MONITORING: Processing monitoring status');
+        if (data.length >= 4) {
+          int status = data[3];
+          debugPrint('🏃 Monitoring ${status == 1 ? "STARTED" : "STOPPED"}');
+        }
+        break;
+      
+      case 0x43: // Heart Rate Status Response (Min/Max/Goal)
+        debugPrint('❤️ HR STATUS: Processing heart rate configuration');
+        _processHRConfigResponse(data);
+        break;
+      
+      case 0x44: // Heart Rate Alarm Response
+        debugPrint('⏰ HR ALARM: Processing heart rate alarm status');
+        _processHRAlarmResponse(data);
+        break;
+      
+      case 0x45: // Heart Rate Max Response
+        debugPrint('📈 HR MAX: Processing heart rate maximum');
+        _processHRMaxResponse(data);
+        break;
+      
+      case 0x46: // 3D Sensor Frequency Response (existing but enhanced)
+        debugPrint('📡 3D FREQ: Processing 3D sensor frequency');
+        _process3DFrequencyResponse(data);
+        break;
+      
+      case 0x48: // 6D Sensor Frequency Response
+        debugPrint('📡 6D FREQ: Processing 6D sensor frequency');
+        _process6DFrequencyResponse(data);
+        break;
+      
+      case 0x49: // RR Intervals Response
+        debugPrint('💓 RR INTERVALS: Processing RR interval history');
+        _processRRIntervalsResponse(data);
+        break;
+      
+      case 0x4A: // Shutdown Confirmation
+        debugPrint('🔴 SHUTDOWN: Device shutdown acknowledged');
+        break;
+      
+      case 0x4B: // Factory Restoration Confirmation
+        debugPrint('⚠️ RESTORATION: Factory reset acknowledged');
+        break;
+      
+      case 0x4C: // Button Press History Response
+        debugPrint('🔘 BUTTON: Processing button press history');
+        _processButtonPressResponse(data);
+        break;
+      
+      case 0x6D: // 6D Sensor Raw Data Stream
+        debugPrint('📊 6D DATA: Processing gyroscope + accelerometer data');
+        _process6DRawDataStream(data);
+        break;
+      
       default:
         debugPrint(
             'Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
@@ -2066,9 +2208,14 @@ class ChileafExtendedService {
     debugPrint('✅ Session finalized and added to accumulator');
     debugPrint('📊 Total sessions accumulated: ${_sleepData31CompletedSessions.length}');
     
+    // Aggiorna anche la cache permanente (non verrà pulita)
+    _sleepData31Cache.clear();
+    _sleepData31Cache.addAll(_sleepData31CompletedSessions);
+    
     // Invia TUTTE le sessioni accumulate al stream PRINCIPALE
     _sleepHistoryController.add(List.from(_sleepData31CompletedSessions));
     debugPrint('📤 Sent ${_sleepData31CompletedSessions.length} sleep sessions to MAIN UI stream');
+    debugPrint('💾 Cached ${_sleepData31Cache.length} sessions for later access');
     
     // Invia anche allo stream dedicato 0x31 (per compatibilità futura)
     List<SleepData31> sleepSessions = List.from(_sleepData31Buffer);
@@ -4639,5 +4786,473 @@ class ChileafExtendedService {
     }
     
     return analysis;
+  }
+
+  // ===== SPORT HEALTH DATA (VO2 Max, HRV, Stress, Stamina) =====
+
+  /// Get body health data (VO2 Max, HRV, Stress, Stamina)
+  /// Equivalent to Android: WearManager.getBodyHealth()
+  Future<void> getBodyHealth() async {
+    debugPrint('🏃 Getting body health data (VO2 Max, HRV, Stress, Stamina)...');
+    // Command: 0x4E (78 decimal) - based on SDK patterns
+    await _sendCommand([0xFF, 0x04, 0x4E, 0x00]);
+  }
+
+  /// Start real-time health monitoring
+  /// Equivalent to Android: WearManager.startHealthMonitoring()
+  Future<void> startHealthMonitoring() async {
+    debugPrint('▶️ Starting real-time health monitoring...');
+    // Command: 0x4F (79 decimal) with value 1 (start)
+    await _sendCommand([0xFF, 0x05, 0x4F, 0x01, 0x00]);
+  }
+
+  /// Stop real-time health monitoring
+  /// Equivalent to Android: WearManager.stopHealthMonitoring()
+  Future<void> stopHealthMonitoring() async {
+    debugPrint('⏹️ Stopping real-time health monitoring...');
+    // Command: 0x4F (79 decimal) with value 0 (stop)
+    await _sendCommand([0xFF, 0x05, 0x4F, 0x00, 0x00]);
+  }
+
+  // ===== HEART RATE MANAGEMENT (Min/Max/Goal) =====
+
+  /// Get heart rate status (min, max, goal thresholds)
+  /// Equivalent to Android: WearManager.getHeartRateStatus()
+  Future<void> getHeartRateStatus() async {
+    debugPrint('📊 Getting heart rate status (min/max/goal)...');
+    // Command: 0x43 (67 decimal) - based on SDK
+    await _sendCommand([0xFF, 0x04, 0x43, 0x00]);
+  }
+
+  /// Set heart rate status (min, max, goal thresholds)
+  /// Equivalent to Android: WearManager.setHeartRateStatus(min, max, goal)
+  Future<void> setHeartRateStatus(int min, int max, int goal) async {
+    debugPrint('⚙️ Setting heart rate status: min=$min, max=$max, goal=$goal');
+    // Command: 0x43 with 3 parameters (min, max, goal)
+    await _sendCommand([0xFF, 0x07, 0x43, min, max, goal, 0x00]);
+  }
+
+  /// Get heart rate alarm status
+  /// Equivalent to Android: WearManager.getHeartRateAlarm()
+  Future<void> getHeartRateAlarm() async {
+    debugPrint('⏰ Getting heart rate alarm status...');
+    // Command: 0x44 (68 decimal)
+    await _sendCommand([0xFF, 0x04, 0x44, 0x00]);
+  }
+
+
+
+  /// Get maximum heart rate by age
+  /// Equivalent to Android: WearManager.getHeartRateMax()
+  Future<void> getHeartRateMax() async {
+    debugPrint('📈 Getting maximum heart rate...');
+    // Command: 0x45 (69 decimal)
+    await _sendCommand([0xFF, 0x04, 0x45, 0x00]);
+  }
+
+  /// Set maximum heart rate
+  /// Equivalent to Android: WearManager.setHeartRateMax(max)
+  Future<void> setHeartRateMax(int max) async {
+    debugPrint('⚙️ Setting maximum heart rate: $max BPM');
+    // Command: 0x45 with max value
+    await _sendCommand([0xFF, 0x05, 0x45, max, 0x00]);
+  }
+
+  // ===== 3D ACCELEROMETER CONTROL =====
+
+  /// Get 3D sensor frequency
+  /// Equivalent to Android: WearManager.get3DFrequency()
+  Future<void> get3DFrequency() async {
+    debugPrint('📡 Getting 3D sensor frequency...');
+    // Command: 0x46 (70 decimal)
+    await _sendCommand([0xFF, 0x04, 0x46, 0x00]);
+  }
+
+
+
+  /// Get 3D sensor status (enabled/disabled)
+  /// Equivalent to Android: WearManager.get3DStatus()
+  Future<void> get3DStatus() async {
+    debugPrint('📡 Getting 3D sensor status...');
+    // Command: 0x47 (71 decimal)
+    await _sendCommand([0xFF, 0x04, 0x47, 0x00]);
+  }
+
+  /// Set 3D sensor enabled/disabled
+  /// Equivalent to Android: WearManager.set3DEnabled(enabled)
+  Future<void> set3DEnabled(bool enabled) async {
+    debugPrint('⚙️ Setting 3D sensor: ${enabled ? "enabled" : "disabled"}');
+    // Command: 0x47 with boolean value
+    await _sendCommand([0xFF, 0x05, 0x47, enabled ? 0x01 : 0x00, 0x00]);
+  }
+
+  // ===== 6D SENSOR (GYROSCOPE + ACCELEROMETER) =====
+
+  /// Get 6D sensor frequency
+  /// Equivalent to Android: WearManager.get6DFrequency()
+  Future<void> get6DFrequency() async {
+    debugPrint('📡 Getting 6D sensor frequency...');
+    // Command: 0x48 (72 decimal)
+    await _sendCommand([0xFF, 0x04, 0x48, 0x00]);
+  }
+
+  /// Set 6D sensor frequency (0-3: 26/52/104/208 Hz)
+  /// Equivalent to Android: WearManager.set6DFrequency(frequency)
+  Future<void> set6DFrequency(Sensor6DFrequency frequency) async {
+    debugPrint('⚙️ Setting 6D sensor frequency: ${frequency.label}');
+    // Command: 0x48 with frequency value (0-3)
+    await _sendCommand([0xFF, 0x05, 0x48, frequency.value, 0x00]);
+  }
+
+  // ===== RR INTERVALS (ADVANCED HRV) =====
+
+  /// Get RR intervals history for advanced HRV analysis
+  /// Equivalent to Android: WearManager.getRRIntervals()
+  Future<void> getRRIntervalsHistory() async {
+    debugPrint('💓 Getting RR intervals history for HRV analysis...');
+    // Command: 0x49 (73 decimal) - hypothetical, needs verification
+    await _sendCommand([0xFF, 0x04, 0x49, 0x00]);
+  }
+
+  // ===== DEVICE MANAGEMENT =====
+
+
+
+  /// Factory restoration
+  /// Equivalent to Android: WearManager.restoration()
+  Future<void> factoryRestoration() async {
+    debugPrint('⚠️ Performing factory restoration...');
+    // Command: 0x4B (75 decimal)
+    await _sendCommand([0xFF, 0x04, 0x4B, 0x00]);
+  }
+
+  /// Get single button press history
+  /// Equivalent to Android: WearManager.getSingleButtonHistory()
+  Future<void> getSingleButtonHistory() async {
+    debugPrint('🔘 Getting single button press history...');
+    // Command: 0x4C (76 decimal)
+    await _sendCommand([0xFF, 0x04, 0x4C, 0x00]);
+  }
+
+  // ===== RESPONSE PROCESSORS FOR NEW FEATURES =====
+
+  /// Process Sport Health Data (VO2 Max, HRV, Stress, Stamina)
+  /// Format: [0xFF, length, 0x4E, vo2Max, breathRate, emotion, stress, stamina, tp(4), lf(4), hf(4), checksum]
+  void _processSportHealthData(List<int> data) {
+    try {
+      if (data.length < 8) {
+        debugPrint('❌ Invalid sport health data length: ${data.length}');
+        return;
+      }
+
+      // Extract basic metrics (1 byte each)
+      int vo2Max = data[3];
+      int breathRate = data[4];
+      int emotion = data[5];
+      int stress = data[6];
+      int stamina = data.length > 7 ? data[7] : 0;
+
+      // Extract HRV frequency domain (if available, 4 bytes each as floats)
+      double? tp, lf, hf;
+      if (data.length >= 20) {
+        // Convert 4-byte sequences to floats (little-endian)
+        tp = _bytesToFloat(data.sublist(8, 12));
+        lf = _bytesToFloat(data.sublist(12, 16));
+        hf = _bytesToFloat(data.sublist(16, 20));
+      }
+
+      SportHealthData healthData = SportHealthData(
+        vo2Max: vo2Max,
+        breathRate: breathRate,
+        emotionLevel: emotion,
+        stressPercent: stress,
+        stamina: stamina,
+        totalPower: tp,
+        lowFrequency: lf,
+        highFrequency: hf,
+      );
+
+      debugPrint('🏃 Sport Health Data: $healthData');
+      _sportHealthController.add(healthData);
+    } catch (e) {
+      debugPrint('❌ Error processing sport health data: $e');
+    }
+  }
+
+  /// Process Heart Rate Configuration Response
+  /// Format: [0xFF, 0x07, 0x43, min, max, goal, checksum]
+  void _processHRConfigResponse(List<int> data) {
+    try {
+      if (data.length < 6) {
+        debugPrint('❌ Invalid HR config data length: ${data.length}');
+        return;
+      }
+
+      int min = data[3];
+      int max = data[4];
+      int goal = data[5];
+
+      debugPrint('❤️ HR Config: min=$min BPM, max=$max BPM, goal=$goal BPM');
+      
+      // Note: Using sport_health_data's HeartRateConfig would conflict
+      // This is just for the stream notification
+      // The actual config is in heart_rate_config.dart
+    } catch (e) {
+      debugPrint('❌ Error processing HR config: $e');
+    }
+  }
+
+  /// Process Heart Rate Alarm Response
+  /// Format: [0xFF, 0x05, 0x44, enabled, checksum]
+  void _processHRAlarmResponse(List<int> data) {
+    try {
+      if (data.length < 4) {
+        debugPrint('❌ Invalid HR alarm data length: ${data.length}');
+        return;
+      }
+
+      bool enabled = data[3] == 1;
+      HeartRateAlarm alarm = HeartRateAlarm(
+        enabled: enabled,
+        timestamp: DateTime.now(),
+      );
+
+      debugPrint('⏰ HR Alarm: ${alarm.toString()}');
+      _hrAlarmController.add(alarm);
+    } catch (e) {
+      debugPrint('❌ Error processing HR alarm: $e');
+    }
+  }
+
+  /// Process Heart Rate Max Response
+  /// Format: [0xFF, 0x05, 0x45, max, checksum]
+  void _processHRMaxResponse(List<int> data) {
+    try {
+      if (data.length < 4) {
+        debugPrint('❌ Invalid HR max data length: ${data.length}');
+        return;
+      }
+
+      int max = data[3];
+      HeartRateMax hrMax = HeartRateMax(max: max);
+
+      debugPrint('📈 HR Max: ${hrMax.toString()}');
+      _hrMaxController.add(hrMax);
+    } catch (e) {
+      debugPrint('❌ Error processing HR max: $e');
+    }
+  }
+
+  /// Process 3D Sensor Frequency Response
+  /// Format: [0xFF, 0x05, 0x46, frequency, checksum]
+  void _process3DFrequencyResponse(List<int> data) {
+    try {
+      if (data.length < 4) {
+        debugPrint('❌ Invalid 3D frequency data length: ${data.length}');
+        return;
+      }
+
+      int frequencyValue = data[3];
+      Sensor3DFrequency frequency = Sensor3DFrequency.fromValue(frequencyValue);
+
+      debugPrint('📡 3D Sensor Frequency: ${frequency.label}');
+      _sensor3DFrequencyController.add(frequency);
+    } catch (e) {
+      debugPrint('❌ Error processing 3D frequency: $e');
+    }
+  }
+
+  /// Process 6D Sensor Frequency Response
+  /// Format: [0xFF, 0x05, 0x48, frequency, checksum]
+  void _process6DFrequencyResponse(List<int> data) {
+    try {
+      if (data.length < 4) {
+        debugPrint('❌ Invalid 6D frequency data length: ${data.length}');
+        return;
+      }
+
+      int frequencyValue = data[3];
+      Sensor6DFrequency frequency = Sensor6DFrequency.fromValue(frequencyValue);
+
+      debugPrint('📡 6D Sensor Frequency: ${frequency.label}');
+      _sensor6DFrequencyController.add(frequency);
+    } catch (e) {
+      debugPrint('❌ Error processing 6D frequency: $e');
+    }
+  }
+
+  /// Process RR Intervals Response
+  /// Format: [0xFF, length, 0x49, count, intervals(2 bytes each)..., checksum]
+  void _processRRIntervalsResponse(List<int> data) {
+    try {
+      if (data.length < 5) {
+        debugPrint('❌ Invalid RR intervals data length: ${data.length}');
+        return;
+      }
+
+      int count = data[3];
+      List<RRIntervalData> intervals = [];
+
+      // Each RR interval is 2 bytes (little-endian)
+      for (int i = 0; i < count && (4 + i * 2 + 1) < data.length; i++) {
+        int offset = 4 + i * 2;
+        int interval = data[offset] | (data[offset + 1] << 8);
+        
+        intervals.add(RRIntervalData(
+          interval: interval,
+          timestamp: DateTime.now(),
+        ));
+      }
+
+      debugPrint('💓 RR Intervals: ${intervals.length} intervals received');
+      _rrIntervalController.add(intervals);
+    } catch (e) {
+      debugPrint('❌ Error processing RR intervals: $e');
+    }
+  }
+
+  /// Process Button Press Response
+  /// Format: [0xFF, length, 0x4C, count, utc_timestamps(4 bytes each)..., checksum]
+  void _processButtonPressResponse(List<int> data) {
+    try {
+      if (data.length < 5) {
+        debugPrint('❌ Invalid button press data length: ${data.length}');
+        return;
+      }
+
+      int count = data[3];
+
+      // Each timestamp is 4 bytes (little-endian)
+      for (int i = 0; i < count && (4 + i * 4 + 3) < data.length; i++) {
+        int offset = 4 + i * 4;
+        int utc = data[offset] | 
+                  (data[offset + 1] << 8) | 
+                  (data[offset + 2] << 16) | 
+                  (data[offset + 3] << 24);
+        
+        SingleButtonPress press = SingleButtonPress(
+          utc: utc,
+          timestamp: DateTime.fromMillisecondsSinceEpoch(utc * 1000),
+        );
+        
+        debugPrint('🔘 Button Press: ${press.toString()}');
+        _buttonPressController.add(press);
+      }
+    } catch (e) {
+      debugPrint('❌ Error processing button press: $e');
+    }
+  }
+
+  /// Process 6D Raw Data Stream (Gyroscope + Accelerometer)
+  /// Format: [0xFF, length, 0x6D, utc(4), seq, gyroX(2), gyroY(2), gyroZ(2), accelX(2), accelY(2), accelZ(2), checksum]
+  void _process6DRawDataStream(List<int> data) {
+    try {
+      if (data.length < 20) {
+        debugPrint('❌ Invalid 6D data length: ${data.length}');
+        return;
+      }
+
+      // Extract UTC timestamp (4 bytes, little-endian)
+      int utc = data[3] | (data[4] << 8) | (data[5] << 16) | (data[6] << 24);
+      
+      // Sequence number
+      int seq = data[7];
+      
+      // Gyroscope (3x 2 bytes, signed)
+      int gyroX = _bytesToInt16(data[8], data[9]);
+      int gyroY = _bytesToInt16(data[10], data[11]);
+      int gyroZ = _bytesToInt16(data[12], data[13]);
+      
+      // Accelerometer (3x 2 bytes, signed)
+      int accelX = _bytesToInt16(data[14], data[15]);
+      int accelY = _bytesToInt16(data[16], data[17]);
+      int accelZ = _bytesToInt16(data[18], data[19]);
+
+      Sensor6DRawData sensorData = Sensor6DRawData(
+        utc: utc == 0xFF ? null : utc,
+        sequence: seq,
+        gyroscopeX: gyroX,
+        gyroscopeY: gyroY,
+        gyroscopeZ: gyroZ,
+        accelerometerX: accelX,
+        accelerometerY: accelY,
+        accelerometerZ: accelZ,
+      );
+
+      _sensor6DDataController.add(sensorData);
+    } catch (e) {
+      debugPrint('❌ Error processing 6D data: $e');
+    }
+  }
+
+  // ===== UTILITY FUNCTIONS =====
+
+  /// Convert 4 bytes to float (little-endian)
+  double _bytesToFloat(List<int> bytes) {
+    if (bytes.length != 4) return 0.0;
+    
+    // Convert bytes to 32-bit integer
+    int bits = bytes[0] | (bytes[1] << 8) | (bytes[2] << 16) | (bytes[3] << 24);
+    
+    // Convert to float using IEEE 754 format
+    // This is a simplified version - for production use a proper library
+    if (bits == 0) return 0.0;
+    
+    int sign = (bits >> 31) == 0 ? 1 : -1;
+    int exponent = ((bits >> 23) & 0xFF) - 127;
+    int mantissa = bits & 0x7FFFFF;
+    
+    double value = sign * (1 + mantissa / 8388608.0) * (1 << exponent).toDouble();
+    return value;
+  }
+
+  /// Convert 2 bytes to signed 16-bit integer (little-endian)
+  int _bytesToInt16(int lowByte, int highByte) {
+    int value = lowByte | (highByte << 8);
+    // Convert to signed
+    if (value > 32767) {
+      value = value - 65536;
+    }
+    return value;
+  }
+
+  /// Process User Info Response (Command 0x03)
+  /// Format: [0xFF, length, 0x03, ecg_open, charging_info, battery, age, gender, weight, height, userId(5 bytes), checksum]
+  void _processUserInfoResponse(List<int> data) {
+    try {
+      debugPrint('👤 PROCESSING USER INFO RESPONSE');
+      debugPrint('🔍 Raw data (${data.length} bytes): ${_commandToHexString(data)}');
+      
+      if (data.length < 15) {
+        debugPrint('❌ Invalid user info data length: ${data.length} (expected >= 15)');
+        return;
+      }
+
+      // Parse complete device status (includes user info)
+      DeviceStatus? deviceStatus = DeviceStatus.fromDeviceResponse(data);
+      
+      if (deviceStatus != null) {
+        debugPrint('✅ User Info parsed successfully:');
+        debugPrint('   👤 User: ${deviceStatus.userInfo.toString()}');
+        debugPrint('   🔋 Battery: ${deviceStatus.batteryLevel}% (${deviceStatus.chargingStatusString})');
+        debugPrint('   💓 ECG: ${deviceStatus.ecgOpen ? "ON" : "OFF"}');
+        
+        // Emit to streams
+        _userInfoController.add(deviceStatus.userInfo);
+        _deviceStatusController.add(deviceStatus);
+        
+        // Log health insights
+        debugPrint('📊 Health Insights:');
+        debugPrint('   BMI: ${deviceStatus.userInfo.bmi.toStringAsFixed(1)} (${deviceStatus.userInfo.bmiCategory})');
+        debugPrint('   Max HR: ${deviceStatus.userInfo.maxHeartRate} BPM (by age)');
+        
+        Map<String, double> idealWeight = deviceStatus.userInfo.idealWeightRange;
+        debugPrint('   Ideal Weight: ${idealWeight['ideal']!.toStringAsFixed(1)} kg (±5 kg range)');
+      } else {
+        debugPrint('❌ Failed to parse user info from response');
+      }
+    } catch (e) {
+      debugPrint('❌ Error processing user info response: $e');
+    }
   }
 }

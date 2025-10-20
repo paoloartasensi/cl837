@@ -167,8 +167,10 @@ class OfficialChileafCommands {
   /// Granularità: 1 byte = 5 minuti di activity index
   /// Activity index: >20 = sveglio, <20 = sonno leggero, 3x0 consecutivi = sonno profondo
   static List<int> getSleepData31() {
-    // Comando 0x31 senza parametri per richiedere tutti i dati sleep
-    return buildOfficialCommand(0x31, []);
+    // ✅ CORRETTO: Invia timestamp 0 per richiedere TUTTI i dati storici
+    // SDK: "UTC is the UTC time of the first activity index"
+    // Timestamp = 0 significa "dammi tutto ciò che hai"
+    return buildOfficialCommand(0x31, [0x00, 0x00, 0x00, 0x00]);
   }
 
   /// Richiede dati sleep per uno specifico UTC timestamp (comando 0x31)

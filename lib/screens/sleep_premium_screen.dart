@@ -62,8 +62,12 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
 
   /// Setup listener for real-time sleep data from BLE
   void _setupSleepDataListener() {
+    // Carica immediatamente dalla cache del servizio (se ci sono dati recenti)
+    _loadFromServiceCache();
+    
+    // Ascolta nuovi dati dallo stream BLE
     _sleepDataSubscription = widget.chileafService.sleepHistoryStream.listen((sleepSessions) async {
-      debugPrint('✨ Premium Screen: Received ${sleepSessions.length} sleep sessions from BLE');
+      debugPrint('✨ Premium Screen: Received ${sleepSessions.length} sleep sessions from BLE stream');
       
       // Convert and save each session
       for (final session in sleepSessions) {
@@ -93,6 +97,39 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       // Reload data to show new sessions
       await _loadSleepData();
     });
+  }
+  
+  /// Load sleep data from service cache (recent BLE data)
+  Future<void> _loadFromServiceCache() async {
+    final cachedSessions = widget.chileafService.cachedSleepSessions;
+    
+    if (cachedSessions.isNotEmpty) {
+      debugPrint('📦 Premium Screen: Found ${cachedSessions.length} cached sessions in service');
+      
+      // Process cached sessions the same way as stream data
+      for (final session in cachedSessions) {
+        try {
+          final sleepData31 = SleepData31(
+            timestamp: session.timestamp,
+            activityIndices: session.actions,
+            packetSequence: 0,
+          );
+          
+          final saved = await _historyManager.saveSleepSession(sleepData31);
+          if (saved) {
+            final score = _calculateSleepScore(sleepData31);
+            await _historyManager.saveSleepScore(score);
+          }
+        } catch (e) {
+          debugPrint('❌ Error processing cached session: $e');
+        }
+      }
+      
+      // Reload UI with cached data
+      await _loadSleepData();
+    } else {
+      debugPrint('📦 Premium Screen: No cached sessions found in service');
+    }
   }
 
   /// Calculate sleep score from sleep data
@@ -169,21 +206,30 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     setState(() => _isLoading = true);
 
     try {
+      debugPrint('🔄 Premium Screen: Loading sleep data from storage...');
+      
       // Load recent sleep scores from history
       final recentScores = await _historyManager.getRecentScores(7);
+      debugPrint('📊 Premium Screen: Loaded ${recentScores.length} recent scores from storage');
       
       if (recentScores.isNotEmpty) {
         _latestScore = recentScores.first;
         _recentScores = recentScores;
+        
+        debugPrint('✅ Premium Screen: Latest score = ${_latestScore!.totalScore.toStringAsFixed(1)}, Date = ${_latestScore!.sleepDate}');
         
         // Calculate readiness score
         _readinessScore = _readinessCalculator.calculateReadiness(
           sleepScore: _latestScore,
           hrvData: null, // TODO: Add HRV data when available
         );
+        
+        debugPrint('✅ Premium Screen: Readiness score = ${_readinessScore!.totalScore.toStringAsFixed(1)}');
+      } else {
+        debugPrint('⚠️ Premium Screen: No sleep scores found in storage');
       }
     } catch (e) {
-      debugPrint('Error loading sleep data: $e');
+      debugPrint('❌ Premium Screen: Error loading sleep data: $e');
     }
 
     setState(() => _isLoading = false);

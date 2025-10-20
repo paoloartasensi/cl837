@@ -1,0 +1,94 @@
+<resources>
+    <string name="app_name">CL831</string>
+
+    <string name="loading">Loading&#8230;</string>
+
+    <string name="action_connect">Connect</string>
+    <string name="action_disconnect">Disconnect</string>
+
+    <string name="device_name">Device name:%s</string>
+    <string name="battery">Battery:%d%%</string>
+    <string name="sport">Step:%d \nDistance:%.1fm \nCalories:%.1fKCal</string>
+    <string name="heart_rate">Heart Rate:%d bpm</string>
+    <string name="accelerometer">Accelerometer X:%d Y:%d Z:%d</string>
+
+    <string name="no_ble">Device doesn\'t have BLE support!</string>
+    <string name="not_supported">The device does not have required services.</string>
+
+    <string name="no_required_permission">Permission denied</string>
+    <string name="scanner_title">Select device:</string>
+    <string name="scanner_empty">No device found</string>
+    <string name="scanner_action_scan">Scan</string>
+    <string name="scanner_action_cancel">Cancel</string>
+    <string name="scanner_subtitle_bonded">Bonded devices:</string>
+    <string name="scanner_subtitle_not_bonded">Available devices:</string>
+    <string name="scanner_permission_rationale">Since Android 6.0 Marshmallow system requires granting access to device\'s location in order to scan for Bluetooth Smart devices. Bluetooth beacons may be used to determine the phone\'s and user\'s location.</string>
+
+    <string name="permission_required">Permission required</string>
+    <string name="permission_location_info">Starting from Android 6.0 Marshmallow the system requires location permission in order to scan for Bluetooth LE devices.</string>
+
+    <string name="location_permission_title">Location permission required</string>
+    <string name="location_permission_info">From Android 6.0 Marshmallow onwards the application requires Location permission in order to scan for Bluetooth Low Energy devices.</string>
+
+
+    <string name="yes">确定</string>
+    <string name="no">取消</string>
+    <string name="not_available">n/a</string>
+    <string name="permission_sd_text">DFU升级需要获取升级文件</string>
+
+    <string name="dfu_feature_title">F-OTA</string>
+    <string name="dfu_service_title">DFU Proxy</string>
+    <string name="dfu_settings_title">DFU Settings</string>
+
+    <string name="dfu_file_name_label">文件名称:</string>
+    <string name="dfu_file_size_label">文件大小:</string>
+    <string name="dfu_file_status_label">文件状态:</string>
+    <string name="dfu_file_size_text">%d bytes</string>
+    <string name="dfu_file_status_ok">Ok</string>
+    <string name="dfu_file_status_no_file">文件加载失败</string>
+    <string name="dfu_file_status_invalid">未知文件</string>
+    <string name="dfu_file_status_error">读取文件错误</string>
+    <string name="dfu_file_status_invalid_message">请选择正确的升级文件</string>
+
+    <string name="dfu_action_upload">升级</string>
+    <string name="dfu_action_upload_cancel">取消</string>
+
+    <string name="dfu_settings_dfu">DFU options</string>
+    <string name="dfu_settings_dfu_packets_receipt_notification_label">Packets receipt notification procedure</string>
+    <string name="dfu_settings_dfu_number_of_packets_label">Number of packets</string>
+    <string name="dfu_settings_dfu_mbr_size">MBR size</string>
+    <string name="dfu_settings_dfu_mbr_size_title">MBR size (by default 4096 bytes)</string>
+    <string name="dfu_settings_dfu_keep_bond">Keep bond information</string>
+    <string name="dfu_settings_dfu_assume_dfu_mode">External MCU DFU</string>
+    <string name="dfu_settings_dfu_assume_dfu_mode_info">Check this switch to ON if you want to perform a DFU operation without jumping to the bootloader mode on a device
+		with a DFU implementation from SDK 6.1 or older. To achieve the same result on any newer implementation the DFU Version characteristic should return value other than 0x0100.</string>
+    <string name="dfu_settings_dfu_about">About DFU</string>
+    <string name="dfu_settings_dfu_about_summary">DFU documentation on Nordic\'s Developer Zone</string>
+
+    <string name="dfu_uploading_percentage_label">0%</string>
+    <string name="dfu_uploading_percentage">%d%%</string>
+    <string name="dfu_default_name">未知</string>
+    <string name="dfu_confirmation_dialog_title">应用升级中</string>
+    <string name="dfu_upload_dialog_cancel_message">确定取消升级?</string>
+    <string name="dfu_success">已升级成功</string>
+    <string name="dfu_aborted">升级已取消</string>
+    <string name="dfu_status_starting">升级开始...</string>
+    <string name="dfu_status_connecting">连接中...</string>
+    <string name="dfu_status_initializing">开始升级中...</string>
+    <string name="dfu_status_switching_to_dfu">升级中...</string>
+    <string name="dfu_status_validating">升级校验中...</string>
+    <string name="dfu_status_disconnecting">正在断开连接...</string>
+    <string name="dfu_status_completed">升级完成</string>
+    <string name="dfu_status_aborted">升级已停止</string>
+    <string name="dfu_status_uploading_part">文件上传进度:%d/%d</string>
+    <string name="dfu_status_uploading">正在升级中...</string>
+    <string name="dfu_status_foreground_content">升级中...</string>
+    <string name="dfu_status_aborting">升级停止中...</string>
+    <string name="dfu_status_error">\"升级失败: \"</string>
+    <string name="software_version">软件版本:%s</string>
+    <string name="firmware_version">固件版本:%s</string>
+    <string name="action_connected">设备已连接</string>
+    <string name="select_file">选择文件</string>
+    <string name="upload_file">上传文件</string>
+
+</resources>
