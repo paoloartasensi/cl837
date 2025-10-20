@@ -230,6 +230,9 @@ class ChileafExtendedService {
   // Sleep 0x31 CACHE - keeps last received sessions even after clear
   final List<SleepHistoryEntry> _sleepData31Cache = [];
   
+  // Legacy Sleep 0x05 accumulator - accumulates all packets
+  final List<SleepHistoryEntry> _legacySleepAccumulator = [];
+  
   // Sleep event streams (onset detection)
   final StreamController<SleepOnsetEvent> _sleepOnsetController =
       StreamController<SleepOnsetEvent>.broadcast();
@@ -1837,13 +1840,18 @@ class ChileafExtendedService {
         }
       }
       
-      debugPrint('✅ Sleep parsing complete: ${sleepSessions.length} sessions found');
+      debugPrint('✅ Sleep parsing complete: ${sleepSessions.length} sessions found in this packet');
       
       if (sleepSessions.isNotEmpty) {
-        _sleepHistoryController.add(sleepSessions);
-        debugPrint('📤 Sent ${sleepSessions.length} sleep sessions to UI stream');
+        // Add to accumulator instead of replacing
+        _legacySleepAccumulator.addAll(sleepSessions);
+        debugPrint('� Accumulated ${sleepSessions.length} sessions -> Total: ${_legacySleepAccumulator.length}');
+        
+        // Send the full accumulated list to UI
+        _sleepHistoryController.add(List.from(_legacySleepAccumulator));
+        debugPrint('📤 Sent ${_legacySleepAccumulator.length} total sleep sessions to UI stream');
       } else {
-        debugPrint('🌙 No valid sleep sessions found');
+        debugPrint('🌙 No valid sleep sessions found in this packet');
       }
     } else {
       debugPrint('❌ Expected cmd 3 for sleep data, got cmd $cmd');
@@ -4105,6 +4113,11 @@ class ChileafExtendedService {
   /// ⚠️ DEPRECATO: Usa requestSleepData31() per il protocollo ufficiale
   Future<void> requestOptimizedSleepHistory({bool force = false}) async {
     debugPrint('🔄😴 Requesting Sleep History with optimized checksum (LEGACY 0x05)...');
+    
+    // Clear accumulator before starting new download
+    _legacySleepAccumulator.clear();
+    debugPrint('🧹 Cleared legacy sleep accumulator');
+    
     await _historicalDataService.requestSleepHistoryEnhanced(force: force);
   }
 

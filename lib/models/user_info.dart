@@ -3,6 +3,8 @@
 /// User profile data stored on the CL837 device
 library;
 
+import 'package:flutter/foundation.dart';
+
 /// User Information
 class UserInfo {
   /// User age (years)
@@ -153,26 +155,34 @@ class UserInfo {
   }
 
   /// Create UserInfo from device response bytes
-  /// Protocol 0x03 response format:
-  /// [0xFF, length, 0x03, ecg_open, charging_info, battery, age, gender, weight, height, userId(5 bytes), checksum]
+  /// Protocol 0x03 response format (CORRECTED with real device data):
+  /// [0xFF, length, 0x03, ecg_open, charging_info, AGE, GENDER, WEIGHT, HEIGHT, 0x00, 0x00, 0x00, 0x00, USER_ID(1 byte), checksum]
+  /// ✅ VERIFIED: Byte 5=age, 6=gender, 7=weight, 8=height, 13=userId
   static UserInfo? fromDeviceResponse(List<int> data) {
     try {
-      if (data.length < 13) {
+      if (data.length < 15) {
         return null; // Not enough data
       }
 
-      // Skip: header(1) + length(1) + command(1) + ecg(1) + charging(1) + battery(1) = 6 bytes
-      int age = data[6];
-      int gender = data[7];
-      int weight = data[8];
-      int height = data[9];
+      // ✅ CORRECTED MAPPING (verified with real device):
+      // Skip: header(1) + length(1) + command(1) + ecg(1) + charging(1) = 5 bytes
+      int age = data[5];        // Byte 5 = AGE (0x28 = 40)
+      int genderRaw = data[6];  // Byte 6 = GENDER (0x01 = Male)
+      int weight = data[7];     // Byte 7 = WEIGHT (0x58 = 88 kg)
+      int height = data[8];     // Byte 8 = HEIGHT (0xB0 = 176 cm)
+      
+      // ✅ FIX: Validate gender - must be 0 (female) or 1 (male)
+      // If device sends invalid value, default to male (1)
+      int gender = (genderRaw == 0 || genderRaw == 1) ? genderRaw : 1;
+      
+      if (genderRaw != 0 && genderRaw != 1) {
+        debugPrint('⚠️ Invalid gender value from device: $genderRaw (using default: 1=Male)');
+      }
 
-      // User ID is 5 bytes (uint40) - big endian
-      int userId = (data[10] << 32) |
-          (data[11] << 24) |
-          (data[12] << 16) |
-          (data[13] << 8) |
-          data[14];
+      // ✅ CORRECTED: User ID is 1 byte at position 13 (0x4B = 75)
+      int userId = data[13];
+
+      debugPrint('📊 Parsed UserInfo: age=$age, gender=$gender, weight=$weight kg, height=$height cm, userId=$userId');
 
       return UserInfo(
         age: age,
@@ -182,6 +192,7 @@ class UserInfo {
         userId: userId,
       );
     } catch (e) {
+      debugPrint('❌ Error parsing UserInfo: $e');
       return null;
     }
   }

@@ -79,11 +79,13 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
 
     // Sleep History - Use sleepHistoryStream
     _service.sleepHistoryStream.listen((list) {
+      debugPrint('🏠 HOME SCREEN: Received ${list.length} sleep sessions from stream');
       if (mounted) {
         setState(() {
           _dataCount['sleep'] = list.length;
           _downloading['sleep'] = false;
-          _lastDownload['sleep'] = 'Now';
+          _lastDownload['sleep'] = '${list.length} sessions - Now';
+          debugPrint('🏠 HOME SCREEN: Updated UI with ${list.length} sleep sessions');
         });
       }
     });
@@ -222,14 +224,22 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
     });
 
     try {
+      debugPrint('🔗 Connecting to ${device.platformName}...');
+      
       // Connect with license parameter (required by flutter_blue_plus)
       await device.connect(mtu: null, license: License.free);
       
-      // Wait a bit for connection to stabilize
-      await Future.delayed(const Duration(milliseconds: 500));
+      debugPrint('✅ Connected, discovering services...');
       
-      // Discover services (this triggers ChileafExtendedService auto-configuration)
+      // Discover services
       await device.discoverServices();
+      
+      debugPrint('🔧 Configuring ChileafExtendedService...');
+      
+      // Initialize the service with the device (this sets up characteristics)
+      await _service.start(device);
+      
+      debugPrint('✅ Service configured successfully');
 
       _connectionSubscription = device.connectionState.listen((state) {
         if (mounted) {
@@ -247,6 +257,8 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
         _connectedDevice = device;
       });
 
+      debugPrint('📥 Requesting initial data...');
+      
       // Request initial data
       await _service.requestUserInfo();
       await _service.getBodyHealth();
@@ -258,6 +270,7 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
         );
       }
     } catch (e) {
+      debugPrint('❌ Connection error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('❌ Connection failed: $e')),
