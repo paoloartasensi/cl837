@@ -36,7 +36,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
   bool _isHRVTesting = false;
   bool _isTempTesting = false;
   bool _isResetting = false;
-  bool _isTestingLED = false;
+  // bool _isTestingLED = false;
 
   // Risultati dei test
   SpO2Data? _latestSpO2Result;
@@ -62,12 +62,44 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     super.initState();
     _setupDataStreams();
     
-    // Imposta il callback per il completamento automatico SpO2
-    widget.extendedService.setSpO2AutoCompleteCallback(() {
-      if (mounted) {
-        _onSpO2AutoCompleted();
-      }
-    });
+    // Imposta i callback per il nuovo sistema SpO2 (logica Android)
+    widget.extendedService.setSpO2Callbacks(
+      onValueReceived: (value) {
+        // Callback Android: str > "0" → pause = true
+        debugPrint('📊 SpO2 callback received: str="$value" (Android equivalent)');
+        
+        // Update UI automatico (equivalente a mTxtBloodOxygenValue.setText(str + "%"))
+        scheduleMicrotask(() {
+          if (mounted && _isSpo2Testing) {
+            // Il valore congelato viene aggiornato automaticamente dal stream
+            debugPrint('✅ SpO2 value triggered pause in Android logic: $value%');
+          }
+        });
+      },
+      onComplete: () {
+        // Usa scheduleMicrotask per evitare conflitti UI
+        scheduleMicrotask(() {
+          if (mounted) {
+            _onSpO2AutoCompleted();
+          }
+        });
+      },
+      onError: (error) {
+        debugPrint('SpO2 error: $error');
+        // Usa scheduleMicrotask per gli errori
+        scheduleMicrotask(() {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Errore SpO2: $error'), 
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        });
+      },
+    );
   }
 
   @override
@@ -193,38 +225,47 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     );
   }
 
-  // Gestisce il completamento automatico del test SpO2
+  // Gestisce il completamento automatico del test SpO2 (Android logic)
+  // Equivalente a: waveView.stop() + mBtnRetry.setVisibility(0)
   void _onSpO2AutoCompleted() {
+    // Evita doppi aggiornamenti di stato
+    if (!_isSpo2Testing) return;
+    
     setState(() => _isSpo2Testing = false);
     
-    if (mounted) {
-      // Usa il risultato congelato del test manuale
+    // Usa Future.microtask per evitare conflitti con altri setState
+    Future.microtask(() {
+      if (!mounted) return;
+      
+      // Usa il risultato congelato del test manuale (Android: pause = true)
       final spo2Value = _manualSpO2Result?.spo2Value;
       final quality = _manualSpO2Result?.signalQuality ?? 0;
       
       String message;
       if (spo2Value != null && spo2Value > 0) {
-        message = 'SpO2 WatchFit completato! Risultato: $spo2Value% (qualità segnale: $quality/15)';
+        message = 'SpO2 completato! Risultato: $spo2Value% (qualità segnale: $quality/100)';
       } else {
-        message = 'SpO2 WatchFit completato dopo 50 sec o con 2 letture valide. Controlla i risultati sopra.';
+        message = 'SpO2 completato dopo 60 sec o con lettura valida. Controlla i risultati sopra.';
       }
       
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(message),
           backgroundColor: Colors.green,
-          duration: const Duration(seconds: 5),
+          duration: const Duration(seconds: 4),
           action: _manualSpO2Result != null ? SnackBarAction(
             label: 'Dettagli',
             textColor: Colors.white,
             onPressed: () {
-              // Mostra dettagli del risultato
-              _showSpO2Details();
+              // Usa Future per evitare conflitti UI
+              Future.delayed(const Duration(milliseconds: 100), () {
+                if (mounted) _showSpO2Details();
+              });
             },
           ) : null,
         ),
       );
-    }
+    });
   }
 
   // Mostra i dettagli del risultato SpO2
@@ -542,7 +583,7 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
             // SpO2 Test Section
             _buildTestSection(
               title: 'Test SpO2 WatchFit',
-              subtitle: 'Saturazione ossigeno (50s max)',
+              subtitle: 'Saturazione ossigeno (comando 55 - alto livello)',
               icon: Icons.opacity,
               color: Colors.blue,
               isRunning: _isSpo2Testing,
@@ -617,23 +658,23 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: _isTestingLED ? null : _testLED,
-                          icon: _isTestingLED 
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(strokeWidth: 2),
-                                )
-                              : const Icon(Icons.lightbulb),
-                          label: Text(_isTestingLED ? 'Testing...' : 'Test LED SpO2'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue.shade400,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
-                      ),
+                      // Expanded(
+                      //   child: ElevatedButton.icon(
+                      //     onPressed: _isTestingLED ? null : _testLED,
+                      //     icon: _isTestingLED 
+                      //         ? const SizedBox(
+                      //             width: 16,
+                      //             height: 16,
+                      //             child: CircularProgressIndicator(strokeWidth: 2),
+                      //           )
+                      //         : const Icon(Icons.lightbulb),
+                      //     label: Text(_isTestingLED ? 'Testing...' : 'Test LED SpO2'),
+                      //     style: ElevatedButton.styleFrom(
+                      //       backgroundColor: Colors.blue.shade400,
+                      //       foregroundColor: Colors.white,
+                      //     ),
+                      //   ),
+                      // ),
                     ],
                   ),
                 ],
@@ -1034,8 +1075,13 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     );
   }
 
-  // Test Methods
+  // ===== TEST METHODS =====
+  
+  /// Avvia il test SpO2 usando comando di alto livello Android-compatibile
   Future<void> _startSpO2Test() async {
+    // Evita avvii multipli
+    if (_isSpo2Testing) return;
+    
     setState(() {
       _isSpo2Testing = true;
       // Reset del risultato congelato per nuovo test
@@ -1043,47 +1089,94 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     });
     
     try {
-      // Usa il comando che funziona per il LED rosso (come nel test LED)
-      await widget.extendedService.measureSpO2();
-      debugPrint('🩸 SpO2 measurement started - LED rosso dovrebbe accendersi');
+      // CRITICAL: Imposta i callback PRIMA di avviare la misurazione (come Android app)
+      widget.extendedService.setSpO2Callbacks(
+        onValueReceived: (spo2Value) {
+          debugPrint('🫁 SpO2 VALUE RECEIVED: $spo2Value%');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('SpO2 misurato: $spo2Value%'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+        onComplete: () {
+          debugPrint('✅ SpO2 measurement completed');
+          if (mounted) {
+            setState(() => _isSpo2Testing = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Misurazione SpO2 completata'),
+                backgroundColor: Colors.blue,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        },
+        onError: (error) {
+          debugPrint('❌ SpO2 measurement error: $error');
+          if (mounted) {
+            setState(() => _isSpo2Testing = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Errore SpO2: $error'),
+                backgroundColor: Colors.red,
+                duration: const Duration(seconds: 3),
+              ),
+            );
+          }
+        },
+      );
+      
+      // Invia comando di alto livello 55 (0x37) - il dispositivo gestisce autonomamente i LED
+      await widget.extendedService.startBloodOxygenMeasurement();
+      debugPrint('🩸 Completed');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test SpO2 WatchFit avviato - LED ROSSO acceso (50 sec max, stop anticipato con 2 letture valide)'),
+            content: Text('Test SpO2 avviato - Comando 55 inviato (dispositivo controlla LED autonomamente)'),
             backgroundColor: Colors.blue,
-            duration: Duration(seconds: 5),
+            duration: Duration(seconds: 4),
           ),
         );
       }
     } catch (e) {
       debugPrint('Error starting SpO2 test: $e');
+      setState(() => _isSpo2Testing = false);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Errore avvio SpO2: $e'),
             backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
           ),
         );
       }
-    } finally {
-      setState(() => _isSpo2Testing = false);
     }
   }
 
+  /// Ferma il test SpO2
   Future<void> _stopSpO2Test() async {
-    setState(() => _isSpo2Testing = true);
+    // Evita chiamate multiple
+    if (!_isSpo2Testing) return;
+    
+    setState(() => _isSpo2Testing = true); // Mostra loading durante stop
     
     try {
-      // Usa il comando ufficiale 0x37 per fermare la misurazione SpO2
-      await widget.extendedService.stopSpO2Measurement();
-      debugPrint('🛑 SpO2 measurement stopped with official command 0x37');
+      // Usa il nuovo sistema SpO2 per fermare la misurazione
+      await widget.extendedService.stopBloodOxygenMeasurement();
+      debugPrint('🛑 SpO2 measurement stopped using Android-compatible system');
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Test SpO2 fermato - LED rosso spento, ritorna verde'),
+            content: Text('Test SpO2 fermato manualmente'),
             backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
           ),
         );
       }
@@ -1268,34 +1361,6 @@ class _ManualTestsWidgetState extends State<ManualTestsWidget> {
     }
   }
 
-  Future<void> _testLED() async {
-    setState(() => _isTestingLED = true);
-    
-    try {
-      await widget.extendedService.testLEDFunctionality();
-      
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Test LED SpO2 completato - controlla il LED rosso sul dispositivo'),
-            backgroundColor: Colors.blue,
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Error testing LED: $e');
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Errore test LED: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    } finally {
-      setState(() => _isTestingLED = false);
-    }
-  }
 
   // Export dei dati di oggi
   // Export dei dati di oggi con salvataggio e condivisione

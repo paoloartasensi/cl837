@@ -1,8 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<navigation android:id="@id/main_navigation" app:startDestination="@id/nav_home"
-  xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto">
-    <fragment android:label="@string/menu_products" android:name="com.chileaf.fitness.ui.fragment.MainFragment" android:id="@id/nav_home" />
-    <activity android:label="@string/menu_devices" android:name="com.chileaf.fitness.ui.activity.DevicesActivity" android:id="@id/nav_devices" />
-    <fragment android:label="@string/menu_setting" android:name="com.chileaf.fitness.ui.fragment.SettingFragment" android:id="@id/nav_setting" />
-    <fragment android:label="@string/about" android:name="com.chileaf.fitness.ui.fragment.AboutFragment" android:id="@id/nav_about" />
-</navigation>

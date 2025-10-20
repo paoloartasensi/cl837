@@ -48,6 +48,8 @@ class OfficialChileafCommands {
   /// Equivalente al metodo setBloodOxygen(int mode) del SDK Android
   /// mode: 0 = stop, 1 = start measurement
   static List<int> setBloodOxygen(int mode) {
+    // not documented, the decompiled code suggests to send an array of 2 elements
+    // where the second is always 0
     return _buildCommand(0x37, [mode, 0]);
   }
   
@@ -174,6 +176,14 @@ class OfficialChileafCommands {
     return _buildCommand(0x5B, [0]);
   }
   
+  /// Modalità allarme HR - impostazione (0x58)
+  /// Equivalente al metodo setHeartAlertSwitch(BOOL isOn) del SDK iOS
+  /// isOn = true: Using age calculation method
+  /// isOn = false: Upper and lower limits (manual)
+  static List<int> setHeartRateAlarmMode(bool ageBasedMode) {
+    return _buildCommand(0x58, [ageBasedMode ? 1 : 0]);
+  }
+  
   // ===== 3D SENSOR COMMANDS =====
   
   /// Frequenza 3D - impostazione (0x74)
@@ -266,13 +276,29 @@ class OfficialChileafCommands {
     ];
   }
   
-  /// Calcola checksum semplice (somma di tutti i bytes)
+  /// Calcola checksum secondo il protocollo CL831 ufficiale
+  /// Basato sulla documentazione CL831 doc d Sonnet 4.1.md
+  /// 1. Somma tutti i bytes (head/length/command/data) 
+  /// 2. Sottrai da 0 (0 - sum)
+  /// 3. XOR con 0x3a
+  /// 4. Prendi gli 8 bit bassi
   static int _calculateChecksum(List<int> data) {
     int sum = 0;
+    
+    // Step 1: Calcola somma di head/length/command/data (tutti tranne checksum)
     for (int byte in data) {
       sum += byte;
     }
-    return sum & 0xFF;
+    
+    // Step 2: Sottrai da 0 
+    int temp = sum & 0xFF;
+    temp = (0 - temp) & 0xFF;
+    
+    // Step 3: XOR con 0x3a
+    temp ^= 0x3a;
+    
+    // Step 4: Prendi 8-bit bassi
+    return temp & 0xFF;
   }
   
   /// Converte comando in stringa hex per debug

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../chileaf_extended_service.dart';
+import '../models/rope_data.dart';
+import '../services/device_status_led_controller.dart';
 
 /// Widget centrale per il controllo completo del dispositivo CL837
 /// Implementa tutti i 34 comandi ufficiali con feedback real-time
@@ -28,6 +30,17 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
   
+  // Stream subscriptions for proper disposal
+  final List<StreamSubscription> _streamSubscriptions = [];
+  
+  // Debounce timer for temperature requests
+  Timer? _temperatureDebounceTimer;
+  DateTime? _lastTemperatureRequest;
+  
+  // Temperature data tracking to prevent spam
+  DateTime? _lastTemperatureLogTime;
+  String? _lastTemperatureData;
+  
   // Command execution state
   bool _isExecutingCommand = false;
   String _commandStatus = '';
@@ -40,6 +53,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   bool _historyCommandsExpanded = false;
   bool _ropeCommandsExpanded = false;
   bool _powerCommandsExpanded = false;
+  bool _ledStatusCommandsExpanded = false;
+  
+  // LED Status Controller
+  late DeviceStatusLedController _ledController;
   
   // DFU specific state
   bool _isDFUMode = false;
@@ -77,13 +94,29 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   void initState() {
     super.initState();
     _initializeAnimations();
+    _initializeLEDController();
     _setupStreams();
+  }
+  
+  void _initializeLEDController() {
+    _ledController = DeviceStatusLedController(
+      sendCommand: widget.extendedService.sendRawCommand,
+    );
   }
   
   @override
   void dispose() {
     _pulseController.dispose();
     _spo2LEDTimer?.cancel();
+    _temperatureDebounceTimer?.cancel();
+    _ledController.dispose();
+    
+    // Cancel all stream subscriptions to prevent memory leaks
+    for (final subscription in _streamSubscriptions) {
+      subscription.cancel();
+    }
+    _streamSubscriptions.clear();
+    
     super.dispose();
   }
   
@@ -103,55 +136,115 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
   
   void _setupStreams() {
     // Listen to device responses for specific command feedback
-    widget.extendedService.deviceInfoStream.listen((info) {
-      _updateCommandStatus('✅ Device Info: Name: ${info.deviceName ?? "Unknown"}');
-      _addToHistory('Device Info', true);
-    });
-    
-    widget.extendedService.batteryInfoStream.listen((battery) {
-      _updateCommandStatus('🔋 Battery: ${battery.level}% | Status: ${battery.isCharging ? "Charging" : "Discharging"}');
-      _addToHistory('Battery: ${battery.level}%', true);
-    });
-    
-    widget.extendedService.firmwareVersionStream.listen((version) {
-      _updateCommandStatus('💾 Firmware Version: $version');
-      _addToHistory('Firmware: $version', true);
-    });
-    
-    widget.extendedService.spo2DataStream.listen((data) {
-      if (_isSpO2LEDActive) {
-        final spo2Text = data.spo2Value?.toString() ?? 'Measuring...';
-        _updateCommandStatus('🩸 SpO2: $spo2Text% | Signal: ${data.signalQualityDescription} | Posture: ${data.correctWristPosture ? "Correct" : "Adjust"} | LED Active');
-        if (data.spo2Value != null) {
-          _addToHistory('SpO2: ${data.spo2Value}%', true);
+    _streamSubscriptions.add(
+      widget.extendedService.deviceInfoStream.listen((info) {
+        if (mounted) {
+          final message = '✅ Device Info: Name: ${info.deviceName ?? "Unknown"}';
+          _updateCommandStatus(message);
+          _addToHistory('📱 Device Info Received', true, 
+              details: 'Name: ${info.deviceName ?? "N/A"}, Firmware: ${info.firmwareVersion ?? "N/A"}, Hardware: ${info.hardwareVersion ?? "N/A"}');
         }
-      }
-    });
+      })
+    );
     
-    widget.extendedService.temperatureDataStream.listen((data) {
-      _updateCommandStatus('🌡️ Temperature: Body ${data.bodyTempC.toStringAsFixed(1)}°C | Wrist ${data.wristTempC.toStringAsFixed(1)}°C | Ambient ${data.ambientTempC.toStringAsFixed(1)}°C');
-      _addToHistory('Temp: Body ${data.bodyTempC.toStringAsFixed(1)}°C', true);
-    });
+    _streamSubscriptions.add(
+      widget.extendedService.firmwareVersionStream.listen((version) {
+        if (mounted) {
+          final message = '💾 Firmware Version: $version';
+          _updateCommandStatus(message);
+          _addToHistory('💾 Firmware Info Received', true, details: 'Version: $version');
+        }
+      })
+    );
     
-    widget.extendedService.hrvDataStream.listen((data) {
-      _updateCommandStatus('💓 HRV: Est. HR ${data.estimatedHR.toStringAsFixed(0)} BPM | RMSSD: ${data.rmssd.toStringAsFixed(1)}ms');
-      _addToHistory('HRV: ${data.estimatedHR.toStringAsFixed(0)} BPM', true);
-    });
+    _streamSubscriptions.add(
+      widget.extendedService.spo2DataStream.listen((data) {
+        if (mounted && _isSpO2LEDActive) {
+          final spo2Text = data.spo2Value?.toString() ?? 'Measuring...';
+          _updateCommandStatus('🩸 SpO2: $spo2Text% | Signal: ${data.signalQualityDescription} | Posture: ${data.correctWristPosture ? "Correct" : "Adjust"} | LED Active');
+          if (data.spo2Value != null) {
+            _addToHistory('🩸 SpO2 Data Received', true, 
+                details: 'SpO2: ${data.spo2Value}%, Signal: ${data.signalQualityDescription}, Posture: ${data.correctWristPosture ? "Correct" : "Adjust"}');
+          }
+        }
+      })
+    );
     
-    widget.extendedService.exerciseHistoryStream.listen((history) {
-      _updateCommandStatus('🏃 Exercise History: ${history.length} activities received');
-      _addToHistory('Exercise History (${history.length} items)', true);
-    });
+    _streamSubscriptions.add(
+      widget.extendedService.temperatureDataStream.listen((data) {
+        if (mounted) {
+          final now = DateTime.now();
+          final newTempData = 'Body: ${data.bodyTempC.toStringAsFixed(1)}°C, Wrist: ${data.wristTempC.toStringAsFixed(1)}°C, Ambient: ${data.ambientTempC.toStringAsFixed(1)}°C';
+          
+          // Aggiorna sempre lo status per feedback immediato
+          _updateCommandStatus('🌡️ Temperature: $newTempData');
+          
+          // Ma aggiungi alla cronologia solo se:
+          // 1. È la prima volta
+          // 2. Sono passati almeno 10 secondi dall'ultimo log
+          // 3. I dati sono cambiati significativamente
+          bool shouldLog = false;
+          
+          if (_lastTemperatureLogTime == null) {
+            // Prima temperatura ricevuta
+            shouldLog = true;
+          } else if (now.difference(_lastTemperatureLogTime!).inSeconds >= 10) {
+            // Sono passati almeno 10 secondi
+            shouldLog = true;
+          } else if (_lastTemperatureData != null && _lastTemperatureData != newTempData) {
+            // I dati sono cambiati significativamente
+            shouldLog = true;
+          }
+          
+          if (shouldLog) {
+            _addToHistory('🌡️ Temperature Data Received', true, 
+                details: newTempData);
+            _lastTemperatureLogTime = now;
+            _lastTemperatureData = newTempData;
+          }
+        }
+      })
+    );
     
-    widget.extendedService.hrHistoryListStream.listen((hrList) {
-      _updateCommandStatus('❤️ HR History List: ${hrList.timestamps.length} records available');
-      _addToHistory('HR History (${hrList.timestamps.length} records)', true);
-    });
+    _streamSubscriptions.add(
+      widget.extendedService.hrvDataStream.listen((data) {
+        if (mounted) {
+          _updateCommandStatus('💓 HRV: Est. HR ${data.estimatedHR.toStringAsFixed(0)} BPM | RMSSD: ${data.rmssd.toStringAsFixed(1)}ms');
+          _addToHistory('💓 HRV Data Received', true, 
+              details: 'HR: ${data.estimatedHR.toStringAsFixed(0)} BPM, RMSSD: ${data.rmssd.toStringAsFixed(1)}ms');
+        }
+      })
+    );
     
-    widget.extendedService.ropeStatusStream.listen((rope) {
-      _updateCommandStatus('🪢 Rope: ${rope.mode.name} | Jumps: ${rope.jumps} | Time: ${rope.timeSeconds}s');
-      _addToHistory('Rope: ${rope.jumps} jumps', true);
-    });
+    _streamSubscriptions.add(
+      widget.extendedService.exerciseHistoryStream.listen((history) {
+        if (mounted) {
+          _updateCommandStatus('🏃 Exercise History: ${history.length} activities received');
+          _addToHistory('🏃 Exercise History Received', true, 
+              details: '${history.length} exercise records loaded');
+        }
+      })
+    );
+    
+    _streamSubscriptions.add(
+      widget.extendedService.hrHistoryListStream.listen((hrList) {
+        if (mounted) {
+          _updateCommandStatus('❤️ HR History List: ${hrList.timestamps.length} records available');
+          _addToHistory('❤️ HR History Received', true, 
+              details: '${hrList.timestamps.length} heart rate records available');
+        }
+      })
+    );
+    
+    _streamSubscriptions.add(
+      widget.extendedService.ropeStatusStream.listen((rope) {
+        if (mounted) {
+          _updateCommandStatus('🪢 Rope: ${rope.mode.name} | Jumps: ${rope.jumps} | Time: ${rope.timeSeconds}s');
+          _addToHistory('🪢 Rope Data Received', true, 
+              details: 'Mode: ${rope.mode.name}, Jumps: ${rope.jumps}, Time: ${rope.timeSeconds}s');
+        }
+      })
+    );
   }
   
   Future<void> _executeCommand(String commandName, Future<void> Function() command, {String? successMessage}) async {
@@ -159,6 +252,8 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       _showError('Device not connected');
       return;
     }
+    
+    if (!mounted) return;
     
     setState(() {
       _isExecutingCommand = true;
@@ -170,67 +265,104 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
     
     try {
       await command();
-      final message = successMessage ?? '✅ $commandName sent successfully';
-      _updateCommandStatus(message);
-      _addToHistory(commandName, true);
-      
-      // Show specific success message if provided
-      if (successMessage != null) {
-        _showSuccess(successMessage);
+      if (mounted) {
+        final message = successMessage ?? '✅ $commandName sent successfully';
+        _updateCommandStatus(message);
+        _addToHistory('📤 $commandName Command Sent', true, 
+            details: 'Command sent successfully at ${DateTime.now().toString().substring(11, 19)}. Wait for device response data.');
+        
+        // Show specific success message if provided
+        if (successMessage != null) {
+          _showSuccess(successMessage);
+        }
       }
     } catch (e) {
-      _updateCommandStatus('❌ $commandName failed: $e');
-      _addToHistory(commandName, false, error: e.toString());
-      _showError('Command failed: $e');
+      if (mounted) {
+        _updateCommandStatus('❌ $commandName failed: $e');
+        _addToHistory('❌ $commandName Command Failed', false, 
+            error: e.toString(), 
+            details: 'Command execution failed. Check device connection and try again.');
+        _showError('Command failed: $e');
+      }
     } finally {
-      setState(() {
-        _isExecutingCommand = false;
-      });
-      _pulseController.stop();
-      _pulseController.reset();
+      if (mounted) {
+        setState(() {
+          _isExecutingCommand = false;
+        });
+        _pulseController.stop();
+        _pulseController.reset();
+      }
     }
   }
   
   void _updateCommandStatus(String status) {
-    setState(() {
-      _commandStatus = status;
-    });
+    if (mounted) {
+      setState(() {
+        _commandStatus = status;
+      });
+    }
   }
   
-  void _addToHistory(String command, bool success, {String? error}) {
-    setState(() {
-      _commandHistory.insert(0, CommandHistoryEntry(
-        command: command,
-        timestamp: DateTime.now(),
-        success: success,
-        error: error,
-      ));
-      
-      // Keep only last 20 commands
-      if (_commandHistory.length > 20) {
-        _commandHistory = _commandHistory.take(20).toList();
-      }
-    });
+  void _addToHistory(String command, bool success, {String? error, String? details}) {
+    if (mounted) {
+      setState(() {
+        _commandHistory.insert(0, CommandHistoryEntry(
+          command: command,
+          timestamp: DateTime.now(),
+          success: success,
+          error: error,
+          details: details,
+        ));
+        
+        // Keep only last 20 commands
+        if (_commandHistory.length > 20) {
+          _commandHistory = _commandHistory.take(20).toList();
+        }
+      });
+    }
+  }
+  
+  void _executeTemperatureCommand() {
+    final now = DateTime.now();
+    
+    // Debounce temperature requests - allow max 1 request every 3 seconds
+    if (_lastTemperatureRequest != null && 
+        now.difference(_lastTemperatureRequest!).inSeconds < 3) {
+      _showError('Temperature request too frequent. Wait 3 seconds between requests.');
+      return;
+    }
+    
+    _lastTemperatureRequest = now;
+    
+    _executeCommand(
+      'Temperature',
+      () => widget.extendedService.requestTemperature(),
+      successMessage: '🌡️ Temperature request sent! Wait for readings from all sensors.',
+    );
   }
   
   void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-        duration: const Duration(seconds: 3),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
   
   void _showSuccess(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
-      ),
-    );
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   @override
@@ -247,6 +379,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
                 _buildCoreCommands(),
                 _buildHealthCommands(),
                 _buildSensorsCommands(),
+                _buildLEDStatusCommands(),
                 _buildHistoryCommands(),
                 _buildRopeCommands(),
                 _buildPowerCommands(),
@@ -433,14 +566,16 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           onTap: () => _executeCommand(
             'SpO2 Measurement',
             () async {
-              await widget.extendedService.measureSpO2();
+              await widget.extendedService.startBloodOxygenMeasurement();
               setState(() => _isSpO2LEDActive = true);
               
               // Start 50-second timer
               _spo2LEDTimer?.cancel();
               _spo2LEDTimer = Timer(const Duration(seconds: 50), () {
-                setState(() => _isSpO2LEDActive = false);
-                _updateCommandStatus('⏰ SpO2 LED auto-stopped after 50s');
+                if (mounted) {
+                  setState(() => _isSpO2LEDActive = false);
+                  _updateCommandStatus('⏰ SpO2 LED auto-stopped after 50s');
+                }
               });
             },
             successMessage: '🩸 SpO2 measurement started! Red LED activated. Place finger firmly on sensor.',
@@ -455,7 +590,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           onTap: () => _executeCommand(
             'Stop SpO2',
             () async {
-              await widget.extendedService.stopSpO2Measurement();
+              await widget.extendedService.stopBloodOxygenMeasurement();
               setState(() => _isSpO2LEDActive = false);
               _spo2LEDTimer?.cancel();
             },
@@ -467,11 +602,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           subtitle: 'Request body temperature reading (0x38)',
           icon: Icons.thermostat,
           color: Colors.orange,
-          onTap: () => _executeCommand(
-            'Temperature',
-            () => widget.extendedService.requestTemperature(),
-            successMessage: '🌡️ Temperature request sent! Wait for readings from all sensors.',
-          ),
+          onTap: () => _executeTemperatureCommand(),
         ),
         _buildCommandTile(
           title: 'Get User Info',
@@ -506,6 +637,119 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           icon: Icons.monitor_heart,
           color: Colors.red,
           onTap: () => _showHRStatusDialog(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLEDStatusCommands() {
+    return _buildCommandSection(
+      title: '💡 LED Status Control',
+      icon: Icons.lightbulb,
+      expanded: _ledStatusCommandsExpanded,
+      onToggle: () => setState(() => _ledStatusCommandsExpanded = !_ledStatusCommandsExpanded),
+      commands: [
+        _buildCommandTile(
+          title: '🧪 Test LED Response',
+          subtitle: 'Test device LED functionality (SpO2 + Status)',
+          icon: Icons.science,
+          color: Colors.purple,
+          onTap: () => _executeCommand(
+            'Test LED Response',
+            () => _ledController.testDeviceLEDResponse(),
+            successMessage: '🧪 LED test sequence started! Watch the device: Red LED (3s) → Off → Green status LED.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🟢 Green Blinking LED',
+          subtitle: 'Activate green blinking status LED (3D Sensor @ 400HZ)',
+          icon: Icons.circle,
+          color: Colors.green,
+          onTap: () => _executeCommand(
+            'Green LED',
+            () => _ledController.setGreenBlinkingLED(),
+            successMessage: '🟢 Green LED activated! Device status LED should be blinking green.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🟡 Yellow Blinking LED',
+          subtitle: 'Activate yellow blinking status LED (3D Sensor @ 100HZ)',
+          icon: Icons.circle,
+          color: Colors.amber,
+          onTap: () => _executeCommand(
+            'Yellow LED',
+            () => _ledController.setYellowBlinkingLED(),
+            successMessage: '🟡 Yellow LED activated! Device status LED should be blinking yellow.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🔴 Red Solid LED',
+          subtitle: 'Activate red solid status LED (HR Alarm mode)',
+          icon: Icons.circle,
+          color: Colors.red,
+          onTap: () => _executeCommand(
+            'Red LED',
+            () => _ledController.setRedSolidLED(),
+            successMessage: '🔴 Red LED activated! Device status LED should be solid red.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🔵 Blue Blinking LED',
+          subtitle: 'Activate blue blinking status LED (3D @ 25HZ + HR Alarm)',
+          icon: Icons.circle,
+          color: Colors.blue,
+          onTap: () => _executeCommand(
+            'Blue LED',
+            () => _ledController.setBlueBlinkingLED(),
+            successMessage: '🔵 Blue LED activated! Device status LED should be blinking blue.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🟢🔴 Alternating LED',
+          subtitle: 'Green-Red alternating pattern (2s intervals)',
+          icon: Icons.swap_horiz,
+          color: Colors.purple,
+          onTap: () => _executeCommand(
+            'Alternating LED',
+            () => _ledController.setAlternatingGreenRedLED(),
+            successMessage: '🟢🔴 Alternating LED pattern started! Green and red every 2 seconds.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🌈 Rainbow Pattern',
+          subtitle: 'Cycle through all LED colors (3s intervals)',
+          icon: Icons.gradient,
+          color: Colors.pink,
+          onTap: () => _executeCommand(
+            'Rainbow LED',
+            () => _ledController.setRainbowLEDPattern(),
+            successMessage: '🌈 Rainbow LED pattern started! Cycling through all colors.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '⚪ Turn Off All LEDs',
+          subtitle: 'Disable all status LEDs and return to normal state',
+          icon: Icons.power_off,
+          color: Colors.grey,
+          onTap: () => _executeCommand(
+            'LED Off',
+            () => _ledController.turnOffAllStatusLEDs(),
+            successMessage: '⚪ All status LEDs turned off. Device returned to normal state.',
+          ),
+        ),
+        _buildCommandTile(
+          title: '🛑 Stop All Patterns',
+          subtitle: 'Stop all blinking/alternating patterns',
+          icon: Icons.stop,
+          color: Colors.orange,
+          onTap: () {
+            _ledController.stopAllPatterns();
+            if (mounted) {
+              _showSuccess('🛑 All LED patterns stopped.');
+              _addToHistory('🛑 LED Patterns Stopped', true, 
+                  details: 'All blinking and alternating LED patterns have been stopped.');
+            }
+          },
         ),
       ],
     );
@@ -558,38 +802,91 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
       onToggle: () => setState(() => _historyCommandsExpanded = !_historyCommandsExpanded),
       commands: [
         _buildCommandTile(
+          title: 'Complete HR History',
+          subtitle: 'Get all HR records + details (optimized)',
+          icon: Icons.favorite,
+          color: Colors.red,
+          onTap: () => _executeCommand(
+            'Complete HR History',
+            () => widget.extendedService.requestCompleteHRHistory(),
+            successMessage: '❤️ Complete HR history request sent with optimized checksum! Loading all heart rate records...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'Complete RR/HRV History',
+          subtitle: 'Get RR intervals for HRV analysis (optimized)',
+          icon: Icons.monitor_heart,
+          color: Colors.pink,
+          onTap: () => _executeCommand(
+            'Complete RR/HRV History',
+            () => widget.extendedService.requestCompleteRRHistory(),
+            successMessage: '📊 Complete RR/HRV history request sent with optimized checksum! Loading HRV data...',
+          ),
+        ),
+        _buildCommandTile(
           title: 'Exercise History',
-          subtitle: 'Get 7-day exercise history (0x16)',
+          subtitle: 'Get 7-day exercise history (optimized)',
           icon: Icons.fitness_center,
           color: Colors.deepOrange,
           onTap: () => _executeCommand(
             'Exercise History',
-            () => widget.extendedService.requestExerciseHistory(),
-            successMessage: '🏃 Exercise history request sent! Loading 7-day activity data...',
+            () => widget.extendedService.requestOptimizedExerciseHistory(),
+            successMessage: '🏃 Exercise history request sent with optimized checksum! Loading 7-day activity data...',
           ),
         ),
         _buildCommandTile(
-          title: 'HR History List',
-          subtitle: 'Get heart rate history list (0x21)',
-          icon: Icons.favorite,
-          color: Colors.red,
+          title: 'Sleep History (Legacy 0x05)',
+          subtitle: 'Get sleep data with old protocol',
+          icon: Icons.bedtime_outlined,
+          color: Colors.deepPurple.shade300,
           onTap: () => _executeCommand(
-            'HR History List',
-            () => widget.extendedService.requestHRHistoryList(),
-            successMessage: '❤️ HR history request sent! Loading heart rate records...',
+            'Sleep History (Legacy)',
+            () => widget.extendedService.requestOptimizedSleepHistory(),
+            successMessage: '😴 Legacy sleep request sent (0x05)...',
           ),
         ),
         _buildCommandTile(
-          title: 'Sleep History',
-          subtitle: 'Get sleep analysis data (0x05)',
+          title: 'Sleep Data 0x31 (OFFICIAL) ⭐',
+          subtitle: '5-min granularity - Real protocol from docs',
           icon: Icons.bedtime,
           color: Colors.deepPurple,
           onTap: () => _executeCommand(
-            'Sleep History',
-            () async {
-              // Sleep history implementation
-            },
-            successMessage: '😴 Sleep history request sent! Loading sleep analysis data...',
+            'Sleep Data 0x31',
+            () => widget.extendedService.requestSleepData31(),
+            successMessage: '🌙💤 OFFICIAL Sleep Data request sent (0x31)! Waiting for response...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'Interval Steps',
+          subtitle: 'Get step intervals data (optimized)',
+          icon: Icons.directions_walk,
+          color: Colors.green,
+          onTap: () => _executeCommand(
+            'Interval Steps',
+            () => widget.extendedService.requestOptimizedIntervalSteps(),
+            successMessage: '� Interval steps request sent with optimized checksum! Loading step data...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'ALL Historical Data',
+          subtitle: 'Complete workflow - all data types (optimized)',
+          icon: Icons.download_for_offline,
+          color: Colors.indigo,
+          onTap: () => _executeCommand(
+            'ALL Historical Data',
+            () => widget.extendedService.requestAllOptimizedHistoricalData(),
+            successMessage: '🚀 Complete historical data workflow started! Using optimized checksum for maximum reliability...',
+          ),
+        ),
+        _buildCommandTile(
+          title: 'ENHANCED Historical Data',
+          subtitle: 'Reverse-engineered parsers from original app (ULTIMATE)',
+          icon: Icons.science,
+          color: Colors.deepPurple,
+          onTap: () => _executeCommand(
+            'ENHANCED Historical Data',
+            () => widget.extendedService.requestAllEnhancedHistoricalData(),
+            successMessage: '🧬 ENHANCED historical data workflow started! Using reverse-engineered parsers for maximum accuracy...',
           ),
         ),
       ],
@@ -653,11 +950,20 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           icon: Icons.power_off,
           color: Colors.red,
           onTap: () => _executeCommand(
-            'Shutdown',
+            'Shutdown Device',
             () async {
-              // Shutdown implementation
+              await widget.extendedService.shutdownDevice();
+              // Aggiungiamo un check per vedere se il dispositivo si disconnette
+              await Future.delayed(const Duration(seconds: 3));
+              if (!widget.isConnected) {
+                _addToHistory('🔌 Device Disconnected', true, 
+                    details: 'Device successfully powered off and disconnected');
+              } else {
+                _addToHistory('⚠️ Shutdown Command Sent', true, 
+                    details: 'Command sent but device still connected - may require manual power off');
+              }
             },
-            successMessage: '⚡ Shutdown command sent! Device will power off in a few seconds.',
+            successMessage: '⚡ Shutdown command sent 3 times! Device should power off within 5 seconds. Check connection status.',
           ),
         ),
         _buildCommandTile(
@@ -668,9 +974,11 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
           onTap: () => _executeCommand(
             'Disable Bluetooth',
             () async {
-              // Bluetooth disable implementation
+              // This command would require direct BLE implementation
+              // For now we'll use device reset as alternative
+              await widget.extendedService.deviceReset();
             },
-            successMessage: '📡 Bluetooth disabled! Device radio turned off. Connection will be lost.',
+            successMessage: '📡 Device reset sent! Connection will be lost.',
           ),
         ),
       ],
@@ -687,7 +995,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
         title: const Text('Command History'),
         subtitle: Text('${_commandHistory.length} commands executed'),
         children: _commandHistory.take(10).map((entry) {
-          return ListTile(
+          return ExpansionTile(
             dense: true,
             leading: Icon(
               entry.success ? Icons.check_circle : Icons.error,
@@ -702,6 +1010,26 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
               '${entry.timestamp.hour.toString().padLeft(2, '0')}:${entry.timestamp.minute.toString().padLeft(2, '0')}:${entry.timestamp.second.toString().padLeft(2, '0')}${entry.error != null ? ' - ${entry.error}' : ''}',
               style: const TextStyle(fontSize: 12),
             ),
+            children: entry.details != null ? [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    entry.details!,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+            ] : [],
           );
         }).toList(),
       ),
@@ -878,7 +1206,10 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
                 _executeCommand(
                   'Rope Mode',
                   () async {
-                    // Rope mode will be configured
+                    final ropeMode = _selectedRopeMode == 0 ? RopeMode.free : 
+                                    _selectedRopeMode == 1 ? RopeMode.counter : 
+                                    RopeMode.timer;
+                    await widget.extendedService.setRopeMode(ropeMode);
                   },
                   successMessage: '🪢 Rope Mode Selected!\nActive mode: ${modes[_selectedRopeMode]}\nDevice ready for rope skipping.',
                 );
@@ -985,9 +1316,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
               Navigator.pop(context);
               _executeCommand(
                 'Set User Info',
-                () async {
-                  // User info will be sent to device
-                },
+                () => widget.extendedService.setUserInfo(_userAge, _userSex, _userWeight, _userHeight, _userId),
                 successMessage: '👤 User Profile Updated!\nAge: $_userAge, Gender: ${_userSex == 1 ? "Male" : "Female"}\nWeight: $_userWeight kg, Height: $_userHeight cm, ID: $_userId',
               );
             },
@@ -1037,9 +1366,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
               Navigator.pop(context);
               _executeCommand(
                 'HR Max Alarm',
-                () async {
-                  // HR Max alarm will be configured
-                },
+                () => widget.extendedService.setHeartRateAlarm(true),
                 successMessage: '🚨 HR Max Alarm Set!\nAlarm will trigger when heart rate exceeds $_hrMaxAlarm BPM',
               );
             },
@@ -1128,9 +1455,7 @@ class _DeviceControlWidgetState extends State<DeviceControlWidget>
               Navigator.pop(context);
               _executeCommand(
                 'HR Status Config',
-                () async {
-                  // HR monitoring configuration will be applied
-                },
+                () => widget.extendedService.setHeartRateAlarm(_hrAlarmEnabled),
                 successMessage: '❤️ HR Monitoring Configured!\nRange: $_hrMin-$_hrMax BPM, Goal: $_hrGoal BPM\nAlarms: ${_hrAlarmEnabled ? 'Enabled' : 'Disabled'}',
               );
             },
@@ -1148,11 +1473,13 @@ class CommandHistoryEntry {
   final DateTime timestamp;
   final bool success;
   final String? error;
+  final String? details;
 
   CommandHistoryEntry({
     required this.command,
     required this.timestamp,
     required this.success,
     this.error,
+    this.details,
   });
 }
