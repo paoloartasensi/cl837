@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../chileaf_extended_service.dart';
 import '../models/sport_health_data.dart';
 import '../models/sensor_data.dart';
+import '../models/user_info.dart';
 
 /// Advanced Features Test Screen
 /// 
@@ -48,6 +49,10 @@ class _AdvancedFeaturesTestScreenState
 
   // Button Presses
   final List<SingleButtonPress> _buttonPresses = [];
+
+  // User Info
+  UserInfo? _userInfo;
+  DeviceStatus? _deviceStatus;
 
   @override
   void initState() {
@@ -127,6 +132,24 @@ class _AdvancedFeaturesTestScreenState
         });
       }
     });
+
+    // User Info
+    widget.service.userInfoStream.listen((userInfo) {
+      if (mounted) {
+        setState(() {
+          _userInfo = userInfo;
+        });
+      }
+    });
+
+    // Device Status
+    widget.service.deviceStatusStream.listen((status) {
+      if (mounted) {
+        setState(() {
+          _deviceStatus = status;
+        });
+      }
+    });
   }
 
   @override
@@ -139,6 +162,8 @@ class _AdvancedFeaturesTestScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          _buildUserInfoSection(),
+          const SizedBox(height: 24),
           _buildSportHealthSection(),
           const SizedBox(height: 24),
           _buildHeartRateManagementSection(),
@@ -511,6 +536,214 @@ class _AdvancedFeaturesTestScreenState
         ),
       ),
     );
+  }
+
+  Widget _buildUserInfoSection() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              '👤 User Info & Device Status',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 12),
+
+            // Device Status
+            if (_deviceStatus != null) ...[
+              const Text(
+                'Device Status:',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              _buildDataRow('Battery', '${_deviceStatus!.batteryLevel}%'),
+              _buildDataRow('Charging', _deviceStatus!.chargingStatusString),
+              _buildDataRow('ECG', _deviceStatus!.ecgOpen ? 'Open' : 'Closed'),
+              const Divider(height: 24),
+            ],
+
+            // User Info
+            if (_userInfo != null) ...[
+              const Text(
+                'User Profile:',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              _buildDataRow('Age', '${_userInfo!.age} years'),
+              _buildDataRow('Gender', _userInfo!.genderString),
+              _buildDataRow('Weight', '${_userInfo!.weight} kg'),
+              _buildDataRow('Height', '${_userInfo!.height} cm'),
+              _buildDataRow('User ID', _userInfo!.userId.toString()),
+              const Divider(height: 24),
+
+              // Health Insights
+              const Text(
+                'Health Insights:',
+                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              _buildDataRow('BMI', _userInfo!.bmi.toStringAsFixed(1)),
+              _buildDataRow('BMI Category', _userInfo!.bmiCategory),
+              _buildDataRow(
+                'Ideal Weight',
+                '${_userInfo!.idealWeightRange['min']!.toStringAsFixed(1)} - ${_userInfo!.idealWeightRange['max']!.toStringAsFixed(1)} kg',
+              ),
+              _buildDataRow('Max HR', '${_userInfo!.maxHeartRate} BPM'),
+              _buildDataRow(
+                'Fat Burn Zone',
+                '${_userInfo!.heartRateZones['fatBurn']}-${_userInfo!.heartRateZones['aerobic']} BPM',
+              ),
+              _buildDataRow(
+                'Cardio Zone',
+                '${_userInfo!.heartRateZones['aerobic']}-${_userInfo!.heartRateZones['anaerobic']} BPM',
+              ),
+              _buildDataRow(
+                'Peak Zone',
+                '${_userInfo!.heartRateZones['anaerobic']}-${_userInfo!.heartRateZones['maximum']} BPM',
+              ),
+            ] else
+              const Text('No data yet', style: TextStyle(color: Colors.grey)),
+
+            const SizedBox(height: 12),
+
+            // Control buttons
+            Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => widget.service.requestUserInfo(),
+                    icon: const Icon(Icons.download),
+                    label: const Text('Get User Info'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => _showSetUserInfoDialog(),
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Set User Info'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showSetUserInfoDialog() async {
+    final ageController = TextEditingController(text: _userInfo?.age.toString() ?? '30');
+    final weightController = TextEditingController(text: _userInfo?.weight.toString() ?? '70');
+    final heightController = TextEditingController(text: _userInfo?.height.toString() ?? '170');
+    final userIdController = TextEditingController(text: _userInfo?.userId.toString() ?? '12345');
+    int gender = _userInfo?.gender ?? 1;
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Set User Info'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: ageController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Age (years)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  value: gender,
+                  decoration: const InputDecoration(
+                    labelText: 'Gender',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 0, child: Text('Female')),
+                    DropdownMenuItem(value: 1, child: Text('Male')),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setDialogState(() => gender = value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: weightController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Weight (kg)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: heightController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Height (cm)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: userIdController,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'User ID (0-1099511627775)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Set'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result == true) {
+      final age = int.tryParse(ageController.text) ?? 30;
+      final weight = int.tryParse(weightController.text) ?? 70;
+      final height = int.tryParse(heightController.text) ?? 170;
+      final userId = int.tryParse(userIdController.text) ?? 12345;
+
+      await widget.service.setUserInfo(
+        age,
+        gender,
+        weight,
+        height,
+        userId,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User info sent to device')),
+        );
+      }
+    }
+
+    ageController.dispose();
+    weightController.dispose();
+    heightController.dispose();
+    userIdController.dispose();
   }
 
   Widget _buildDataRow(String label, String value) {
