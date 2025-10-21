@@ -2217,6 +2217,9 @@ class ChileafExtendedService {
     debugPrint('🔗 Merged ${_sleepData31Buffer.length} packets into ONE session');
     debugPrint('📊 Total activity indices: ${allActivityIndices.length} (${allActivityIndices.length * 5} minutes)');
     
+    // 🔍 STAMPA DETTAGLIATA come nell'app Android (per debugging)
+    _printDetailedSleepData(sessionTimestamp, allActivityIndices);
+    
     // Crea UNA SOLA sessione con TUTTI gli activity indices
     SleepHistoryEntry sessionEntry = SleepHistoryEntry(
       timestamp: sessionTimestamp,
@@ -2247,6 +2250,98 @@ class ChileafExtendedService {
     _sleepData31Buffer.clear();
     _isSleepData31Active = false;
     debugPrint('🧹 Current session buffer cleared - ready for next session');
+  }
+
+  /// Stampa i dati del sonno in formato dettagliato come l'app Android
+  /// Replica il formato di HistorySleepActivity.java per facilitare il confronto
+  void _printDetailedSleepData(DateTime baseTimestamp, List<int> actions) {
+    debugPrint('');
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('📋 DETAILED SLEEP DATA (Android App Format)');
+    debugPrint('═══════════════════════════════════════════════════════');
+    
+    int zeroIndex = 0;
+    List<int> pendingZeroIndices = [];
+    List<DateTime> pendingZeroTimes = [];
+    
+    for (int i = 0; i < actions.length; i++) {
+      int action = actions[i];
+      DateTime utc = baseTimestamp.add(Duration(minutes: i * 5));
+      String utcStr = utc.toLocal().toString().substring(0, 19);
+      
+      if (action > 20) {
+        // Wide awake - processa zeri accumulati
+        if (zeroIndex >= 3) {
+          // Deep sleep
+          for (int j = 0; j < pendingZeroTimes.length; j++) {
+            String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+            debugPrint('utc:$timeStr');
+            debugPrint('action Index: deep Sleep');
+          }
+        } else if (zeroIndex > 0) {
+          // Light sleep
+          for (int j = 0; j < pendingZeroTimes.length; j++) {
+            String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+            debugPrint('utc:$timeStr');
+            debugPrint('action Index: light sleep');
+          }
+        }
+        zeroIndex = 0;
+        pendingZeroIndices.clear();
+        pendingZeroTimes.clear();
+        // Not sleeping
+        debugPrint('utc:$utcStr');
+        debugPrint('action Index: not Sleep');
+        
+      } else if (action <= 20 && action > 0) {
+        // Light sleep - processa zeri accumulati
+        if (zeroIndex >= 3) {
+          // Deep sleep
+          for (int j = 0; j < pendingZeroTimes.length; j++) {
+            String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+            debugPrint('utc:$timeStr');
+            debugPrint('action Index: deep Sleep');
+          }
+        } else if (zeroIndex > 0) {
+          // Light sleep
+          for (int j = 0; j < pendingZeroTimes.length; j++) {
+            String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+            debugPrint('utc:$timeStr');
+            debugPrint('action Index: light sleep');
+          }
+        }
+        zeroIndex = 0;
+        pendingZeroIndices.clear();
+        pendingZeroTimes.clear();
+        // Light sleep
+        debugPrint('utc:$utcStr');
+        debugPrint('action Index: light sleep');
+        
+      } else {
+        // action == 0: accumula
+        zeroIndex++;
+        pendingZeroIndices.add(i);
+        pendingZeroTimes.add(utc);
+      }
+    }
+    
+    // Processa eventuali zeri finali
+    if (zeroIndex >= 3) {
+      for (int j = 0; j < pendingZeroTimes.length; j++) {
+        String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+        debugPrint('utc:$timeStr');
+        debugPrint('action Index: deep Sleep');
+      }
+    } else if (zeroIndex > 0) {
+      for (int j = 0; j < pendingZeroTimes.length; j++) {
+        String timeStr = pendingZeroTimes[j].toLocal().toString().substring(0, 19);
+        debugPrint('utc:$timeStr');
+        debugPrint('action Index: light sleep');
+      }
+    }
+    
+    debugPrint('═══════════════════════════════════════════════════════');
+    debugPrint('');
   }
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====

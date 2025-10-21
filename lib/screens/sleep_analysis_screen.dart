@@ -396,9 +396,11 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
                       reservedSize: 40,
                       interval: (_selectedSession!.actions.length / 6).ceil().toDouble(),
                       getTitlesWidget: (value, meta) {
-                        final minutes = value.toInt();
-                        final hours = minutes ~/ 60;
-                        final mins = minutes % 60;
+                        // Ogni indice = 5 minuti (300 secondi)
+                        final index = value.toInt();
+                        final totalMinutes = index * 5;
+                        final hours = totalMinutes ~/ 60;
+                        final mins = totalMinutes % 60;
                         return Padding(
                           padding: const EdgeInsets.only(top: 8),
                           child: Text(
@@ -448,9 +450,11 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((LineBarSpot touchedSpot) {
-                        final minutes = touchedSpot.x.toInt();
-                        final hours = minutes ~/ 60;
-                        final mins = minutes % 60;
+                        // Ogni indice = 5 minuti
+                        final index = touchedSpot.x.toInt();
+                        final totalMinutes = index * 5;
+                        final hours = totalMinutes ~/ 60;
+                        final mins = totalMinutes % 60;
                         final phase = _getSleepPhaseText(touchedSpot.y);
                         
                         return LineTooltipItem(
@@ -480,31 +484,68 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
     final actions = _selectedSession!.actions;
     final spots = <FlSpot>[];
     
-    int consecutiveZeros = 0;
+    int zeroIndex = 0;
+    List<int> pendingZeroIndices = []; // Tiene traccia degli indici degli zeri accumulati
     
     for (int i = 0; i < actions.length; i++) {
       final action = actions[i];
-      double yValue;
       
-      if (action == 0) {
-        consecutiveZeros++;
-        if (consecutiveZeros >= 3) {
-          yValue = 0; // Sonno profondo
-        } else {
-          yValue = 1; // Sonno leggero
+      if (action > 20) {
+        // Wide awake - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          for (int idx in pendingZeroIndices) {
+            spots.add(FlSpot(idx.toDouble(), 0)); // Deep sleep
+          }
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          for (int idx in pendingZeroIndices) {
+            spots.add(FlSpot(idx.toDouble(), 1)); // Light sleep
+          }
         }
-      } else {
-        consecutiveZeros = 0;
+        zeroIndex = 0;
+        pendingZeroIndices.clear();
+        // Segna questo punto come sveglio
+        spots.add(FlSpot(i.toDouble(), 2)); // Awake
         
-        if (action > 20) {
-          yValue = 2; // Sveglio
-        } else {
-          yValue = 1; // Sonno leggero
+      } else if (action <= 20 && action > 0) {
+        // Light sleep - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          for (int idx in pendingZeroIndices) {
+            spots.add(FlSpot(idx.toDouble(), 0)); // Deep sleep
+          }
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          for (int idx in pendingZeroIndices) {
+            spots.add(FlSpot(idx.toDouble(), 1)); // Light sleep
+          }
         }
+        zeroIndex = 0;
+        pendingZeroIndices.clear();
+        // Segna questo punto come light sleep
+        spots.add(FlSpot(i.toDouble(), 1)); // Light sleep
+        
+      } else {
+        // action == 0: accumula
+        zeroIndex++;
+        pendingZeroIndices.add(i);
       }
-      
-      spots.add(FlSpot(i.toDouble(), yValue));
     }
+    
+    // Processa gli eventuali zeri finali
+    if (zeroIndex >= 3) {
+      for (int idx in pendingZeroIndices) {
+        spots.add(FlSpot(idx.toDouble(), 0)); // Deep sleep
+      }
+    } else if (zeroIndex > 0) {
+      for (int idx in pendingZeroIndices) {
+        spots.add(FlSpot(idx.toDouble(), 1)); // Light sleep
+      }
+    }
+    
+    // Ordina i punti per indice X (dovrebbero essere già ordinati, ma per sicurezza)
+    spots.sort((a, b) => a.x.compareTo(b.x));
     
     return spots;
   }

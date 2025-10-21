@@ -84,39 +84,54 @@ class SleepHistoryEntry {
   
   /// Calcola le fasi del sonno basandosi sui dati degli indici di azione
   /// IMPORTANTE: Ogni action index = 5 MINUTI (non 1 minuto!)
+  /// Implementazione UFFICIALE da HistorySleepActivity.java del SDK
   SleepPhases calculateSleepPhases() {
     int lightSleepBlocks = 0;  // Contatore in blocchi da 5 min
     int deepSleepBlocks = 0;   // Contatore in blocchi da 5 min
     int awakeBlocks = 0;       // Contatore in blocchi da 5 min
     
-    int consecutiveZeros = 0;
-    bool inDeepSleep = false;
+    int zeroIndex = 0;  // Conta gli zeri consecutivi accumulati
     
     for (int i = 0; i < actions.length; i++) {
       int action = actions[i];
       
-      if (action == 0) {
-        consecutiveZeros++;
-        if (consecutiveZeros >= 3 && !inDeepSleep) {
-          inDeepSleep = true;
-          // Convert previous light sleep to deep sleep
-          lightSleepBlocks = lightSleepBlocks > 3 ? lightSleepBlocks - 3 : 0;
-          deepSleepBlocks += 3;
-        } else if (inDeepSleep) {
-          deepSleepBlocks++;
-        } else {
-          lightSleepBlocks++;
+      if (action > 20) {
+        // Wide awake - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          deepSleepBlocks += zeroIndex;
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          lightSleepBlocks += zeroIndex;
         }
-      } else {
-        consecutiveZeros = 0;
-        inDeepSleep = false;
+        zeroIndex = 0;
+        // Segna questo blocco come sveglio
+        awakeBlocks++;
         
-        if (action > 20) {
-          awakeBlocks++;
-        } else if (action <= 20) {
-          lightSleepBlocks++;
+      } else if (action <= 20 && action > 0) {
+        // Light sleep - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          deepSleepBlocks += zeroIndex;
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          lightSleepBlocks += zeroIndex;
         }
+        zeroIndex = 0;
+        // Segna questo blocco come light sleep
+        lightSleepBlocks++;
+        
+      } else {
+        // action == 0: accumula, decideremo dopo
+        zeroIndex++;
       }
+    }
+    
+    // Processa gli eventuali zeri finali
+    if (zeroIndex >= 3) {
+      deepSleepBlocks += zeroIndex;
+    } else if (zeroIndex > 0) {
+      lightSleepBlocks += zeroIndex;
     }
     
     // ✅ Converti blocchi da 5 minuti in minuti totali
@@ -149,39 +164,54 @@ class SleepData31 {
   
   /// Calcola le fasi del sonno basandosi sui dati degli indici di attività
   /// Ogni indice rappresenta 5 minuti
+  /// Implementazione UFFICIALE da HistorySleepActivity.java del SDK
   SleepPhases31 calculateSleepPhases() {
     int lightSleepIntervals = 0;
     int deepSleepIntervals = 0;
     int awakeIntervals = 0;
     
-    int consecutiveZeros = 0;
-    bool inDeepSleep = false;
+    int zeroIndex = 0;  // Conta gli zeri consecutivi accumulati
     
     for (int i = 0; i < activityIndices.length; i++) {
       int activityIndex = activityIndices[i];
       
-      if (activityIndex == 0) {
-        consecutiveZeros++;
-        if (consecutiveZeros >= 3 && !inDeepSleep) {
-          inDeepSleep = true;
-          // Converti i precedenti intervalli leggeri in profondo
-          lightSleepIntervals = lightSleepIntervals > 3 ? lightSleepIntervals - 3 : 0;
-          deepSleepIntervals += 3;
-        } else if (inDeepSleep) {
-          deepSleepIntervals++;
-        } else {
-          lightSleepIntervals++;
+      if (activityIndex > 20) {
+        // Wide awake - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          deepSleepIntervals += zeroIndex;
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          lightSleepIntervals += zeroIndex;
         }
-      } else {
-        consecutiveZeros = 0;
-        inDeepSleep = false;
+        zeroIndex = 0;
+        // Segna questo intervallo come sveglio
+        awakeIntervals++;
         
-        if (activityIndex > 20) {
-          awakeIntervals++;
-        } else if (activityIndex <= 20) {
-          lightSleepIntervals++;
+      } else if (activityIndex <= 20 && activityIndex > 0) {
+        // Light sleep - prima processa gli zeri accumulati
+        if (zeroIndex >= 3) {
+          // Gli zeri accumulati erano deep sleep
+          deepSleepIntervals += zeroIndex;
+        } else if (zeroIndex > 0) {
+          // Gli zeri accumulati erano light sleep
+          lightSleepIntervals += zeroIndex;
         }
+        zeroIndex = 0;
+        // Segna questo intervallo come light sleep
+        lightSleepIntervals++;
+        
+      } else {
+        // activityIndex == 0: accumula, decideremo dopo
+        zeroIndex++;
       }
+    }
+    
+    // Processa gli eventuali zeri finali
+    if (zeroIndex >= 3) {
+      deepSleepIntervals += zeroIndex;
+    } else if (zeroIndex > 0) {
+      lightSleepIntervals += zeroIndex;
     }
     
     // Converti intervalli di 5 minuti in minuti totali
