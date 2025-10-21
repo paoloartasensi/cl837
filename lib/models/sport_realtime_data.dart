@@ -20,10 +20,15 @@ class SportRealtimeData {
     // Format from iOS SDK (HeartBLEDevice.m line 417-439):
     // buffer_[2] == 0x15 (Sport Real-time Data)
     // Hex format: FF LL 15 SSSSSS DDDDDD CCCCCC [XX]
-    // - SSSSSS: Steps (6 hex chars, 3 bytes little-endian)
-    // - DDDDDD: Distance in cm (6 hex chars, 3 bytes little-endian) / 100 = meters  
-    // - CCCCCC: Calories * 10 (6 hex chars, 3 bytes little-endian) / 10 = kcal
+    // - SSSSSS: Steps (6 hex chars = 3 bytes BIG-ENDIAN)
+    // - DDDDDD: Distance in cm (6 hex chars = 3 bytes BIG-ENDIAN) / 100 = meters  
+    // - CCCCCC: Calories * 10 (6 hex chars = 3 bytes BIG-ENDIAN) / 10 = kcal
     // - [XX]: Optional checksum byte
+    // 
+    // IMPORTANT: iOS SDK reads as hex string and parses as integers,
+    // which means the bytes are in BIG-ENDIAN order (most significant byte first)
+    // 
+    // Example: 0x00 0x02 0x94 = 0x000294 = 660 (not 9699840 if read as little-endian!)
     // 
     // Actual device sends 13 bytes: FF 0D 15 + 9 data bytes + checksum
     // Minimum required: FF LL 15 + 9 data bytes = 12 bytes (without checksum)
