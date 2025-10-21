@@ -13,6 +13,7 @@ import 'dart:async';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 import '../models/sleep_score.dart';
+import '../models/hrv_data.dart';
 import '../services/sleep_history_manager.dart';
 import '../services/readiness_calculator.dart';
 import '../widgets/sleep_score_dashboard.dart';
@@ -39,17 +40,20 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   
   late TabController _tabController;
   StreamSubscription? _sleepDataSubscription;
+  StreamSubscription? _hrvDataSubscription;
   
   SleepScore? _latestScore;
   ReadinessScore? _readinessScore;
   List<SleepScore> _recentScores = [];
   bool _isLoading = true;
+  HRVData? _latestHRV; // Latest HRV data for readiness calculation
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 3, vsync: this);
     _setupSleepDataListener();
+    _setupHRVListener();
     _loadSleepData();
   }
 
@@ -57,7 +61,40 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   void dispose() {
     _tabController.dispose();
     _sleepDataSubscription?.cancel();
+    _hrvDataSubscription?.cancel();
     super.dispose();
+  }
+
+  /// Setup listener for HRV data
+  void _setupHRVListener() {
+    _hrvDataSubscription = widget.chileafService.hrvDataStream.listen((hrvData) {
+      if (mounted) {
+        setState(() {
+          _latestHRV = hrvData;
+          debugPrint('💓 Premium Screen: Updated HRV data - RMSSD: ${hrvData.rmssd.toStringAsFixed(1)}ms');
+        });
+        // Recalculate readiness with new HRV data
+        if (_latestScore != null) {
+          _updateReadinessScore();
+        }
+      }
+    });
+  }
+
+  /// Update readiness score with latest data
+  void _updateReadinessScore() {
+    if (_latestScore == null) return;
+    
+    setState(() {
+      _readinessScore = _readinessCalculator.calculateReadiness(
+        sleepScore: _latestScore,
+        hrvData: _latestHRV, // ✅ Now using actual HRV data when available
+      );
+      
+      if (_latestHRV != null) {
+        debugPrint('✅ Premium Screen: Readiness updated with HRV - Score: ${_readinessScore!.totalScore.toStringAsFixed(1)}');
+      }
+    });
   }
 
   /// Setup listener for real-time sleep data from BLE
@@ -135,6 +172,29 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     }
   }
 
+  /// Calculate number of awakenings from sleep data
+  /// An awakening is when we transition from sleep (deep/light) to awake state
+  int _calculateAwakenings(List<int> activityIndices) {
+    if (activityIndices.isEmpty) return 0;
+    
+    int awakenings = 0;
+    bool wasSleeping = false;
+    
+    for (final index in activityIndices) {
+      final isAwake = index == 2;
+      final isSleeping = index == 0 || index == 1;
+      
+      // Count transition from sleeping to awake
+      if (wasSleeping && isAwake) {
+        awakenings++;
+      }
+      
+      wasSleeping = isSleeping;
+    }
+    
+    return awakenings;
+  }
+
   /// Calculate sleep score from sleep data
   SleepScore _calculateSleepScore(SleepData31 sleepData) {
     final phases = sleepData.calculateSleepPhases();
@@ -149,6 +209,9 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     final deepSleepPercentage = totalSleep > 0 ? (phases.deepSleepMinutes / totalSleepDouble) : 0.0;
     final lightSleepPercentage = totalSleep > 0 ? (phases.lightSleepMinutes / totalSleepDouble) : 0.0;
     final awakePercentage = totalTime > 0 ? (phases.awakeMinutes / totalTime.toDouble()) : 0.0;
+    
+    // Calculate awakenings
+    final awakenings = _calculateAwakenings(sleepData.activityIndices);
     
     // Calculate duration score (0-35 points) - target 7-9 hours
     final hoursSlept = totalSleep / 60;
@@ -178,8 +241,16 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       qualityScore = 5;
     }
     
-    // Consistency score (0-10 points) - based on awakenings (placeholder for now)
-    double consistencyScore = awakePercentage < 0.1 ? 10 : 5;
+    // Consistency score (0-10 points) - based on awakenings
+    // Fewer awakenings = better consistency
+    double consistencyScore = 10.0;
+    if (awakenings > 5) {
+      consistencyScore = 3.0;
+    } else if (awakenings > 3) {
+      consistencyScore = 6.0;
+    } else if (awakenings > 1) {
+      consistencyScore = 8.0;
+    }
     
     // Calculate overall score
     final totalScore = durationScore + efficiencyScore + qualityScore + consistencyScore;
@@ -197,7 +268,7 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       deepSleepMinutes: phases.deepSleepMinutes,
       lightSleepMinutes: phases.lightSleepMinutes,
       awakeMinutes: phases.awakeMinutes,
-      awakenings: 0, // TODO: Calculate from data
+      awakenings: awakenings, // ✅ Now calculated from actual sleep data transitions
       deepSleepPercentage: deepSleepPercentage,
       lightSleepPercentage: lightSleepPercentage,
       awakePercentage: awakePercentage,
@@ -221,11 +292,8 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         
         debugPrint('✅ Premium Screen: Latest score = ${_latestScore!.totalScore.toStringAsFixed(1)}, Date = ${_latestScore!.sleepDate}');
         
-        // Calculate readiness score
-        _readinessScore = _readinessCalculator.calculateReadiness(
-          sleepScore: _latestScore,
-          hrvData: null, // TODO: Add HRV data when available
-        );
+        // Calculate readiness score (will use HRV if available)
+        _updateReadinessScore();
         
         debugPrint('✅ Premium Screen: Readiness score = ${_readinessScore!.totalScore.toStringAsFixed(1)}');
       } else {

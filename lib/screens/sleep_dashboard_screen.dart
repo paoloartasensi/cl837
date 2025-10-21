@@ -72,7 +72,7 @@ class _SleepDashboardScreenState extends State<SleepDashboardScreen> {
         final latestScore = _calculator.calculateScore(widget.latestSleepData!);
         readiness = _readinessCalculator.calculateReadiness(
           sleepScore: latestScore,
-          // TODO: Add HRV and HR data when available
+          // Note: HRV data not available in this screen (use SleepPremiumScreen for full features)
         );
       }
 
