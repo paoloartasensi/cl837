@@ -992,8 +992,15 @@ class ChileafExtendedService {
       
       // ===== NEW HANDLERS FOR SPORT HEALTH & SENSORS =====
       
-      case 0x4E: // Body Health Response (VO2 Max, HRV, Stress, Stamina)
-        debugPrint('🏃 SPORT HEALTH: Processing body health data');
+      case 0x13: // Sport Health Data (VO2 Max, Breath Rate, Emotion, Stress, Stamina)
+        // Real-time data sent automatically during sports activity
+        // Format from iOS SDK: [0xFF, length, 0x13, vo2Max, breathRate, emotion, stress, stamina, checksum]
+        debugPrint('🏃 SPORT HEALTH: Processing real-time health metrics');
+        _processSportHealthData(data);
+        break;
+      
+      case 0x4E: // Body Health Response (LEGACY - may not be used)
+        debugPrint('🏃 SPORT HEALTH (0x4E): Processing body health data');
         _processSportHealthData(data);
         break;
       
@@ -4959,18 +4966,58 @@ class ChileafExtendedService {
   // ===== SPORT HEALTH DATA (VO2 Max, HRV, Stress, Stamina) =====
 
   /// Get body health data (VO2 Max, HRV, Stress, Stamina)
-  /// Equivalent to Android: WearManager.getBodyHealth()
+  /// 
+  /// ⚠️ IMPORTANT: Health metrics (VO2 Max, Breath Rate, Emotion, Stress, Stamina)
+  /// are calculated ONLY during active sports/exercise sessions.
+  /// They are NOT historical data that can be downloaded on demand.
+  /// 
+  /// These metrics are sent automatically via command 0x13 when the device
+  /// is in sport mode and actively measuring during physical activity.
+  /// 
+  /// This method may trigger a request, but data will only be available
+  /// if the user is currently exercising or has just finished a workout.
+  /// 
+  /// ALTERNATIVE COMMANDS TO TRY:
+  /// - 0x4D: Request health data (may not be supported)
+  /// - 0x13: Response command (automatically sent by device)
+  /// - Some devices send health data periodically without explicit request
   Future<void> getBodyHealth() async {
-    debugPrint('🏃 Getting body health data (VO2 Max, HRV, Stress, Stamina)...');
-    // Command: 0x4E (78 decimal) - based on SDK patterns
-    await _sendCommand([0xFF, 0x04, 0x4E, 0x00]);
+    debugPrint('🏃 Requesting body health data...');
+    debugPrint('⚠️ Note: Data only available during active sports session');
+    
+    // Try multiple command variations based on SDK analysis
+    // Command 1: Try 0x4D (may be request command)
+    try {
+      await _sendCommand([0xFF, 0x04, 0x4D, 0x00]);
+      debugPrint('✅ Sent request 0x4D for health data');
+    } catch (e) {
+      debugPrint('❌ Error sending 0x4D: $e');
+    }
+    
+    // Wait a bit and try alternative command
+    await Future.delayed(const Duration(milliseconds: 500));
+    
+    // Command 2: Try 0x4E (alternative)
+    try {
+      await _sendCommand([0xFF, 0x04, 0x4E, 0x00]);
+      debugPrint('✅ Sent alternative request 0x4E for health data');
+    } catch (e) {
+      debugPrint('❌ Error sending 0x4E: $e');
+    }
   }
 
   /// Start real-time health monitoring
-  /// Equivalent to Android: WearManager.startHealthMonitoring()
+  /// 
+  /// ⚠️ IMPORTANT: This may not work as expected. Health metrics are typically
+  /// sent automatically by the device during sports activities (command 0x13).
+  /// 
+  /// The device calculates VO2 Max, Breath Rate, Emotion, Stress, and Stamina
+  /// in real-time during exercise. Simply start a workout on the device and
+  /// listen to the sportHealthStream for automatic updates.
   Future<void> startHealthMonitoring() async {
     debugPrint('▶️ Starting real-time health monitoring...');
-    // Command: 0x4F (79 decimal) with value 1 (start)
+    debugPrint('⚠️ Note: Start a workout on the device to receive metrics');
+    // Command: 0x4F with value 1 (start) - may not be supported
     await _sendCommand([0xFF, 0x05, 0x4F, 0x01, 0x00]);
   }
 

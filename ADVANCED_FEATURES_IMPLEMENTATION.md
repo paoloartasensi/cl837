@@ -8,17 +8,31 @@ Questo documento descrive **TUTTE** le nuove funzionalità implementate basate s
 
 ## 📊 **1. SPORT HEALTH DATA** (VO2 Max, HRV, Stress, Stamina)
 
+### ⚠️ IMPORTANTE: Come Funzionano i Dati Health
+
+I **Health Metrics** (VO2 Max, Breath Rate, Emotion, Stress, Stamina) sono dati **REAL-TIME** calcolati dal dispositivo durante l'attività fisica:
+
+- ✅ **NON sono dati storici** scaricabili on-demand
+- ✅ Vengono inviati **automaticamente** dal dispositivo tramite comando **0x13**
+- ✅ Disponibili **solo durante attività sportiva** o immediatamente dopo
+- ✅ Il dispositivo calcola queste metriche in tempo reale durante l'esercizio
+
 ### Comandi Implementati
-- `getBodyHealth()` - Ottiene dati salute sportiva
-- `startHealthMonitoring()` - Avvia monitoraggio real-time
+- `getBodyHealth()` - Tenta di richiedere dati (può non funzionare su tutti i device)
+- `startHealthMonitoring()` - Avvia monitoraggio (opzionale, i dati arrivano automaticamente)
 - `stopHealthMonitoring()` - Ferma monitoraggio
+
+### Protocollo BLE
+- **Comando Request**: 0x4D o 0x4E (potrebbe non essere necessario)
+- **Comando Response**: **0x13** (inviato automaticamente dal dispositivo)
+- **Formato**: `[0xFF, length, 0x13, vo2Max, breathRate, emotion, stress, stamina, tp(4), lf(4), hf(4), checksum]`
 
 ### Modelli Dati
 ```dart
 class SportHealthData {
   final int vo2Max;           // VO2 Max (ml/kg/min) - Fitness cardiopolmonare
   final int breathRate;       // Frequenza respiratoria (breaths/min)
-  final int emotionLevel;     // Livello emotivo (0-5)
+  final int emotionLevel;     // Livello emotivo (0-5: Calm/Nervous/Excited/Angry)
   final int stressPercent;    // Stress (0-100%)
   final int stamina;          // Resistenza (0-5)
   final double? totalPower;   // HRV Total Power (ms²)
@@ -34,24 +48,29 @@ Stream<SportHealthData> sportHealthStream
 
 ### Metriche Chiave
 - **VO2 Max**: Indicatore fitness (Eccellente >50 uomini, >45 donne)
+- **Breath Rate**: Respirazioni al minuto (normale 12-20)
+- **Emotion**: Calmo/Nervoso/Eccitato/Arrabbiato (basato su HRV)
 - **Stress**: Basso <30%, Moderato 30-60%, Alto >60%
+- **Stamina**: Resistenza 0-5 (Exhausted/Poor/Average/Good/Excellent)
 - **HRV Components**: TP/LF/HF per analisi sistema nervoso autonomo
 - **LF/HF Ratio**: Bilancio simpatico/parasimpatico (normale 0.5-2.0)
 
-### Uso
+### Come Ottenere i Dati
 ```dart
-// Ottenere dati salute
-await service.getBodyHealth();
+// 1. Avvia un'attività sportiva sul dispositivo (camminata, corsa, etc.)
+// 2. I dati arriveranno automaticamente via comando 0x13
 
-// Avviare monitoraggio continuo
-await service.startHealthMonitoring();
-
-// Ascoltare stream
+// Ascoltare stream per ricevere dati in tempo reale
 service.sportHealthStream.listen((data) {
   print('VO2 Max: ${data.vo2Max}');
-  print('Stress: ${data.stressPercent}%');
+  print('Breath Rate: ${data.breathRate} breaths/min');
+  print('Emotion: ${data.emotionDescription}');
+  print('Stress: ${data.stressPercent}% (${data.stressLevel})');
   print('Stamina: ${data.staminaDescription}');
 });
+
+// (Opzionale) Tentare di richiedere i dati manualmente
+await service.getBodyHealth();
 ```
 
 ---

@@ -185,9 +185,41 @@ class _AdvancedFeaturesTestScreenState
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              '🏃 Sport Health Data',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                const Text(
+                  '🏃 Sport Health Data',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(Icons.info_outline, size: 20),
+                  onPressed: () => _showHealthInfoDialog(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            
+            // Info banner
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber, size: 16, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Start a workout on the device to see real-time metrics',
+                      style: TextStyle(fontSize: 12, color: Colors.orange),
+                    ),
+                  ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
             
@@ -207,7 +239,7 @@ class _AdvancedFeaturesTestScreenState
               if (_latestSportHealth!.lfHfRatio != null)
                 _buildDataRow('LF/HF Ratio', _latestSportHealth!.lfHfRatio!.toStringAsFixed(2)),
             ] else
-              const Text('No data yet', style: TextStyle(color: Colors.grey)),
+              const Text('No data - Start exercising on device', style: TextStyle(color: Colors.grey)),
             
             const SizedBox(height: 12),
             
@@ -218,7 +250,7 @@ class _AdvancedFeaturesTestScreenState
                   child: ElevatedButton.icon(
                     onPressed: () => widget.service.getBodyHealth(),
                     icon: const Icon(Icons.download),
-                    label: const Text('Get Data'),
+                    label: const Text('Request Data'),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -233,7 +265,7 @@ class _AdvancedFeaturesTestScreenState
                       setState(() => _healthMonitoring = !_healthMonitoring);
                     },
                     icon: Icon(_healthMonitoring ? Icons.stop : Icons.play_arrow),
-                    label: Text(_healthMonitoring ? 'Stop' : 'Start'),
+                    label: Text(_healthMonitoring ? 'Stop' : 'Monitor'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _healthMonitoring ? Colors.red : Colors.green,
                     ),
@@ -243,6 +275,66 @@ class _AdvancedFeaturesTestScreenState
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showHealthInfoDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('ℹ️ Health Metrics Info'),
+        content: const SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'How it works:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '• Health metrics (VO2 Max, Breath Rate, Emotion, Stress, Stamina) '
+                'are calculated in REAL-TIME during physical activity\n\n'
+                '• These are NOT historical data that can be downloaded\n\n'
+                '• The device automatically sends metrics via command 0x13 '
+                'when you are exercising',
+              ),
+              SizedBox(height: 16),
+              Text(
+                'To see data:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '1. Start a workout on your device (walking, running, etc.)\n'
+                '2. Keep the app connected\n'
+                '3. Metrics will appear automatically\n'
+                '4. Values update in real-time during exercise',
+              ),
+              SizedBox(height: 16),
+              Text(
+                'Metrics meaning:',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '• VO2 Max: Cardio fitness (>50 = excellent for men)\n'
+                '• Breath Rate: Respirations per minute\n'
+                '• Emotion: Calm/Nervous/Excited/Angry based on HRV\n'
+                '• Stress: 0-30% = Low, 30-60% = Medium, >60% = High\n'
+                '• Stamina: Endurance level (0-5 scale)',
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
       ),
     );
   }
