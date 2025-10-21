@@ -82,6 +82,12 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
         actions: [
+          if (_selectedSession != null)
+            IconButton(
+              icon: const Icon(Icons.bug_report),
+              onPressed: _showDetailedLog,
+              tooltip: 'Mostra log dettagliato (formato Android)',
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadSleepData,
@@ -589,6 +595,107 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  /// Mostra un dialog con il log dettagliato formato Android per confronto
+  void _showDetailedLog() {
+    if (_selectedSession == null) return;
+    
+    final buffer = StringBuffer();
+    final actions = _selectedSession!.actions;
+    final baseTimestamp = _selectedSession!.timestamp;
+    
+    int zeroIndex = 0;
+    List<DateTime> pendingZeroTimes = [];
+    
+    for (int i = 0; i < actions.length; i++) {
+      int action = actions[i];
+      DateTime utc = baseTimestamp.add(Duration(minutes: i * 5));
+      String utcStr = utc.toLocal().toString().substring(0, 19);
+      
+      if (action > 20) {
+        // Processa zeri accumulati
+        if (zeroIndex >= 3) {
+          for (var time in pendingZeroTimes) {
+            buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+            buffer.writeln('action Index: deep Sleep');
+          }
+        } else if (zeroIndex > 0) {
+          for (var time in pendingZeroTimes) {
+            buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+            buffer.writeln('action Index: light sleep');
+          }
+        }
+        zeroIndex = 0;
+        pendingZeroTimes.clear();
+        buffer.writeln('utc:$utcStr');
+        buffer.writeln('action Index: not Sleep');
+        
+      } else if (action <= 20 && action > 0) {
+        // Processa zeri accumulati
+        if (zeroIndex >= 3) {
+          for (var time in pendingZeroTimes) {
+            buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+            buffer.writeln('action Index: deep Sleep');
+          }
+        } else if (zeroIndex > 0) {
+          for (var time in pendingZeroTimes) {
+            buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+            buffer.writeln('action Index: light sleep');
+          }
+        }
+        zeroIndex = 0;
+        pendingZeroTimes.clear();
+        buffer.writeln('utc:$utcStr');
+        buffer.writeln('action Index: light sleep');
+        
+      } else {
+        // Accumula
+        zeroIndex++;
+        pendingZeroTimes.add(utc);
+      }
+    }
+    
+    // Processa zeri finali
+    if (zeroIndex >= 3) {
+      for (var time in pendingZeroTimes) {
+        buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+        buffer.writeln('action Index: deep Sleep');
+      }
+    } else if (zeroIndex > 0) {
+      for (var time in pendingZeroTimes) {
+        buffer.writeln('utc:${time.toLocal().toString().substring(0, 19)}');
+        buffer.writeln('action Index: light sleep');
+      }
+    }
+    
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.android, color: Colors.green),
+            SizedBox(width: 8),
+            Text('Log Formato Android'),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: SelectableText(
+              buffer.toString(),
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Chiudi'),
+          ),
+        ],
+      ),
     );
   }
 }
