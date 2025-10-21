@@ -851,6 +851,7 @@ class ChileafExtendedService {
         // Format: FF LL 15 SSSSSS DDDDDD CCCCCC XX
         // Steps, Distance (cm), Calories*10
         debugPrint('🏃 SPORT REAL-TIME DATA RECEIVED (Command 0x15)');
+        debugPrint('🏃 Raw bytes (${data.length}): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
         try {
           final sportData = SportRealtimeData.fromBytes(data);
           _lastSportRealtimeData = sportData;

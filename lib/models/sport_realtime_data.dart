@@ -19,13 +19,17 @@ class SportRealtimeData {
   factory SportRealtimeData.fromBytes(List<int> data) {
     // Format from iOS SDK (HeartBLEDevice.m line 417-439):
     // buffer_[2] == 0x15 (Sport Real-time Data)
-    // Hex format: FF LL 15 SSSSSS DDDDDD CCCCCC XX
-    // - SSSSSS: Steps (6 hex chars, 3 bytes)
-    // - DDDDDD: Distance in cm (6 hex chars, 3 bytes) / 100 = meters  
-    // - CCCCCC: Calories * 10 (6 hex chars, 3 bytes) / 10 = kcal
+    // Hex format: FF LL 15 SSSSSS DDDDDD CCCCCC [XX]
+    // - SSSSSS: Steps (6 hex chars, 3 bytes little-endian)
+    // - DDDDDD: Distance in cm (6 hex chars, 3 bytes little-endian) / 100 = meters  
+    // - CCCCCC: Calories * 10 (6 hex chars, 3 bytes little-endian) / 10 = kcal
+    // - [XX]: Optional checksum byte
+    // 
+    // Actual device sends 13 bytes: FF 0D 15 + 9 data bytes + checksum
+    // Minimum required: FF LL 15 + 9 data bytes = 12 bytes (without checksum)
     
-    if (data.length < 15) {
-      throw ArgumentError('Invalid sport data length: ${data.length}, expected >= 15');
+    if (data.length < 12) {
+      throw ArgumentError('Invalid sport data length: ${data.length}, expected >= 12 (got: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')})');
     }
 
     if (data[0] != 0xFF) {
@@ -36,15 +40,16 @@ class SportRealtimeData {
       throw ArgumentError('Invalid command byte: 0x${data[2].toRadixString(16)}, expected 0x15');
     }
 
-    // Parse steps (bytes 3-5, 3 bytes little-endian)
-    int steps = data[3] | (data[4] << 8) | (data[5] << 16);
+    // Parse steps (bytes 3-5, 3 bytes BIG-ENDIAN)
+    // iOS SDK reads as hex string, which is naturally big-endian
+    int steps = (data[3] << 16) | (data[4] << 8) | data[5];
 
-    // Parse distance in cm (bytes 6-8, 3 bytes little-endian)
-    int distanceCm = data[6] | (data[7] << 8) | (data[8] << 16);
+    // Parse distance in cm (bytes 6-8, 3 bytes BIG-ENDIAN)
+    int distanceCm = (data[6] << 16) | (data[7] << 8) | data[8];
     double distanceMeters = distanceCm / 100.0;
 
-    // Parse calories * 10 (bytes 9-11, 3 bytes little-endian)
-    int caloriesTimes10 = data[9] | (data[10] << 8) | (data[11] << 16);
+    // Parse calories * 10 (bytes 9-11, 3 bytes BIG-ENDIAN)
+    int caloriesTimes10 = (data[9] << 16) | (data[10] << 8) | data[11];
     double caloriesKcal = caloriesTimes10 / 10.0;
 
     return SportRealtimeData(
