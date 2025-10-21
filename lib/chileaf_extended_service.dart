@@ -348,8 +348,8 @@ class ChileafExtendedService {
   Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
       _stepsHistoryController.stream;
   
-  // Sleep data cache getter - returns last received sessions even if stream is done
-  List<SleepHistoryEntry> get cachedSleepSessions => List.from(_sleepData31Cache);
+  // Sleep data cache getter - returns accumulated sleep sessions
+  List<SleepHistoryEntry> get cachedSleepSessions => List.from(_legacySleepAccumulator);
   
   // Sleep event streams (real-time onset detection)
   Stream<SleepOnsetEvent> get sleepOnsetStream => _sleepOnsetController.stream;
@@ -1036,9 +1036,23 @@ class ChileafExtendedService {
         _process6DRawDataStream(data);
         break;
       
+      case 0x90: // Steps Interval List Response
+        debugPrint('👟 STEPS INTERVAL LIST (0x90): Processing steps interval history response');
+        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+        _processStepsIntervalData(data);
+        break;
+      
+      case 0x91: // Steps Interval Data Response  
+        debugPrint('👟 STEPS INTERVAL DATA (0x91): Processing detailed steps interval data');
+        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
+        _processStepsIntervalData(data);
+        break;
+      
       default:
-        debugPrint(
-            'Unhandled Chileaf command: 0x${command.toRadixString(16)} (${data.length} bytes)');
+        // Log ALL unhandled commands with full hex dump
+        String hexString = data.map((b) => '0x${b.toRadixString(16).toUpperCase().padLeft(2, '0')}').join(' ');
+        debugPrint('⚠️ Unhandled command: 0x${command.toRadixString(16)} (${data.length} bytes)');
+        debugPrint('⚠️ Full hex: $hexString');
         
         // SPECIAL HANDLER for command 0x57 (HR Alarm SET response)
         if (command == 0x57) {
@@ -4225,6 +4239,8 @@ class ChileafExtendedService {
   /// Based on SDK documentation section 5.22 and 5.23
   Future<void> requestStepIntervalHistory() async {
     debugPrint('🚶 Requesting step interval history...');
+    debugPrint('⏱️ Waiting for device response (timeout: 10 seconds)...');
+    
     try {
       // Command 0x90: Step counting history data list request
       List<int> command = [0xFF, 0x05, 0x90, 0x00];
@@ -4232,6 +4248,15 @@ class ChileafExtendedService {
       command[3] = checksum;
       
       await _sendCommand(command);
+      debugPrint('✅ Step interval command sent - monitoring for response with command 0x90 or 0x91...');
+      
+      // Add timeout warning
+      Future.delayed(const Duration(seconds: 10), () {
+        debugPrint('⚠️ No step interval response after 10 seconds');
+        debugPrint('💡 The device may not have step interval data stored');
+        debugPrint('💡 Or this command (0x90) may not be supported by CL837');
+      });
+      
     } catch (e) {
       debugPrint('❌ Failed to request step interval history: $e');
     }

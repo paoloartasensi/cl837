@@ -103,8 +103,10 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   Future<void> _loadFromServiceCache() async {
     final cachedSessions = widget.chileafService.cachedSleepSessions;
     
+    debugPrint('📦 Premium Screen: Checking cached sessions - Found ${cachedSessions.length} sessions');
+    
     if (cachedSessions.isNotEmpty) {
-      debugPrint('📦 Premium Screen: Found ${cachedSessions.length} cached sessions in service');
+      debugPrint('📦 Premium Screen: Processing ${cachedSessions.length} cached sessions from service');
       
       // Process cached sessions the same way as stream data
       for (final session in cachedSessions) {
@@ -126,6 +128,7 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       }
       
       // Reload UI with cached data
+      debugPrint('✅ Premium Screen: Finished processing cached sessions, reloading UI...');
       await _loadSleepData();
     } else {
       debugPrint('📦 Premium Screen: No cached sessions found in service');
@@ -238,23 +241,12 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: CustomScrollView(
-        slivers: [
-          _buildAppBar(),
-          SliverToBoxAdapter(
-            child: _isLoading
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(40),
-                      child: CircularProgressIndicator(),
-                    ),
-                  )
-                : _latestScore == null
-                    ? _buildEmptyState()
-                    : _buildContent(),
-          ),
-        ],
-      ),
+      appBar: _buildRegularAppBar(),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _latestScore == null
+              ? _buildEmptyState()
+              : _buildContent(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
           Navigator.push(
@@ -271,68 +263,14 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     );
   }
 
-  Widget _buildAppBar() {
-    return SliverAppBar(
-      expandedHeight: 200,
-      floating: false,
-      pinned: true,
+  PreferredSizeWidget _buildRegularAppBar() {
+    return AppBar(
+      title: const Text('Sleep Analytics'),
       backgroundColor: Colors.deepPurple,
-      flexibleSpace: FlexibleSpaceBar(
-        title: const Text(
-          'Sleep Analytics',
-          style: TextStyle(
-            fontWeight: FontWeight.bold,
-            shadows: [
-              Shadow(
-                offset: Offset(0, 1),
-                blurRadius: 3,
-                color: Colors.black26,
-              ),
-            ],
-          ),
-        ),
-        background: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Colors.deepPurple.shade400,
-                Colors.deepPurple.shade700,
-              ],
-            ),
-          ),
-          child: Stack(
-            children: [
-              Positioned(
-                top: 60,
-                right: -30,
-                child: Icon(
-                  Icons.nightlight_round,
-                  size: 150,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-              ),
-              Positioned(
-                bottom: 20,
-                left: 20,
-                child: Icon(
-                  Icons.bedtime,
-                  size: 100,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
+      elevation: 0,
       actions: [
         IconButton(
-          icon: const Icon(Icons.refresh),
-          onPressed: _loadSleepData,
-        ),
-        IconButton(
-          icon: const Icon(Icons.show_chart),
+          icon: const Icon(Icons.trending_up),
           onPressed: () {
             Navigator.push(
               context,
