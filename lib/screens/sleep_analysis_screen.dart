@@ -197,6 +197,272 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
     );
   }
 
+  Widget _buildDailySessionsSelector() {
+    return DropdownButton<DailySleepSession>(
+      isExpanded: true,
+      value: _selectedDailySession,
+      hint: const Text('Seleziona una giornata'),
+      items: _dailySessions.asMap().entries.map((entry) {
+        final session = entry.value;
+        final duration = Duration(minutes: session.totalSleepMinutes);
+        
+        return DropdownMenuItem(
+          value: session,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                DateFormat('dd/MM/yyyy').format(session.startTime),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Durata: ${duration.inHours}h ${duration.inMinutes % 60}m - ${session.sessions.length} sessioni',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      onChanged: (DailySleepSession? newValue) {
+        setState(() {
+          _selectedDailySession = newValue;
+        });
+      },
+    );
+  }
+
+  Widget _buildIndividualSessionsSelector() {
+    return DropdownButton<SleepHistoryEntry>(
+      isExpanded: true,
+      value: _selectedSession,
+      hint: const Text('Seleziona una sessione'),
+      items: _sleepData.asMap().entries.map((entry) {
+        final index = entry.key;
+        final session = entry.value;
+        final phases = session.calculateSleepPhases();
+        final duration = Duration(minutes: phases.totalSleep);
+        
+        return DropdownMenuItem(
+          value: session,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Sessione ${index + 1} - ${DateFormat('dd/MM/yyyy HH:mm').format(session.timestamp)}',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+              Text(
+                'Durata: ${duration.inHours}h ${duration.inMinutes % 60}m - Efficienza: ${phases.sleepEfficiency.toStringAsFixed(1)}%',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+      onChanged: (SleepHistoryEntry? newValue) {
+        setState(() {
+          _selectedSession = newValue;
+        });
+      },
+    );
+  }
+
+  Widget _buildDailySleepSummaryCard() {
+    if (_selectedDailySession == null) return const SizedBox.shrink();
+    
+    final session = _selectedDailySession!;
+    final phases = session.calculateTotalPhases();
+    final totalDuration = Duration(minutes: phases.totalMinutes);
+    final lightDuration = Duration(minutes: phases.lightSleep);
+    final deepDuration = Duration(minutes: phases.deepSleep);
+    final awakeDuration = Duration(minutes: phases.awake);
+
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Colors.indigo.shade50, Colors.blue.shade50],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.calendar_today, color: Colors.indigo, size: 24),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Riepilogo Giornata - ${DateFormat('dd/MM/yyyy').format(session.startTime)}',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryItem(
+                  'Durata Totale',
+                  '${totalDuration.inHours}h ${totalDuration.inMinutes % 60}m',
+                  Colors.blue,
+                  Icons.schedule,
+                ),
+              ),
+              Expanded(
+                child: _buildSummaryItem(
+                  'Sessioni',
+                  '${session.sessions.length}',
+                  Colors.purple,
+                  Icons.nights_stay,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _buildSummaryItem(
+                  'Sonno Leggero',
+                  '${lightDuration.inHours}h ${lightDuration.inMinutes % 60}m',
+                  Colors.cyan,
+                  Icons.wb_sunny_outlined,
+                ),
+              ),
+              Expanded(
+                child: _buildSummaryItem(
+                  'Sonno Profondo',
+                  '${deepDuration.inHours}h ${deepDuration.inMinutes % 60}m',
+                  Colors.indigo,
+                  Icons.bedtime,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _buildSummaryItem(
+            'Tempo Sveglio',
+            '${awakeDuration.inHours}h ${awakeDuration.inMinutes % 60}m',
+            Colors.orange,
+            Icons.visibility,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDailySleepChart() {
+    if (_selectedDailySession == null) return const SizedBox.shrink();
+    
+    // Combine all sessions into one timeline
+    List<FlSpot> lightSleepSpots = [];
+    List<FlSpot> deepSleepSpots = [];
+    List<FlSpot> awakeSpots = [];
+    
+    double currentMinute = 0;
+    
+    for (var session in _selectedDailySession!.sessions) {
+      for (int i = 0; i < session.actions.length; i++) {
+        final value = session.actions[i];
+        final minute = currentMinute + (i * 5);
+        
+        if (value > 20) {
+          awakeSpots.add(FlSpot(minute, 3));
+        } else if (value == 0) {
+          deepSleepSpots.add(FlSpot(minute, 1));
+        } else {
+          lightSleepSpots.add(FlSpot(minute, 2));
+        }
+      }
+      
+      currentMinute += session.actions.length * 5;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: LineChart(
+        LineChartData(
+          gridData: const FlGridData(show: true, drawVerticalLine: false),
+          titlesData: FlTitlesData(
+            leftTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 80,
+                getTitlesWidget: (value, meta) {
+                  switch (value.toInt()) {
+                    case 1:
+                      return const Text('Profondo', style: TextStyle(fontSize: 10));
+                    case 2:
+                      return const Text('Leggero', style: TextStyle(fontSize: 10));
+                    case 3:
+                      return const Text('Sveglio', style: TextStyle(fontSize: 10));
+                    default:
+                      return const Text('');
+                  }
+                },
+              ),
+            ),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                interval: 60,
+                getTitlesWidget: (value, meta) {
+                  final hours = (value / 60).floor();
+                  return Text('${hours}h', style: const TextStyle(fontSize: 10));
+                },
+              ),
+            ),
+            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+          ),
+          borderData: FlBorderData(show: true),
+          minY: 0,
+          maxY: 4,
+          lineBarsData: [
+            if (deepSleepSpots.isNotEmpty)
+              LineChartBarData(
+                spots: deepSleepSpots,
+                isCurved: false,
+                color: Colors.indigo,
+                barWidth: 3,
+                dotData: const FlDotData(show: false),
+              ),
+            if (lightSleepSpots.isNotEmpty)
+              LineChartBarData(
+                spots: lightSleepSpots,
+                isCurved: false,
+                color: Colors.cyan,
+                barWidth: 3,
+                dotData: const FlDotData(show: false),
+              ),
+            if (awakeSpots.isNotEmpty)
+              LineChartBarData(
+                spots: awakeSpots,
+                isCurved: false,
+                color: Colors.orange,
+                barWidth: 3,
+                dotData: const FlDotData(show: false),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSleepSummaryCard() {
     if (_selectedSession == null) return const SizedBox.shrink();
     
