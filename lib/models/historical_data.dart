@@ -143,9 +143,124 @@ class SleepHistoryEntry {
     );
   }
   
+  /// Raggruppa sessioni di sonno per giornata (gap di 3 ore come iOS)
+  /// Ritorna lista di sessioni giornaliere aggregate
+  static List<DailySleepSession> groupByDay(List<SleepHistoryEntry> sessions) {
+    if (sessions.isEmpty) return [];
+    
+    // Ordina per timestamp
+    List<SleepHistoryEntry> sorted = List.from(sessions);
+    sorted.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    
+    List<DailySleepSession> dailySessions = [];
+    DailySleepSession? currentDay;
+    DateTime? lastTimestamp;
+    
+    const int gapThreshold = 10800; // 3 ore in secondi (come iOS)
+    
+    for (var session in sorted) {
+      // Prima sessione o gap > 3 ore
+      if (lastTimestamp == null || 
+          session.timestamp.difference(lastTimestamp).inSeconds > gapThreshold) {
+        
+        // Finalizza la sessione precedente
+        if (currentDay != null) {
+          dailySessions.add(currentDay);
+        }
+        
+        // Inizia nuova sessione giornaliera
+        currentDay = DailySleepSession(
+          startTime: session.timestamp,
+          sessions: [session],
+        );
+      } else {
+        // Aggiungi alla sessione corrente
+        currentDay?.sessions.add(session);
+      }
+      
+      lastTimestamp = session.timestamp;
+    }
+    
+    // Aggiungi l'ultima sessione
+    if (currentDay != null) {
+      dailySessions.add(currentDay);
+    }
+    
+    return dailySessions;
+  }
+  
   @override
   String toString() {
     return 'SleepHistoryEntry{timestamp: $timestamp, count: $count, actions: ${actions.length} entries}';
+  }
+}
+
+/// Sessione di sonno giornaliera (aggregata da multiple mini-sessioni)
+/// Implementazione iOS-style con raggruppamento per gap di 3 ore
+class DailySleepSession {
+  final DateTime startTime;
+  final List<SleepHistoryEntry> sessions;
+  
+  DailySleepSession({
+    required this.startTime,
+    required this.sessions,
+  });
+  
+  /// Calcola le fasi totali del sonno per tutta la giornata
+  SleepPhases calculateTotalPhases() {
+    int totalLight = 0;
+    int totalDeep = 0;
+    int totalAwake = 0;
+    int totalMinutes = 0;
+    
+    for (var session in sessions) {
+      SleepPhases phases = session.calculateSleepPhases();
+      totalLight += phases.lightSleep;
+      totalDeep += phases.deepSleep;
+      totalAwake += phases.awake;
+      totalMinutes += phases.totalMinutes;
+    }
+    
+    return SleepPhases(
+      lightSleep: totalLight,
+      deepSleep: totalDeep,
+      awake: totalAwake,
+      totalMinutes: totalMinutes,
+    );
+  }
+  
+  /// Ottieni tutti gli actions concatenati
+  List<int> get allActions {
+    List<int> all = [];
+    for (var session in sessions) {
+      all.addAll(session.actions);
+    }
+    return all;
+  }
+  
+  /// Durata totale del sonno (senza interruzioni)
+  int get totalSleepMinutes {
+    SleepPhases phases = calculateTotalPhases();
+    return phases.deepSleep + phases.lightSleep;
+  }
+  
+  /// Efficienza del sonno (%)
+  double get sleepEfficiency {
+    SleepPhases phases = calculateTotalPhases();
+    if (phases.totalMinutes == 0) return 0;
+    return (totalSleepMinutes / phases.totalMinutes) * 100;
+  }
+  
+  /// Tempo finale (ultimo timestamp + durata ultima sessione)
+  DateTime get endTime {
+    if (sessions.isEmpty) return startTime;
+    var lastSession = sessions.last;
+    return lastSession.timestamp.add(Duration(minutes: lastSession.actions.length * 5));
+  }
+  
+  @override
+  String toString() {
+    return 'DailySleepSession{start: $startTime, sessions: ${sessions.length}, duration: $totalSleepMinutes min}';
   }
 }
 

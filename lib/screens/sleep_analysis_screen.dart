@@ -18,10 +18,15 @@ class SleepAnalysisScreen extends StatefulWidget {
   State<SleepAnalysisScreen> createState() => _SleepAnalysisScreenState();
 }
 
+enum ViewMode { individual, daily }
+
 class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
   final List<SleepHistoryEntry> _sleepData = [];
+  List<DailySleepSession> _dailySessions = [];
   bool _isLoading = false;
   SleepHistoryEntry? _selectedSession;
+  DailySleepSession? _selectedDailySession;
+  ViewMode _viewMode = ViewMode.daily; // Default: vista aggregata iOS-style
 
   @override
   void initState() {
@@ -40,9 +45,18 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
           // Ordina per data più recente
           _sleepData.sort((a, b) => b.timestamp.compareTo(a.timestamp));
           
+          // Raggruppa in sessioni giornaliere (iOS-style)
+          _dailySessions = SleepHistoryEntry.groupByDay(_sleepData);
+          
           // Seleziona automaticamente la sessione più recente
-          if (_sleepData.isNotEmpty && _selectedSession == null) {
-            _selectedSession = _sleepData.first;
+          if (_viewMode == ViewMode.daily) {
+            if (_dailySessions.isNotEmpty && _selectedDailySession == null) {
+              _selectedDailySession = _dailySessions.first;
+            }
+          } else {
+            if (_sleepData.isNotEmpty && _selectedSession == null) {
+              _selectedSession = _sleepData.first;
+            }
           }
         });
       }
@@ -78,11 +92,25 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Analisi del Sonno'),
+        title: Text(_viewMode == ViewMode.daily ? 'Sonno Giornaliero' : 'Sessioni Individuali'),
         backgroundColor: Colors.indigo,
         foregroundColor: Colors.white,
         actions: [
-          if (_selectedSession != null)
+          // Toggle vista
+          IconButton(
+            icon: Icon(_viewMode == ViewMode.daily ? Icons.view_list : Icons.calendar_today),
+            onPressed: () {
+              setState(() {
+                _viewMode = _viewMode == ViewMode.daily ? ViewMode.individual : ViewMode.daily;
+                // Reset selezione quando cambia vista
+                _selectedSession = null;
+                _selectedDailySession = null;
+              });
+            },
+            tooltip: _viewMode == ViewMode.daily ? 'Vista Individuale (Android)' : 'Vista Giornaliera (iOS)',
+          ),
+          if ((_viewMode == ViewMode.daily && _selectedDailySession != null) ||
+              (_viewMode == ViewMode.individual && _selectedSession != null))
             IconButton(
               icon: const Icon(Icons.bug_report),
               onPressed: _showDetailedLog,
@@ -98,7 +126,10 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
       body: Column(
         children: [
           _buildSleepSessionSelector(),
-          if (_selectedSession != null) ...[
+          if (_viewMode == ViewMode.daily && _selectedDailySession != null) ...[
+            _buildDailySleepSummaryCard(),
+            Expanded(child: _buildDailySleepChart()),
+          ] else if (_viewMode == ViewMode.individual && _selectedSession != null) ...[
             _buildSleepSummaryCard(),
             Expanded(child: _buildSleepChart()),
           ] else
@@ -132,9 +163,9 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Seleziona Sessione di Sonno',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          Text(
+            _viewMode == ViewMode.daily ? 'Seleziona Giornata' : 'Seleziona Sessione',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           if (_isLoading)
@@ -157,47 +188,10 @@ class _SleepAnalysisScreenState extends State<SleepAnalysisScreen> {
                 ],
               ),
             )
+          else if (_viewMode == ViewMode.daily)
+            _buildDailySessionsSelector()
           else
-            DropdownButtonFormField<SleepHistoryEntry>(
-              value: _selectedSession,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                filled: true,
-                fillColor: Colors.white,
-              ),
-              items: _sleepData.asMap().entries.map((entry) {
-                final index = entry.key;
-                final session = entry.value;
-                final phases = session.calculateSleepPhases();
-                final duration = Duration(minutes: phases.totalSleep);
-                
-                return DropdownMenuItem(
-                  value: session,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        'Sessione ${index + 1} - ${DateFormat('dd/MM/yyyy HH:mm').format(session.timestamp)}',
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        'Durata: ${duration.inHours}h ${duration.inMinutes % 60}m - Efficienza: ${phases.sleepEfficiency.toStringAsFixed(1)}%',
-                        style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-              onChanged: (SleepHistoryEntry? newValue) {
-                setState(() {
-                  _selectedSession = newValue;
-                });
-              },
-            ),
+            _buildIndividualSessionsSelector(),
         ],
       ),
     );
