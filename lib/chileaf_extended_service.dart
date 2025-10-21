@@ -14,6 +14,7 @@ import 'models/historical_data.dart';
 import 'models/rope_data.dart';
 import 'models/device_info.dart';
 import 'models/sport_health_data.dart' hide HeartRateConfig;
+import 'models/sport_realtime_data.dart';
 import 'models/sensor_data.dart';
 import 'models/user_info.dart';
 
@@ -267,6 +268,11 @@ class ChileafExtendedService {
   final StreamController<SportHealthData> _sportHealthController =
       StreamController<SportHealthData>.broadcast();
   
+  // Sport Real-time streams (Steps, Distance, Calories) - Command 0x15
+  final StreamController<SportRealtimeData> _sportRealtimeController =
+      StreamController<SportRealtimeData>.broadcast();
+  SportRealtimeData? _lastSportRealtimeData;
+  
   // Heart Rate Management streams (Min/Max/Goal thresholds)
   final StreamController<HeartRateAlarm> _hrAlarmController =
       StreamController<HeartRateAlarm>.broadcast();
@@ -373,6 +379,10 @@ class ChileafExtendedService {
 
   // Sport Health streams (NEW: Advanced fitness metrics)
   Stream<SportHealthData> get sportHealthStream => _sportHealthController.stream;
+  
+  // Sport Real-time streams (NEW: Steps, Distance, Calories in real-time)
+  Stream<SportRealtimeData> get sportRealtimeStream => _sportRealtimeController.stream;
+  SportRealtimeData? get lastSportRealtimeData => _lastSportRealtimeData;
   
   // Heart Rate Management streams (NEW: Min/Max/Goal configuration)
   Stream<HeartRateAlarm> get hrAlarmStream => _hrAlarmController.stream;
@@ -837,11 +847,17 @@ class ChileafExtendedService {
         debugPrint('🧹 Accumulator cleared - ready for next download cycle');
         break;
       case ChileafProtocol.commandSports:
-        // SPORTS DATA IGNORED - Focus on medical-grade sensors only
-        _sportsLogCount++;
-        if (_sportsLogCount % _sportsThrottleInterval == 0) {
-          debugPrint(
-              '🚫 Sports data ignored ($_sportsLogCount packets, steps/calories unreliable)');
+        // SPORT REAL-TIME DATA (Command 0x15)
+        // Format: FF LL 15 SSSSSS DDDDDD CCCCCC XX
+        // Steps, Distance (cm), Calories*10
+        debugPrint('🏃 SPORT REAL-TIME DATA RECEIVED (Command 0x15)');
+        try {
+          final sportData = SportRealtimeData.fromBytes(data);
+          _lastSportRealtimeData = sportData;
+          _sportRealtimeController.add(sportData);
+          debugPrint('🏃 ✅ Sport data parsed: $sportData');
+        } catch (e) {
+          debugPrint('🏃 ❌ Error parsing sport data: $e');
         }
         break;
       case ChileafProtocol.commandSpo2:
@@ -3904,21 +3920,39 @@ class ChileafExtendedService {
 
   // === MANUAL TEST WRAPPER METHODS ===
 
-  /// Reset device usando comando ufficiale 0xF3
+  /// Reset device usando comando ufficiale 0xF3 (Factory Restoration)
+  /// Equivalente al metodo restoration() del SDK Android/iOS
   Future<void> deviceReset() async {
-    debugPrint('🔄 Resetting device using OFFICIAL command...');
+    debugPrint('🔄 Factory Reset device using iOS/Android SDK command (0xF3)...');
     try {
-      var officialCommand = OfficialChileafCommands.deviceReset();
+      // Comando basato sull'SDK iOS: ff05f300 (senza checksum)
+      // Il checksum viene calcolato come nello shutdown
+      List<int> frame = [0xFF, 5, 0xF3, 0x00]; // Length 5 perché include il parametro 0x00
 
-      debugPrint('🔍 Official reset command:');
-      debugPrint('   Command: 0xF3 (restoration from WearManager.java)');
+      // Calcola checksum identico allo shutdown (Java/iOS style)
+      int sum = 0;
+      for (int byte in frame) {
+        sum += byte;
+      }
+      int javaChecksum = (-sum) & 0xFF;
+      javaChecksum ^= 0x3A;
+      javaChecksum &= 0xFF;
+
+      frame.add(javaChecksum);
+
+      debugPrint('🔍 Factory Reset command (iOS/Android SDK):');
+      debugPrint('   Command: 0xF3 (restoration from MainViewController.m:350)');
+      debugPrint('   iOS SDK: ff05f300 + checksum');
       debugPrint(
-          '   Frame: ${OfficialChileafCommands.commandToHexString(officialCommand)}');
+          '   Frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint(
+          '   Checksum: 0x${javaChecksum.toRadixString(16).padLeft(2, '0')}');
+      debugPrint('   ⚠️  Device will be restored to factory settings!');
 
-      await _sendCommand(officialCommand);
-      debugPrint('✅ Official reset command sent');
+      await _sendCommand(frame);
+      debugPrint('✅ Factory reset command sent - device should reset now');
     } catch (e) {
-      debugPrint('❌ Failed to reset device with official command: $e');
+      debugPrint('❌ Failed to reset device: $e');
       rethrow;
     }
   }

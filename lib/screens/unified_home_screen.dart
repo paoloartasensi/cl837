@@ -5,6 +5,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'grok_hr_screen.dart';
 import 'sleep_premium_screen.dart';
 import 'advanced_features_test_screen.dart';
+import 'dashboard_screen.dart';
 import '../chileaf_extended_service.dart';
 
 /// Unified Home Screen - Persistent BT connection with individual data download
@@ -663,6 +664,27 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
             style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
+          
+          // Dashboard - Real-time data
+          if (_connectedDevice != null)
+            SizedBox(
+              width: double.infinity,
+              child: _buildAnalysisButton(
+                title: 'Dashboard (Real-time)',
+                icon: Icons.dashboard,
+                color: Colors.teal,
+                onTap: () => Navigator.push(
+                  context, 
+                  MaterialPageRoute(
+                    builder: (_) => DashboardScreen(
+                      device: _connectedDevice!,
+                      service: _service,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_connectedDevice != null) const SizedBox(height: 12),
           
           Row(
             children: [
