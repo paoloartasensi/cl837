@@ -5,11 +5,13 @@
 ## ✅ Modifiche Completate
 
 ### **1. Parsing Corretto Implementato**
+
 - ✅ Algoritmo "accumula e decidi" conforme al SDK ufficiale
 - ✅ Ogni action index = 5 minuti (300000 ms)
 - ✅ Classificazione posticipata degli zeri consecutivi
 
 ### **2. Log Dettagliato Aggiunto**
+
 - ✅ Output nel console log formato Android (nel service)
 - ✅ Button debug nell'UI per visualizzare log dettagliato
 - ✅ Formato identico all'app di esempio del SDK
@@ -17,6 +19,7 @@
 ## 🔬 Come Testare
 
 ### **Passo 1: Connetti il Dispositivo**
+
 1. Apri l'app Flutter
 2. Connetti il braccialetto CL831
 3. Vai su "Analisi del Sonno"
