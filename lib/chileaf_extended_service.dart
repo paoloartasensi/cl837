@@ -850,15 +850,25 @@ class ChileafExtendedService {
         // SPORT REAL-TIME DATA (Command 0x15)
         // Format: FF LL 15 SSSSSS DDDDDD CCCCCC XX
         // Steps, Distance (cm), Calories*10
-        debugPrint('🏃 SPORT REAL-TIME DATA RECEIVED (Command 0x15)');
-        debugPrint('🏃 Raw bytes (${data.length}): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+        // 
+        // NOTE: This data arrives VERY frequently (every second), so we throttle logging
         try {
           final sportData = SportRealtimeData.fromBytes(data);
+          
+          // Only log if values changed significantly or it's been a while
+          bool shouldLogSport = _lastSportRealtimeData == null ||
+              (sportData.steps - _lastSportRealtimeData!.steps).abs() >= 5 ||
+              (sportData.caloriesKcal - _lastSportRealtimeData!.caloriesKcal).abs() >= 5.0;
+          
+          if (shouldLogSport) {
+            debugPrint('🏃 SPORT UPDATE: ${sportData.steps} steps, ${sportData.distanceKm.toStringAsFixed(2)}km, ${sportData.caloriesKcal.toStringAsFixed(1)}kcal');
+          }
+          
           _lastSportRealtimeData = sportData;
           _sportRealtimeController.add(sportData);
-          debugPrint('🏃 ✅ Sport data parsed: $sportData');
         } catch (e) {
           debugPrint('🏃 ❌ Error parsing sport data: $e');
+          debugPrint('🏃 Raw bytes (${data.length}): ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
         }
         break;
       case ChileafProtocol.commandSpo2:
