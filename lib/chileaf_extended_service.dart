@@ -1229,16 +1229,14 @@ class ChileafExtendedService {
 
   /// Ottiene timestamp UTC corrente (equivalente a DateUtil.getZoneUTC())
   int _getZoneUTC() {
-    DateTime now = DateTime.now();
+    // Use TimestampDecoder helper (more explicit and correct)
+    return TimestampDecoder.getZoneUTC();
     
-    // Ottieni offset timezone e DST
-    int zoneOffset = now.timeZoneOffset.inMilliseconds;
-    
-    // Applica offset per ottenere UTC
-    DateTime utcTime = now.add(Duration(milliseconds: zoneOffset));
-    
-    // Ritorna in secondi (come nel WearManager)
-    return utcTime.millisecondsSinceEpoch ~/ 1000;
+    // Old implementation (kept for reference, but incorrect):
+    // DateTime now = DateTime.now();
+    // int zoneOffset = now.timeZoneOffset.inMilliseconds;
+    // DateTime utcTime = now.add(Duration(milliseconds: zoneOffset));
+    // return utcTime.millisecondsSinceEpoch ~/ 1000;
   }
 
   /// Converte timestamp UTC in array di 4 bytes (equivalente a utc2Bytes())
@@ -1842,13 +1840,16 @@ class ChileafExtendedService {
           int utc = _getLongParse(value, j, 4);
           j += 4;
           
-          // utc *= 1000L; utc -= 28800000L; (Java time correction)
+          // ✅ FIX: Convert UTC timestamp to local timezone
+          // Device sends UTC timestamp, we convert to user's local time
+          // NO MORE hardcoded -8 hours (China timezone)!
           int utcMillis = utc * 1000;
-          utcMillis -= 28800000; // 8 hours offset correction
+          DateTime utcDateTime = DateTime.fromMillisecondsSinceEpoch(utcMillis, isUtc: true);
+          DateTime localDateTime = utcDateTime.toLocal();
           
           // Reduced logging - only log every few sessions
           if (sleepSessions.isEmpty || sleepSessions.length % 3 == 0) {
-            debugPrint('🌙 Sleep session UTC: $utc -> $utcMillis (${DateTime.fromMillisecondsSinceEpoch(utcMillis)})');
+            debugPrint('🌙 Sleep UTC: $utc -> ${utcDateTime.toIso8601String()} -> Local: ${localDateTime.toIso8601String()} (${localDateTime.timeZoneName})');
           }
           
           // Check if we have enough data for actions, but don't break - skip invalid entries
@@ -1873,7 +1874,7 @@ class ChileafExtendedService {
           
           // HistorySleep historySleep = new HistorySleep(utc, actions);
           SleepHistoryEntry sleepEntry = SleepHistoryEntry(
-            timestamp: DateTime.fromMillisecondsSinceEpoch(utcMillis),
+            timestamp: localDateTime,  // ✅ Now in user's local timezone
             count: actions.length,
             actions: actions,
           );

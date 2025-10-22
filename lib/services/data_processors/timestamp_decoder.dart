@@ -27,6 +27,32 @@ class TimestampDecoder {
   /// Current date for validation
   static final DateTime now = DateTime.now();
   
+  /// Convert device UTC timestamp (seconds since 1970) to local DateTime
+  /// 
+  /// The CL831 device stores all timestamps in UTC. This method:
+  /// 1. Converts seconds to milliseconds
+  /// 2. Creates UTC DateTime
+  /// 3. Converts to user's local timezone
+  /// 
+  /// Example:
+  /// ```dart
+  /// int deviceTimestamp = 1729728000; // 2024-10-23 22:00:00 UTC
+  /// DateTime local = TimestampDecoder.utcToLocal(deviceTimestamp);
+  /// // Italy (UTC+2): 2024-10-24 00:00:00
+  /// // China (UTC+8): 2024-10-24 06:00:00
+  /// ```
+  static DateTime utcToLocal(int utcSeconds) {
+    int utcMillis = utcSeconds * 1000;
+    DateTime utcDateTime = DateTime.fromMillisecondsSinceEpoch(utcMillis, isUtc: true);
+    return utcDateTime.toLocal();
+  }
+  
+  /// Get current UTC timestamp in seconds (for sending to device)
+  /// Equivalent to Android SDK's DateUtil.getZoneUTC()
+  static int getZoneUTC() {
+    return DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+  }
+  
   /// Decode 4-byte timestamp from raw data using multiple methods
   static TimestampResult decodeTimestamp(List<int> bytes) {
     if (bytes.length != 4) {

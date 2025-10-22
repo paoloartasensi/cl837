@@ -6,6 +6,8 @@ import 'grok_hr_screen.dart';
 import 'sleep_premium_screen.dart';
 import 'advanced_features_test_screen.dart';
 import 'dashboard_screen.dart';
+import 'advanced_health_dashboard.dart';
+import 'timezone_test_screen.dart';
 import '../chileaf_extended_service.dart';
 import '../models/heart_rate_data.dart';
 import '../battery.dart' show BatteryService;
@@ -727,14 +729,35 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           ),
           const SizedBox(height: 16),
           
-          // Dashboard - Real-time data
+          // NEW: Advanced Health Dashboard - Whoop-style Recovery
           if (_connectedDevice != null)
             SizedBox(
               width: double.infinity,
               child: _buildAnalysisButton(
-                title: 'Dashboard (Real-time)',
+                title: '⭐ Health Analytics (Recovery & HRV)',
+                icon: Icons.health_and_safety,
+                color: Colors.green.shade700,
+                onTap: () => Navigator.push(
+                  context, 
+                  MaterialPageRoute(
+                    builder: (_) => AdvancedHealthDashboard(
+                      device: _connectedDevice!,
+                      service: _service,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (_connectedDevice != null) const SizedBox(height: 12),
+          
+          // OLD: Simple Dashboard - Real-time data (DEPRECATED - will be removed)
+          if (_connectedDevice != null)
+            SizedBox(
+              width: double.infinity,
+              child: _buildAnalysisButton(
+                title: 'Dashboard (Real-time) - OLD',
                 icon: Icons.dashboard,
-                color: Colors.teal,
+                color: Colors.grey,
                 onTap: () => Navigator.push(
                   context, 
                   MaterialPageRoute(
@@ -777,6 +800,16 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
               icon: Icons.settings,
               color: Colors.blueGrey,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AdvancedFeaturesTestScreen(service: _service))),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: _buildAnalysisButton(
+              title: '🌍 Timezone Test (UTC Fix)',
+              icon: Icons.schedule,
+              color: Colors.teal,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TimezoneTestScreen())),
             ),
           ),
         ],
