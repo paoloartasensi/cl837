@@ -170,15 +170,22 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       await _heartRateService.start(device);
       debugPrint('💓 HOME SCREEN: Heart Rate service started');
       
+      // Reduce logging frequency
+      int _hrLogCounter = 0;
       _heartRateSubscription = _heartRateService.dataStream.listen((hrData) {
         if (mounted && hrData != null) {
           setState(() {
           });
-          debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
           
-          // Log RR intervals if available
-          if (hrData.rrIntervals != null && hrData.rrIntervals!.isNotEmpty) {
-            debugPrint('💓 RR Intervals: ${hrData.rrIntervals!.length} intervals');
+          // Log only every 10th HR update to reduce spam
+          _hrLogCounter++;
+          if (_hrLogCounter % 10 == 0) {
+            debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
+            
+            // Log RR intervals if available
+            if (hrData.rrIntervals != null && hrData.rrIntervals!.isNotEmpty) {
+              debugPrint('💓 RR Intervals: ${hrData.rrIntervals!.length} intervals');
+            }
           }
         }
       });

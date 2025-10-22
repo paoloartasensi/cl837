@@ -191,11 +191,11 @@ class ChileafExtendedService {
 
   // Debug logging control - VERY AGGRESSIVE THROTTLING
   final bool _enableVerboseLogging = false; // Set to true for detailed logs
-  final int _logThrottleInterval = 500; // Log every 500 packets (was 50)
+  final int _logThrottleInterval = 2000; // Log every 2000 packets (reduced spam)
   final int _healthDataThrottleInterval =
-      200; // Log health data every 200 occurrences (was 100)
+      500; // Log health data every 500 occurrences
   final int _sportsThrottleInterval =
-      500; // Log every 500th sports data (was 50) - MUCH LESS NOISE
+      1000; // Log every 1000th sports data (reduced spam)
 
   // Data Processors
   late final SpO2Processor _spo2Processor;

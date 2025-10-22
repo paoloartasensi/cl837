@@ -53,11 +53,14 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
   }
 
   void _setupListeners() {
+    debugPrint('📊 DASHBOARD: Setting up listeners...');
+    
     // Real-time heart rate
     _subscriptions.add(
       widget.service.realtimeHRStream.listen((hr) {
         if (mounted) {
           setState(() => _currentHeartRate = hr);
+          debugPrint('📊 DASHBOARD: Received HR: $hr BPM');
         }
       }),
     );
@@ -66,6 +69,7 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
     _subscriptions.add(
       widget.service.sportHealthStream.listen((healthData) {
         if (mounted) {
+          debugPrint('📊 DASHBOARD: Received Sport Health data: ${healthData.toString()}');
           setState(() {
             _currentSportHealth = healthData;
             _calculateRecoveryScore();
@@ -78,6 +82,7 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
     _subscriptions.add(
       widget.service.sleepHistoryStream.listen((sleepList) {
         if (mounted) {
+          debugPrint('📊 DASHBOARD: Received ${sleepList.length} sleep sessions');
           setState(() {
             _sleepHistory = sleepList;
             _calculateLastSleepQuality();
@@ -86,19 +91,27 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
         }
       }),
     );
+    
+    debugPrint('📊 DASHBOARD: Listeners setup complete');
   }
 
   Future<void> _loadInitialData() async {
+    debugPrint('📊 DASHBOARD: Loading initial data...');
     setState(() => _isLoading = true);
     
     // Request sleep history to calculate recovery
     await widget.service.requestOptimizedSleepHistory(force: false);
     
     setState(() => _isLoading = false);
+    debugPrint('📊 DASHBOARD: Initial data load complete');
   }
 
   void _calculateLastSleepQuality() {
-    if (_sleepHistory.isEmpty) return;
+    debugPrint('📊 DASHBOARD: Calculating sleep quality from ${_sleepHistory.length} sessions...');
+    if (_sleepHistory.isEmpty) {
+      debugPrint('📊 DASHBOARD: No sleep history available');
+      return;
+    }
     
     // Find main sleep (longest and most recent)
     final mainSleeps = _sleepHistory.where((s) => 
@@ -106,18 +119,27 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
       (s.timestamp.hour >= 18 || s.timestamp.hour <= 10) // Night hours
     ).toList();
     
+    debugPrint('📊 DASHBOARD: Found ${mainSleeps.length} main sleep sessions');
+    
     if (mainSleeps.isNotEmpty) {
       mainSleeps.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       _lastSleepQuality = SleepQuality.fromSleepSession(mainSleeps.first);
+      debugPrint('📊 DASHBOARD: Sleep quality calculated: ${_lastSleepQuality.toString()}');
+    } else {
+      debugPrint('📊 DASHBOARD: No qualifying main sleep sessions found');
     }
   }
 
   void _calculateRecoveryScore() {
+    debugPrint('📊 DASHBOARD: Calculating recovery score...');
     _recoveryScore = RecoveryScore.calculate(
       sportHealth: _currentSportHealth,
       sleepQuality: _lastSleepQuality,
       restingHeartRate: _currentHeartRate,
     );
+    if (_recoveryScore != null) {
+      debugPrint('📊 DASHBOARD: Recovery score: ${_recoveryScore!.score.toStringAsFixed(1)}% (${_recoveryScore!.zone.label})');
+    }
   }
 
   @override
