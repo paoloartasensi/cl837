@@ -7,6 +7,9 @@ import 'sleep_premium_screen.dart';
 import 'advanced_features_test_screen.dart';
 import 'dashboard_screen.dart';
 import '../chileaf_extended_service.dart';
+import '../models/heart_rate_data.dart';
+import '../battery.dart' show BatteryService;
+import '../heartrate.dart' show HeartRateService;
 
 /// Unified Home Screen - Persistent BT connection with individual data download
 class UnifiedHomeScreen extends StatefulWidget {
@@ -18,6 +21,8 @@ class UnifiedHomeScreen extends StatefulWidget {
 
 class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   final ChileafExtendedService _service = ChileafExtendedService();
+  final BatteryService _batteryService = BatteryService();
+  final HeartRateService _heartRateService = HeartRateService();
   
   // BLE Connection
   BluetoothDevice? _connectedDevice;
@@ -25,8 +30,11 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   bool _isScanning = false;
   bool _isConnecting = false;
   int _batteryLevel = 0;
+  int _heartRate = 0;
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
+  StreamSubscription<int?>? _batterySubscription;
+  StreamSubscription<HeartRateData?>? _heartRateSubscription;
   
   // Stream controller to notify dialog of device updates
   final StreamController<void> _dialogUpdateController = StreamController<void>.broadcast();
@@ -48,6 +56,8 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
     _dialogUpdateController.close();
     _scanSubscription?.cancel();
     _connectionSubscription?.cancel();
+    _batterySubscription?.cancel();
+    _heartRateSubscription?.cancel();
     _disconnect();
     super.dispose();
   }
@@ -122,10 +132,60 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       }
     });
 
-    // Battery Level - use real-time HR stream as proxy or check manually
+    // Heart Rate - real-time from ChileafExtendedService
     _service.realTimeHeartRateStream.listen((hr) {
-      // Battery updates might come through other channels
+      if (mounted) {
+        setState(() {
+          _heartRate = hr;
+        });
+      }
+      debugPrint('💓 HOME SCREEN: Received HR from service: $hr BPM');
     });
+    
+    // Battery - will be set up when device connects
+    // Heart Rate - will also use HeartRateService for redundancy
+  }
+
+  // Setup dedicated Battery and HeartRate services
+  Future<void> _setupDedicatedServices(BluetoothDevice device) async {
+    // Battery Service
+    try {
+      await _batteryService.start(device);
+      debugPrint('🔋 HOME SCREEN: Battery service started');
+      
+      _batterySubscription = _batteryService.dataStream.listen((batteryLevel) {
+        if (mounted && batteryLevel != null) {
+          setState(() {
+            _batteryLevel = batteryLevel;
+          });
+          debugPrint('🔋 HOME SCREEN: Battery updated: $batteryLevel%');
+        }
+      });
+    } catch (e) {
+      debugPrint('🔋 HOME SCREEN: Failed to start battery service: $e');
+    }
+    
+    // Heart Rate Service (redundancy + RR intervals)
+    try {
+      await _heartRateService.start(device);
+      debugPrint('💓 HOME SCREEN: Heart Rate service started');
+      
+      _heartRateSubscription = _heartRateService.dataStream.listen((hrData) {
+        if (mounted && hrData != null) {
+          setState(() {
+            _heartRate = hrData.heartRate;
+          });
+          debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
+          
+          // Log RR intervals if available
+          if (hrData.rrIntervals != null && hrData.rrIntervals!.isNotEmpty) {
+            debugPrint('💓 RR Intervals: ${hrData.rrIntervals!.length} intervals');
+          }
+        }
+      });
+    } catch (e) {
+      debugPrint('💓 HOME SCREEN: Failed to start HR service: $e');
+    }
   }
 
   // ===== BLE CONNECTION =====
@@ -241,6 +301,11 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       await _service.start(device);
       
       debugPrint('✅ Service configured successfully');
+      
+      // Setup dedicated Battery and HeartRate services
+      debugPrint('🔧 Setting up Battery and HR services...');
+      await _setupDedicatedServices(device);
+      debugPrint('✅ Battery and HR services configured');
 
       _connectionSubscription = device.connectionState.listen((state) {
         if (mounted) {
