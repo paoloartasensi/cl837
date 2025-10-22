@@ -30,7 +30,6 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   bool _isScanning = false;
   bool _isConnecting = false;
   int _batteryLevel = 0;
-  int _heartRate = 0;
   StreamSubscription<BluetoothConnectionState>? _connectionSubscription;
   StreamSubscription<List<ScanResult>>? _scanSubscription;
   StreamSubscription<int?>? _batterySubscription;
@@ -136,7 +135,6 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
     _service.realTimeHeartRateStream.listen((hr) {
       if (mounted) {
         setState(() {
-          _heartRate = hr;
         });
       }
       debugPrint('💓 HOME SCREEN: Received HR from service: $hr BPM');
@@ -173,7 +171,6 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       _heartRateSubscription = _heartRateService.dataStream.listen((hrData) {
         if (mounted && hrData != null) {
           setState(() {
-            _heartRate = hrData.heartRate;
           });
           debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
           
