@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import 'grok_hr_screen.dart';
 import 'sleep_premium_screen.dart';
 import 'advanced_features_test_screen.dart';
+import 'accelerometer_realtime_screen.dart';
 import 'dashboard_screen.dart';
 import 'advanced_health_dashboard.dart';
 import 'timezone_test_screen.dart';
@@ -964,6 +965,16 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
               icon: Icons.settings,
               color: Colors.blueGrey,
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AdvancedFeaturesTestScreen(service: _service))),
+            ),
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: _buildAnalysisButton(
+              title: '📊 3D Accelerometer (50Hz)',
+              icon: Icons.sensors,
+              color: Colors.blue,
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => AccelerometerRealtimeScreen(service: _service))),
             ),
           ),
           const SizedBox(height: 12),

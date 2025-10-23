@@ -288,6 +288,10 @@ class ChileafExtendedService {
       StreamController<Sensor6DFrequency>.broadcast();
   final StreamController<Sensor6DRawData> _sensor6DDataController =
       StreamController<Sensor6DRawData>.broadcast();
+  
+  // 3D Accelerometer real-time data stream
+  final StreamController<List<AccelerometerData>> _accelerometer3DController =
+      StreamController<List<AccelerometerData>>.broadcast();
 
   // RR Interval streams (advanced HRV analysis)
   final StreamController<List<RRIntervalData>> _rrIntervalController =
@@ -393,6 +397,7 @@ class ChileafExtendedService {
   Stream<Sensor3DFrequency> get sensor3DFrequencyStream => _sensor3DFrequencyController.stream;
   Stream<Sensor6DFrequency> get sensor6DFrequencyStream => _sensor6DFrequencyController.stream;
   Stream<Sensor6DRawData> get sensor6DDataStream => _sensor6DDataController.stream;
+  Stream<List<AccelerometerData>> get accelerometer3DStream => _accelerometer3DController.stream;
 
   // RR Interval stream (NEW: Advanced HRV analysis)
   Stream<List<RRIntervalData>> get rrIntervalStream => _rrIntervalController.stream;
@@ -5414,6 +5419,7 @@ class ChileafExtendedService {
       debugPrint('❌ Error processing button press: $e');
     }
   }
+
 
   /// Process 6D Raw Data Stream (Gyroscope + Accelerometer)
   /// Format: [0xFF, length, 0x6D, utc(4), seq, gyroX(2), gyroY(2), gyroZ(2), accelX(2), accelY(2), accelZ(2), checksum]
