@@ -557,16 +557,17 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   String _generateSleepCSVContent(List<SleepHistoryEntry> sleepData) {
     StringBuffer csvContent = StringBuffer();
     
-    // Header CSV
-    csvContent.writeln('Session_DateTime,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Awake_Minutes,Sleep_Efficiency_%,Sleep_Quality,Action_Index,Action_Timestamp');
-    csvContent.writeln('# NOTE: Each Action Index = 5-MINUTE block (SDK 0x31 specification)');
+    // Header CSV - Formato piatto (ogni riga completa)
+    csvContent.writeln('Session,Timestamp,Minutes_From_Start,Activity_Index,Sleep_State,Notes,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Sleep_Efficiency_%,Sleep_Quality');
+    csvContent.writeln('# NOTE: Each Activity_Index = 5-MINUTE block (SDK 0x31 specification)');
     
     // Dati per ogni sessione
+    int sessionNumber = 1;
     for (var sleep in sleepData) {
       final phases = sleep.calculateSleepPhases();
       final totalSleep = phases.lightSleep + phases.deepSleep;
       final totalMinutes = phases.totalMinutes;
-      final efficiency = totalMinutes > 0 ? ((totalSleep / totalMinutes) * 100).toStringAsFixed(1) : '0';
+      final efficiency = totalMinutes > 0 ? ((totalSleep / totalMinutes) * 100).toStringAsFixed(1) : '0.0';
       
       // Determina qualità del sonno
       String quality = 'Poor';
@@ -578,32 +579,38 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
         quality = 'Fair';
       }
       
-      String sessionDateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(sleep.timestamp);
+      String sessionTimestamp = DateFormat('yyyy-MM-ddTHH:mm:ss.000').format(sleep.timestamp);
       
-      // Riga sommaria della sessione
-      csvContent.writeln('$sessionDateTime,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},${phases.awake},$efficiency,$quality,,');
-      
-      // Dettaglio azioni (ogni azione = 5 MINUTI secondo SDK)
+      // Una riga per ogni azione (5-minute block)
       for (int i = 0; i < sleep.actions.length; i++) {
         int action = sleep.actions[i];
-        DateTime actionTime = sleep.timestamp.add(Duration(minutes: i * 5)); // 5 minuti per action
-        String actionTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(actionTime);
+        int minutesFromStart = i * 5; // 5 minuti per action
         
-        // Determina fase del sonno per questa azione (5-minute block)
-        String phase = 'Unknown';
+        // Determina stato del sonno basato sull'action index
+        String sleepState = 'AWAKE';
+        String notes = '';
+        
         if (action == 0) {
-          phase = 'Very Still (0)';
-        } else if (action > 20) {
-          phase = 'Active/Awake';
+          sleepState = 'DEEP_SLEEP_CANDIDATE';
+          // Se ci sono almeno 3 blocchi consecutivi di 0, è deep sleep confermato
+          if (i >= 2 && i < sleep.actions.length - 1) {
+            if (sleep.actions[i-2] == 0 && sleep.actions[i-1] == 0 && sleep.actions[i+1] == 0) {
+              notes = 'DEEP_SLEEP_CONFIRMED';
+            }
+          }
+        } else if (action <= 5) {
+          sleepState = 'LIGHT_SLEEP';
+        } else if (action <= 15) {
+          sleepState = 'LIGHT_SLEEP';
         } else {
-          phase = 'Light Activity';
+          sleepState = 'AWAKE';
         }
         
-        csvContent.writeln(',,,,,,,,$action ($phase),$actionTimestamp');
+        // Scrivi riga completa (NO virgole vuote!)
+        csvContent.writeln('$sessionNumber,$sessionTimestamp,$minutesFromStart,$action,$sleepState,$notes,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},$efficiency,$quality');
       }
       
-      // Riga vuota tra sessioni
-      csvContent.writeln();
+      sessionNumber++;
     }
     
     return csvContent.toString();
