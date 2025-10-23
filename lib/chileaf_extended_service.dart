@@ -5181,12 +5181,21 @@ class ChileafExtendedService {
 
 
 
-  /// Factory restoration
-  /// Equivalent to Android: WearManager.restoration()
+  /// Factory restoration (Factory Reset)
+  /// Equivalent to Android: WearManager.restoration() - sendCommand((byte) -13, 0)
+  /// Equivalent to iOS: 0xF3 command
+  /// 
+  /// ⚠️ WARNING: This command will erase ALL data from the device!
+  /// Device will respond with 0x4B to confirm reset completed.
+  /// 
+  /// Command format: [0xFF, 0x04, 0xF3, checksum]
+  /// - 0xF3 = 243 decimal = -13 in signed byte (Java)
   Future<void> factoryRestoration() async {
-    debugPrint('⚠️ Performing factory restoration...');
-    // Command: 0x4B (75 decimal)
-    await _sendCommand([0xFF, 0x04, 0x4B, 0x00]);
+    debugPrint('⚠️ Performing factory restoration (0xF3)...');
+    debugPrint('   This will ERASE ALL data from device!');
+    // Command: 0xF3 (243 decimal, -13 in signed byte)
+    // Fixed from incorrect 0x4B (which is the RESPONSE, not the command)
+    await _sendCommand([0xFF, 0x04, 0xF3]);
   }
 
   /// Get single button press history
