@@ -1,7 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'grok_hr_screen.dart';
 import 'sleep_premium_screen.dart';
 import 'advanced_features_test_screen.dart';
@@ -10,6 +14,7 @@ import 'advanced_health_dashboard.dart';
 import 'timezone_test_screen.dart';
 import '../chileaf_extended_service.dart';
 import '../models/heart_rate_data.dart';
+import '../models/historical_data.dart';
 import '../battery.dart' show BatteryService;
 import '../heartrate.dart' show HeartRateService;
 
@@ -44,6 +49,9 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   final Map<String, bool> _downloading = {};
   final Map<String, String> _lastDownload = {};
   final Map<String, int> _dataCount = {};
+  
+  // Sleep data cache for CSV export
+  final List<SleepHistoryEntry> _sleepHistoryData = [];
 
   @override
   void initState() {
@@ -94,6 +102,8 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       debugPrint('🏠 HOME SCREEN: Received ${list.length} sleep sessions from stream');
       if (mounted) {
         setState(() {
+          _sleepHistoryData.clear();
+          _sleepHistoryData.addAll(list);
           _dataCount['sleep'] = list.length;
           _downloading['sleep'] = false;
           _lastDownload['sleep'] = '${list.length} sessions - Now';
@@ -540,6 +550,121 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
     );
   }
 
+  // ===== CSV EXPORT =====
+  
+  /// Genera il contenuto CSV per i dati del sonno
+  String _generateSleepCSVContent(List<SleepHistoryEntry> sleepData) {
+    StringBuffer csvContent = StringBuffer();
+    
+    // Header CSV
+    csvContent.writeln('Session_DateTime,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Awake_Minutes,Sleep_Efficiency_%,Sleep_Quality,Action_Index,Action_Timestamp');
+    csvContent.writeln('# NOTE: Each Action Index = 5-MINUTE block (SDK 0x31 specification)');
+    
+    // Dati per ogni sessione
+    for (var sleep in sleepData) {
+      final phases = sleep.calculateSleepPhases();
+      final totalSleep = phases.lightSleep + phases.deepSleep;
+      final totalMinutes = phases.totalMinutes;
+      final efficiency = totalMinutes > 0 ? ((totalSleep / totalMinutes) * 100).toStringAsFixed(1) : '0';
+      
+      // Determina qualità del sonno
+      String quality = 'Poor';
+      if (totalSleep > 360 && phases.deepSleep > totalSleep * 0.2) {
+        quality = 'Excellent';
+      } else if (totalSleep > 300 && phases.deepSleep > totalSleep * 0.15) {
+        quality = 'Good';
+      } else if (totalSleep > 240) {
+        quality = 'Fair';
+      }
+      
+      String sessionDateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(sleep.timestamp);
+      
+      // Riga sommaria della sessione
+      csvContent.writeln('$sessionDateTime,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},${phases.awake},$efficiency,$quality,,');
+      
+      // Dettaglio azioni (ogni azione = 5 MINUTI secondo SDK)
+      for (int i = 0; i < sleep.actions.length; i++) {
+        int action = sleep.actions[i];
+        DateTime actionTime = sleep.timestamp.add(Duration(minutes: i * 5)); // 5 minuti per action
+        String actionTimestamp = DateFormat('yyyy-MM-dd HH:mm:ss').format(actionTime);
+        
+        // Determina fase del sonno per questa azione (5-minute block)
+        String phase = 'Unknown';
+        if (action == 0) {
+          phase = 'Very Still (0)';
+        } else if (action > 20) {
+          phase = 'Active/Awake';
+        } else {
+          phase = 'Light Activity';
+        }
+        
+        csvContent.writeln(',,,,,,,,$action ($phase),$actionTimestamp');
+      }
+      
+      // Riga vuota tra sessioni
+      csvContent.writeln();
+    }
+    
+    return csvContent.toString();
+  }
+
+  /// Esporta i dati del sonno in CSV
+  Future<void> _exportSleepDataToCSV() async {
+    if (_sleepHistoryData.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('⚠️ No sleep data to export. Download Sleep History first!'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+    
+    try {
+      // Calcola statistiche
+      final uniqueDates = _sleepHistoryData
+          .map((s) => DateFormat('yyyy-MM-dd').format(s.timestamp))
+          .toSet()
+          .length;
+      
+      final csvContent = _generateSleepCSVContent(_sleepHistoryData);
+      final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+      final filename = 'CL837_Sleep_Data_$timestamp.csv';
+      
+      // Usa share_plus per condividere il file
+      final directory = await getTemporaryDirectory();
+      final path = '${directory.path}/$filename';
+      final file = File(path);
+      await file.writeAsString(csvContent);
+      
+      await Share.shareXFiles(
+        [XFile(path)],
+        text: 'CL837 Sleep Data Export - ${_sleepHistoryData.length} sessions from $uniqueDates days',
+        subject: filename,
+      );
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Exported ${_sleepHistoryData.length} sessions from $uniqueDates days'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Export failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -657,34 +782,14 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           
           // Historical Data Section
           _buildSectionTitle('Historical Data'),
-          // Persistent Export CSV button (navigates to HR Analysis screen where CSV export is available)
+          // Persistent Export CSV button - DIRECT export without navigation
           Padding(
             padding: const EdgeInsets.only(bottom: 8.0),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 ElevatedButton.icon(
-                  onPressed: () {
-                    // Check if we have sleep data before navigating
-                    if (_dataCount['sleep'] != null && _dataCount['sleep']! > 0) {
-                      // Navigate to GrokHrScreen and PASS the service so it uses the same data
-                      Navigator.push(
-                        context, 
-                        MaterialPageRoute(
-                          builder: (_) => GrokHrScreen(service: _service),
-                        ),
-                      );
-                    } else {
-                      // No data - show helpful message
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('⚠️ No sleep data available. Download Sleep History first!'),
-                          backgroundColor: Colors.orange,
-                          duration: Duration(seconds: 3),
-                        ),
-                      );
-                    }
-                  },
+                  onPressed: (_dataCount['sleep'] ?? 0) > 0 ? _exportSleepDataToCSV : null,
                   icon: Icon(
                     Icons.download, 
                     size: 16,
