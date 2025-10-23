@@ -2116,18 +2116,29 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
                             ],
                           ),
                         ),
-                        if (_sleepHistoryData.isNotEmpty)
-                          ElevatedButton.icon(
-                            onPressed: _exportSleepDataToCSV,
-                            icon: const Icon(Icons.download, size: 18),
-                            label: const Text('Export CSV'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.green.shade700,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              textStyle: const TextStyle(fontSize: 12),
-                            ),
+                        // Always show Export CSV button (will show message if no data)
+                        ElevatedButton.icon(
+                          onPressed: _sleepHistoryData.isNotEmpty 
+                              ? _exportSleepDataToCSV 
+                              : () {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('⚠️ No sleep data to export. Download sleep data first!'),
+                                      backgroundColor: Colors.orange,
+                                    ),
+                                  );
+                                },
+                          icon: const Icon(Icons.download, size: 18),
+                          label: const Text('Export CSV'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _sleepHistoryData.isNotEmpty 
+                                ? Colors.green.shade700 
+                                : Colors.grey.shade600,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            textStyle: const TextStyle(fontSize: 12),
                           ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 16),
