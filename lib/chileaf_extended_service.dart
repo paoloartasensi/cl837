@@ -820,6 +820,7 @@ class ChileafExtendedService {
           _macAddressController.add(macAddress);
         }
         break;
+      
       case 0x31: // Sleep Data (OFFICIAL COMMAND from documentation 2.14)
         debugPrint('🌙💤 SLEEP DATA 0x31: Processing official sleep data response');
         _processSleepData31(data);
@@ -913,7 +914,11 @@ class ChileafExtendedService {
         _healthProcessor.processHealthData(data);
         break;
       case ChileafProtocol.commandAccelerometer:
-        // SILENTLY ignore accelerometer data - no logging (simplified app focus)
+        // 3D Accelerometer Real-Time Data Stream (0x0C)
+        // Real-time accelerometer data sent at configured frequency (25-400 Hz)
+        // Format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
+        debugPrint('📊 3D ACCEL: Received ${data.length} bytes');
+        _process3DAccelerometerData(data);
         break;
       case 0x16: // Exercise History
         debugPrint(
@@ -5212,6 +5217,49 @@ class ChileafExtendedService {
   }
 
   // ===== RESPONSE PROCESSORS FOR NEW FEATURES =====
+
+  /// Process 3D Accelerometer Real-Time Data Stream
+  /// Format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
+  /// Multiple samples can be in one packet (each sample = 6 bytes)
+  void _process3DAccelerometerData(List<int> data) {
+    try {
+      if (data.length < 9) {
+        debugPrint('❌ Invalid 3D accelerometer data length: ${data.length}');
+        return;
+      }
+
+      // Parse all samples in the packet
+      List<AccelerometerData> samples = [];
+      int i = 3; // Start after header [0xFF, length, 0x0C]
+      
+      while (i + 5 < data.length - 1) { // -1 for checksum at end
+        // Parse X, Y, Z as signed int16 (little-endian)
+        int xRaw = data[i] | (data[i + 1] << 8);
+        int yRaw = data[i + 2] | (data[i + 3] << 8);
+        int zRaw = data[i + 4] | (data[i + 5] << 8);
+        
+        // Convert unsigned to signed int16
+        if (xRaw > 32767) xRaw -= 65536;
+        if (yRaw > 32767) yRaw -= 65536;
+        if (zRaw > 32767) zRaw -= 65536;
+        
+        samples.add(AccelerometerData(
+          x: xRaw.toDouble(),
+          y: yRaw.toDouble(),
+          z: zRaw.toDouble(),
+        ));
+        
+        i += 6; // Move to next sample
+      }
+
+      if (samples.isNotEmpty) {
+        debugPrint('📊 3D ACCEL: Parsed ${samples.length} samples');
+        _accelerometer3DController.add(samples);
+      }
+    } catch (e) {
+      debugPrint('❌ Error processing 3D accelerometer data: $e');
+    }
+  }
 
   /// Process Sport Health Data (VO2 Max, HRV, Stress, Stamina)
   /// Format: [0xFF, length, 0x4E, vo2Max, breathRate, emotion, stress, stamina, tp(4), lf(4), hf(4), checksum]

@@ -32,6 +32,23 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
   @override
   void initState() {
     super.initState();
+    _initAccelerometer();
+  }
+
+  Future<void> _initAccelerometer() async {
+    // Enable 3D accelerometer sensor at 50Hz
+    debugPrint('📊 Enabling 3D accelerometer at 50Hz...');
+    try {
+      await widget.service.set3DEnabled(true);
+      await Future.delayed(const Duration(milliseconds: 500));
+      await widget.service.set3DFrequency(Sensor3DFrequency.hz50.value);
+      await Future.delayed(const Duration(milliseconds: 500));
+      debugPrint('✅ 3D accelerometer enabled');
+    } catch (e) {
+      debugPrint('❌ Error enabling accelerometer: $e');
+    }
+    
+    // Setup stream listener
     _setupAccelerometerStream();
   }
 
@@ -338,6 +355,12 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
                 itemCount: _recentSamples.length,
                 itemBuilder: (context, index) {
                   final sample = _recentSamples[_recentSamples.length - 1 - index];
+                  const double lsbPerG = 16384.0;
+                  final xG = sample.x / lsbPerG;
+                  final yG = sample.y / lsbPerG;
+                  final zG = sample.z / lsbPerG;
+                  final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
+                  
                   return ListTile(
                     dense: true,
                     leading: CircleAvatar(
@@ -348,11 +371,11 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
                       ),
                     ),
                     title: Text(
-                      'X:${sample.x.toInt()} Y:${sample.y.toInt()} Z:${sample.z.toInt()}',
-                      style: const TextStyle(fontFamily: 'monospace'),
+                      'X:${xG.toStringAsFixed(2)}g Y:${yG.toStringAsFixed(2)}g Z:${zG.toStringAsFixed(2)}g',
+                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
                     ),
                     subtitle: Text(
-                      'Magnitude: ${((sample.x * sample.x + sample.y * sample.y + sample.z * sample.z) / 1000).toStringAsFixed(2)} g',
+                      'Magnitude: ${magnitudeG.toStringAsFixed(3)} g (${(magnitudeG * 9.81).toStringAsFixed(2)} m/s²)',
                       style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
                     ),
                   );

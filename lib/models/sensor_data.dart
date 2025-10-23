@@ -36,6 +36,32 @@ class AccelerometerData {
     required this.y,
     required this.z,
   });
+
+  /// Parse CL837 accelerometer packet format
+  /// Format: [0xFF, length, 0x0C, data...]
+  /// Each sample is 6 bytes: X (2 bytes), Y (2 bytes), Z (2 bytes) as signed int16
+  factory AccelerometerData.fromRawDataCl837(List<int> data) {
+    if (data.length < 9) {
+      throw Exception('Invalid accelerometer data length: ${data.length}');
+    }
+    
+    // CL837 format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
+    // Parse first sample (bytes 3-8)
+    int xRaw = data[3] | (data[4] << 8);
+    int yRaw = data[5] | (data[6] << 8);
+    int zRaw = data[7] | (data[8] << 8);
+    
+    // Convert unsigned to signed int16
+    if (xRaw > 32767) xRaw -= 65536;
+    if (yRaw > 32767) yRaw -= 65536;
+    if (zRaw > 32767) zRaw -= 65536;
+    
+    return AccelerometerData(
+      x: xRaw.toDouble(),
+      y: yRaw.toDouble(),
+      z: zRaw.toDouble(),
+    );
+  }
 }
 
 /// 3D Accelerometer Frequency Settings
