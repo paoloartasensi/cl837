@@ -16,14 +16,16 @@ import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 
 class GrokHrScreen extends StatefulWidget {
-  const GrokHrScreen({super.key});
+  final ChileafExtendedService? service;
+  
+  const GrokHrScreen({super.key, this.service});
 
   @override
   State<GrokHrScreen> createState() => _GrokHrScreenState();
 }
 
 class _GrokHrScreenState extends State<GrokHrScreen> {
-  final ChileafExtendedService _service = ChileafExtendedService();
+  late final ChileafExtendedService _service;
   
   // BLE Connection variables
   BluetoothDevice? connectedDevice;
@@ -53,6 +55,8 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
   @override
   void initState() {
     super.initState();
+    // Use passed service or create new one
+    _service = widget.service ?? ChileafExtendedService();
     _initializeBluetooth();
     _setupStreams();
   }

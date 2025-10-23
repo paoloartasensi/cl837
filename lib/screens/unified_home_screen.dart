@@ -657,6 +657,58 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           
           // Historical Data Section
           _buildSectionTitle('Historical Data'),
+          // Persistent Export CSV button (navigates to HR Analysis screen where CSV export is available)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8.0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () {
+                    // Check if we have sleep data before navigating
+                    if (_dataCount['sleep'] != null && _dataCount['sleep']! > 0) {
+                      // Navigate to GrokHrScreen and PASS the service so it uses the same data
+                      Navigator.push(
+                        context, 
+                        MaterialPageRoute(
+                          builder: (_) => GrokHrScreen(service: _service),
+                        ),
+                      );
+                    } else {
+                      // No data - show helpful message
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('⚠️ No sleep data available. Download Sleep History first!'),
+                          backgroundColor: Colors.orange,
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    }
+                  },
+                  icon: Icon(
+                    Icons.download, 
+                    size: 16,
+                    color: (_dataCount['sleep'] ?? 0) > 0 ? Colors.white : Colors.grey.shade400,
+                  ),
+                  label: Text(
+                    (_dataCount['sleep'] ?? 0) > 0 
+                        ? 'Export Sleep CSV (${_dataCount['sleep']})' 
+                        : 'Export Sleep CSV',
+                    style: TextStyle(
+                      color: (_dataCount['sleep'] ?? 0) > 0 ? Colors.white : Colors.grey.shade400,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: (_dataCount['sleep'] ?? 0) > 0 
+                        ? Colors.green.shade700 
+                        : Colors.grey.shade600,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          ),
           _buildDownloadTile(
             title: 'Heart Rate History',
             subtitle: _lastDownload['hr'] ?? 'Not downloaded yet',
@@ -785,7 +837,7 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
                   title: 'HR Analysis',
                   icon: Icons.show_chart,
                   color: Colors.red,
-                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const GrokHrScreen())),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => GrokHrScreen(service: _service))),
                 ),
               ),
               const SizedBox(width: 12),
