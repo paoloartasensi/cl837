@@ -182,14 +182,13 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
   Widget _buildCurrentValuesCard() {
     final sample = _latestSample!;
     
-    // Conversion factor: Standard ±2g range → 1g = 16384 LSB (typical for MEMS accelerometers)
-    // If device is stationary: Z-axis should show ~1g (9.81 m/s²), X and Y near 0
-    const double lsbPerG = 16384.0; // ±2g range (adjust if device uses ±4g = 8192, ±8g = 4096)
+    // I valori sono già convertiti in 'g' dal factory method fromRawDataCl837()
+    // CL837 usa ±8g range con scale factor 8.0/32768.0
+    // Quindi i valori x, y, z sono già in unità 'g'
     
-    // Convert raw int16 values to g
-    final xG = sample.x / lsbPerG;
-    final yG = sample.y / lsbPerG;
-    final zG = sample.z / lsbPerG;
+    final xG = sample.x;
+    final yG = sample.y;
+    final zG = sample.z;
     
     // Calculate magnitude in g using proper square root
     final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
@@ -355,10 +354,10 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
                 itemCount: _recentSamples.length,
                 itemBuilder: (context, index) {
                   final sample = _recentSamples[_recentSamples.length - 1 - index];
-                  const double lsbPerG = 16384.0;
-                  final xG = sample.x / lsbPerG;
-                  final yG = sample.y / lsbPerG;
-                  final zG = sample.z / lsbPerG;
+                  // I valori sono già in 'g' dal parsing
+                  final xG = sample.x;
+                  final yG = sample.y;
+                  final zG = sample.z;
                   final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
                   
                   return ListTile(

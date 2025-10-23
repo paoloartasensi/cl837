@@ -37,30 +37,70 @@ class AccelerometerData {
     required this.z,
   });
 
+  /// Magnitude of acceleration (Euclidean norm)
+  /// magnitude = √(x² + y² + z²)
+  double get magnitude => (x * x + y * y + z * z);
+
   /// Parse CL837 accelerometer packet format
-  /// Format: [0xFF, length, 0x0C, data...]
+  /// Format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
   /// Each sample is 6 bytes: X (2 bytes), Y (2 bytes), Z (2 bytes) as signed int16
+  /// Scale factor: ±8g range (CL837 specification)
   factory AccelerometerData.fromRawDataCl837(List<int> data) {
+    // Validation to avoid reading incorrect packets
     if (data.length < 9) {
-      throw Exception('Invalid accelerometer data length: ${data.length}');
+      throw ArgumentError('Invalid data length for CL837: ${data.length}');
     }
-    
-    // CL837 format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
-    // Parse first sample (bytes 3-8)
-    int xRaw = data[3] | (data[4] << 8);
-    int yRaw = data[5] | (data[6] << 8);
-    int zRaw = data[7] | (data[8] << 8);
-    
-    // Convert unsigned to signed int16
-    if (xRaw > 32767) xRaw -= 65536;
-    if (yRaw > 32767) yRaw -= 65536;
-    if (zRaw > 32767) zRaw -= 65536;
-    
+
+    // Validate packet header
+    if (data[0] != 0xFF) {
+      throw ArgumentError('Invalid CL837 packet header: 0x${data[0].toRadixString(16)}');
+    }
+
+    if (data[2] != 0x0C) {
+      throw ArgumentError('Invalid CL837 packet type: 0x${data[2].toRadixString(16)}');
+    }
+
+    // Robust conversion function for signed int16
+    int convertToSigned16(int lowByte, int highByte) {
+      int value = (highByte << 8) | lowByte;
+      // Correctly convert signed 16-bit values
+      return (value & 0x8000) != 0 ? value - 0x10000 : value;
+    }
+
+    // Read raw values with offset 3 as per CL837 documentation
+    final rawX = convertToSigned16(data[3], data[4]);
+    final rawY = convertToSigned16(data[5], data[6]);
+    final rawZ = convertToSigned16(data[7], data[8]);
+
+    // Protection against anomalous values that cause spikes
+    // Define a maximum plausible value in raw units
+    const int maxRawValue = 25000; // Approximately 6g at 32768 = 8g
+
+    int clampRawValue(int value) {
+      if (value > maxRawValue) return maxRawValue;
+      if (value < -maxRawValue) return -maxRawValue;
+      return value;
+    }
+
+    // Apply clamp to avoid spikes
+    final clampedX = clampRawValue(rawX);
+    final clampedY = clampRawValue(rawY);
+    final clampedZ = clampRawValue(rawZ);
+
+    // Scale factor for CL837 (±8g range)
+    // 32768 raw units = 8g → 1g = 4096 raw units
+    const scaleFactor = 8.0 / 32768.0;
+
     return AccelerometerData(
-      x: xRaw.toDouble(),
-      y: yRaw.toDouble(),
-      z: zRaw.toDouble(),
+      x: clampedX * scaleFactor,
+      y: clampedY * scaleFactor,
+      z: clampedZ * scaleFactor,
     );
+  }
+
+  @override
+  String toString() {
+    return 'AccelerometerData(x: ${x.toStringAsFixed(3)}g, y: ${y.toStringAsFixed(3)}g, z: ${z.toStringAsFixed(3)}g)';
   }
 }
 
