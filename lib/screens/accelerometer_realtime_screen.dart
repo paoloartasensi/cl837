@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'dart:math' show sqrt;
 import '../chileaf_extended_service.dart';
 import '../models/sensor_data.dart';
 
@@ -174,9 +175,7 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
     final zG = sample.z / lsbPerG;
     
     // Calculate magnitude in g using proper square root
-    final magnitudeG = (xG * xG + yG * yG + zG * zG) > 0 
-        ? ((xG * xG + yG * yG + zG * zG).abs()).toDouble() 
-        : 0.0;
+    final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
     
     // Convert to m/s²
     final xMS2 = xG * 9.81;
