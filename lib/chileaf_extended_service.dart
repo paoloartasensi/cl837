@@ -118,6 +118,9 @@ class ChileafExtendedService {
   // Callback per UI updates e completamento automatico
   void Function(String spo2Value)? _onSpO2ValueReceived;
   void Function()? _onSpO2MeasurementComplete;
+  
+  // Accelerometer packet counter for debug logging
+  int _accelPacketCount = 0;
   void Function(String error)? _onSpO2Error;
 
   // HR Callback functions
@@ -5220,7 +5223,8 @@ class ChileafExtendedService {
 
   /// Process 3D Accelerometer Real-Time Data Stream
   /// Format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
-  /// Multiple samples can be in one packet (each sample = 6 bytes)
+  /// NOTE: iOS SDK shows each sample takes 12 bytes total, but only first 6 are X,Y,Z data
+  /// Remaining 6 bytes per sample might be: timestamp, sequence, or duplicate data
   void _process3DAccelerometerData(List<int> data) {
     try {
       if (data.length < 9) {
@@ -5228,12 +5232,21 @@ class ChileafExtendedService {
         return;
       }
 
-      // Parse all samples in the packet
+      // Debug: Log raw packet to understand structure (throttled to avoid spam)
+      _accelPacketCount++;
+      if (_accelPacketCount % 100 == 1 || data.length <= 15) { // Log first and every 100th, or short packets
+        String hexDump = data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
+        debugPrint('📊 3D ACCEL RAW [#$_accelPacketCount] (${data.length} bytes): $hexDump');
+      }
+
+      // Parse samples using 6-byte format (X, Y, Z as 2 bytes each)
       List<AccelerometerData> samples = [];
       int i = 3; // Start after header [0xFF, length, 0x0C]
       
-      while (i + 5 < data.length - 1) { // -1 for checksum at end
-        // Parse X, Y, Z as signed int16 (little-endian)
+      // Each sample: 6 bytes (X_low, X_high, Y_low, Y_high, Z_low, Z_high)
+      // Packet ends with 1-byte checksum
+      while (i + 5 < data.length) { // Need 6 bytes for X,Y,Z (don't subtract 1 for checksum check)
+        // Parse as little-endian signed int16
         int xRaw = data[i] | (data[i + 1] << 8);
         int yRaw = data[i + 2] | (data[i + 3] << 8);
         int zRaw = data[i + 4] | (data[i + 5] << 8);
@@ -5243,18 +5256,37 @@ class ChileafExtendedService {
         if (yRaw > 32767) yRaw -= 65536;
         if (zRaw > 32767) zRaw -= 65536;
         
-        samples.add(AccelerometerData(
-          x: xRaw.toDouble(),
-          y: yRaw.toDouble(),
-          z: zRaw.toDouble(),
-        ));
+        // Clamp to avoid spikes (max ±6g = ±24576 raw at 8g range)
+        const int maxRawValue = 25000;
+        int clampedX = xRaw.clamp(-maxRawValue, maxRawValue);
+        int clampedY = yRaw.clamp(-maxRawValue, maxRawValue);
+        int clampedZ = zRaw.clamp(-maxRawValue, maxRawValue);
         
-        i += 6; // Move to next sample
+        // Apply scale factor (±8g range: 32768 = 8g)
+        const scaleFactor = 8.0 / 32768.0;
+        final sample = AccelerometerData(
+          x: clampedX * scaleFactor,
+          y: clampedY * scaleFactor,
+          z: clampedZ * scaleFactor,
+        );
+        
+        samples.add(sample);
+        
+        // Log first few samples with actual values
+        if (_accelPacketCount % 100 == 1 && samples.length <= 3) {
+          debugPrint('📊   Sample ${samples.length}: X=${sample.x.toStringAsFixed(3)}g, Y=${sample.y.toStringAsFixed(3)}g, Z=${sample.z.toStringAsFixed(3)}g (raw: $xRaw, $yRaw, $zRaw)');
+        }
+        
+        i += 6; // Move to next sample (6 bytes per sample)
       }
 
       if (samples.isNotEmpty) {
-        debugPrint('📊 3D ACCEL: Parsed ${samples.length} samples');
+        if (_accelPacketCount % 100 == 1) {
+          debugPrint('📊 3D ACCEL: Parsed ${samples.length} samples from ${data.length} bytes');
+        }
         _accelerometer3DController.add(samples);
+      } else {
+        debugPrint('⚠️ 3D ACCEL: No valid samples parsed from ${data.length} bytes');
       }
     } catch (e) {
       debugPrint('❌ Error processing 3D accelerometer data: $e');
