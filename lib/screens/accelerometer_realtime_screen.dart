@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
-import 'dart:math' show sqrt;
 import '../chileaf_extended_service.dart';
 import '../models/sensor_data.dart';
 
@@ -21,13 +20,10 @@ class AccelerometerRealtimeScreen extends StatefulWidget {
 class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScreen> {
   StreamSubscription<List<AccelerometerData>>? _accelSubscription;
   
-  AccelerometerData? _latestSample;
-  List<AccelerometerData> _recentSamples = [];
-  int _totalSamplesReceived = 0;
-  DateTime? _lastUpdateTime;
-  double _currentFrequency = 0.0;
-  
-  final int _maxSamplesToShow = 20;
+  double _ax = 0.0;
+  double _ay = 0.0;
+  double _az = 0.0;
+  int _sampleCount = 0;
 
   @override
   void initState() {
@@ -55,29 +51,15 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
   void _setupAccelerometerStream() {
     _accelSubscription = widget.service.accelerometer3DStream.listen(
       (samples) {
-        setState(() {
-          _totalSamplesReceived += samples.length;
-          
-          // Update frequency calculation
-          if (_lastUpdateTime != null) {
-            final timeDiff = DateTime.now().difference(_lastUpdateTime!).inMilliseconds;
-            if (timeDiff > 0) {
-              _currentFrequency = (samples.length / timeDiff) * 1000;
-            }
-          }
-          _lastUpdateTime = DateTime.now();
-          
-          // Store latest sample
-          if (samples.isNotEmpty) {
-            _latestSample = samples.last;
-          }
-          
-          // Keep recent samples for display
-          _recentSamples.addAll(samples);
-          if (_recentSamples.length > _maxSamplesToShow) {
-            _recentSamples = _recentSamples.sublist(_recentSamples.length - _maxSamplesToShow);
-          }
-        });
+        if (samples.isNotEmpty) {
+          final sample = samples.last;
+          setState(() {
+            _ax = sample.x;
+            _ay = sample.y;
+            _az = sample.z;
+            _sampleCount += samples.length;
+          });
+        }
       },
       onError: (error) {
         debugPrint('❌ Accelerometer stream error: $error');
@@ -95,291 +77,107 @@ class _AccelerometerRealtimeScreenState extends State<AccelerometerRealtimeScree
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('3D Accelerometer (50Hz)'),
+        title: const Text('3D Accelerometer'),
         backgroundColor: Colors.blue.shade700,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () {
-              setState(() {
-                _recentSamples.clear();
-                _totalSamplesReceived = 0;
-                _currentFrequency = 0.0;
-              });
-            },
-            tooltip: 'Clear data',
-          ),
-        ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Status Card
-            _buildStatusCard(),
-            const SizedBox(height: 16),
-            
-            // Current Values Card
-            if (_latestSample != null) _buildCurrentValuesCard(),
-            const SizedBox(height: 16),
-            
-            // Recent Samples List
-            _buildRecentSamplesCard(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStatusCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '📊 Stream Status',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Total Samples:', style: TextStyle(color: Colors.grey.shade600)),
-                    Text(
-                      _totalSamplesReceived.toString(),
-                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                    ),
-                  ],
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Sample count
+              Text(
+                'Samples: $_sampleCount',
+                style: TextStyle(
+                  fontSize: 16,
+                  color: Colors.grey.shade600,
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+              ),
+              const SizedBox(height: 40),
+              
+              // AX
+              _buildAxisCard('AX', _ax, Colors.red),
+              const SizedBox(height: 20),
+              
+              // AY
+              _buildAxisCard('AY', _ay, Colors.green),
+              const SizedBox(height: 20),
+              
+              // AZ
+              _buildAxisCard('AZ', _az, Colors.blue),
+              
+              const SizedBox(height: 40),
+              
+              // Info
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Frequency:', style: TextStyle(color: Colors.grey.shade600)),
-                    Text(
-                      '${_currentFrequency.toStringAsFixed(1)} Hz',
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: _currentFrequency > 40 ? Colors.green : Colors.orange,
+                    Icon(Icons.info_outline, size: 20, color: Colors.amber.shade700),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      child: Text(
+                        'Device stationary: AZ ≈ 1.0g, AX/AY ≈ 0g',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.amber.shade900,
+                        ),
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCurrentValuesCard() {
-    final sample = _latestSample!;
-    
-    // I valori sono già convertiti in 'g' dal factory method fromRawDataCl837()
-    // CL837 usa ±8g range con scale factor 8.0/32768.0
-    // Quindi i valori x, y, z sono già in unità 'g'
-    
-    final xG = sample.x;
-    final yG = sample.y;
-    final zG = sample.z;
-    
-    // Calculate magnitude in g using proper square root
-    final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
-    
-    // Convert to m/s²
-    final xMS2 = xG * 9.81;
-    final yMS2 = yG * 9.81;
-    final zMS2 = zG * 9.81;
-    final magnitudeMS2 = magnitudeG * 9.81;
-    
-    return Card(
-      color: Colors.blue.shade50,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              '📍 Current Values',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            _buildAxisRow('X', xG, xMS2, Colors.red),
-            const SizedBox(height: 8),
-            _buildAxisRow('Y', yG, yMS2, Colors.green),
-            const SizedBox(height: 8),
-            _buildAxisRow('Z', zG, zMS2, Colors.blue),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Magnitude:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      '${magnitudeG.toStringAsFixed(3)} g',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      '${magnitudeMS2.toStringAsFixed(2)} m/s²',
-                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.amber.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.amber.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.info_outline, size: 16, color: Colors.amber.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Device stationary: Z ≈ 1.0g (9.81 m/s²), X/Y ≈ 0',
-                      style: TextStyle(fontSize: 11, color: Colors.amber.shade900),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAxisRow(String axis, double valueG, double valueMS2, Color color) {
-    return Row(
-      children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            axis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${valueG.toStringAsFixed(3)} g',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              Text(
-                '${valueMS2.toStringAsFixed(2)} m/s²',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
           ),
         ),
-        // Visual bar (scaled to ±2g range)
-        Expanded(
-          flex: 2,
-          child: Container(
-            height: 8,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: FractionallySizedBox(
-              alignment: valueG >= 0 ? Alignment.centerLeft : Alignment.centerRight,
-              widthFactor: (valueG.abs() / 2.0).clamp(0.0, 1.0), // Bar scale: ±2g = full width
-              child: Container(
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  Widget _buildRecentSamplesCard() {
+  Widget _buildAxisCard(String label, double value, Color color) {
     return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
+      elevation: 4,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Label
             Text(
-              '📜 Recent Samples (${_recentSamples.length})',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const Divider(),
-            if (_recentSamples.isEmpty)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32.0),
-                  child: Text(
-                    'No data received yet.\nMake sure 3D sensor is enabled at 50Hz.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey),
-                  ),
-                ),
-              )
-            else
-              ListView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: _recentSamples.length,
-                itemBuilder: (context, index) {
-                  final sample = _recentSamples[_recentSamples.length - 1 - index];
-                  // I valori sono già in 'g' dal parsing
-                  final xG = sample.x;
-                  final yG = sample.y;
-                  final zG = sample.z;
-                  final magnitudeG = sqrt(xG * xG + yG * yG + zG * zG);
-                  
-                  return ListTile(
-                    dense: true,
-                    leading: CircleAvatar(
-                      backgroundColor: Colors.blue.shade100,
-                      child: Text(
-                        '${_recentSamples.length - index}',
-                        style: const TextStyle(fontSize: 12),
-                      ),
-                    ),
-                    title: Text(
-                      'X:${xG.toStringAsFixed(2)}g Y:${yG.toStringAsFixed(2)}g Z:${zG.toStringAsFixed(2)}g',
-                      style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-                    ),
-                    subtitle: Text(
-                      'Magnitude: ${magnitudeG.toStringAsFixed(3)} g (${(magnitudeG * 9.81).toStringAsFixed(2)} m/s²)',
-                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-                    ),
-                  );
-                },
+              label,
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: color,
               ),
+            ),
+            const SizedBox(height: 12),
+            
+            // Value in g
+            Text(
+              '${value.toStringAsFixed(3)} g',
+              style: const TextStyle(
+                fontSize: 48,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 8),
+            
+            // Value in m/s²
+            Text(
+              '${(value * 9.81).toStringAsFixed(2)} m/s²',
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade600,
+              ),
+            ),
           ],
         ),
       ),
