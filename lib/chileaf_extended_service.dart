@@ -121,6 +121,12 @@ class ChileafExtendedService {
   
   // Accelerometer packet counter for debug logging
   int _accelPacketCount = 0;
+  
+  // Accelerometer frequency measurement
+  DateTime? _lastAccelPacketTime;
+  int _accelFrequencyMeasurementCount = 0;
+  double _measuredAccelFrequency = 0.0;
+  
   void Function(String error)? _onSpO2Error;
 
   // HR Callback functions
@@ -5237,6 +5243,40 @@ class ChileafExtendedService {
       if (data.length < 9) {
         debugPrint('❌ Invalid 3D accelerometer data length: ${data.length}');
         return;
+      }
+
+      // Measure actual frequency by tracking packet arrival times
+      DateTime now = DateTime.now();
+      if (_lastAccelPacketTime != null) {
+        _accelFrequencyMeasurementCount++;
+        
+        // Calculate frequency every 50 packets for accuracy
+        if (_accelFrequencyMeasurementCount >= 50) {
+          double elapsedSeconds = now.difference(_lastAccelPacketTime!).inMicroseconds / 1000000.0;
+          _measuredAccelFrequency = _accelFrequencyMeasurementCount / elapsedSeconds;
+          
+          // Determine configured frequency from measured value
+          String configuredFreq;
+          if (_measuredAccelFrequency < 37.5) {
+            configuredFreq = "25 Hz";
+          } else if (_measuredAccelFrequency < 75) {
+            configuredFreq = "50 Hz";
+          } else if (_measuredAccelFrequency < 150) {
+            configuredFreq = "100 Hz";
+          } else if (_measuredAccelFrequency < 300) {
+            configuredFreq = "200 Hz";
+          } else {
+            configuredFreq = "400 Hz";
+          }
+          
+          debugPrint('📊 3D ACCEL FREQUENCY: ${_measuredAccelFrequency.toStringAsFixed(1)} Hz (configured: $configuredFreq)');
+          
+          // Reset for next measurement
+          _accelFrequencyMeasurementCount = 0;
+          _lastAccelPacketTime = now;
+        }
+      } else {
+        _lastAccelPacketTime = now;
       }
 
       // Debug: Log raw packet to understand structure (throttled to avoid spam)
