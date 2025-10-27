@@ -1050,8 +1050,18 @@ class ChileafExtendedService {
         _processHRMaxResponse(data);
         break;
       
-      case 0x46: // 3D Sensor Frequency Response (existing but enhanced)
-        debugPrint('📡 3D FREQ: Processing 3D sensor frequency');
+      case 0x74: // 3D/6D Sensor SET Command Response
+        debugPrint('✅ 3D SET: Sensor configuration confirmed');
+        // Il dispositivo conferma il SET, nessun parsing necessario
+        break;
+      
+      case 0x75: // 3D/6D Sensor GET Command Response
+        debugPrint('📡 3D GET: Processing sensor status/frequency response');
+        _process3DSensorGetResponse(data);
+        break;
+      
+      case 0x46: // 3D Sensor Frequency Response (OLD - deprecated, use 0x75)
+        debugPrint('📡 3D FREQ (OLD 0x46): Processing 3D sensor frequency');
         _process3DFrequencyResponse(data);
         break;
       
