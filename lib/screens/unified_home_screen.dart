@@ -18,6 +18,7 @@ import '../models/heart_rate_data.dart';
 import '../models/historical_data.dart';
 import '../battery.dart' show BatteryService;
 import '../heartrate.dart' show HeartRateService;
+import '../widgets/sensor_3d_quick_actions.dart';
 
 /// Unified Home Screen - Persistent BT connection with individual data download
 class UnifiedHomeScreen extends StatefulWidget {
@@ -994,6 +995,11 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const TimezoneTestScreen())),
             ),
           ),
+          
+          // 🆕 NUOVO: Widget Azioni Rapide Sensore 3D
+          const SizedBox(height: 24),
+          if (_connectedDevice != null)
+            Sensor3DQuickActionsWidget(service: _service),
         ],
       ),
     );
