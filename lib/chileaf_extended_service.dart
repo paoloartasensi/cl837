@@ -5140,8 +5140,9 @@ class ChileafExtendedService {
   /// Equivalent to Android: WearManager.get3DFrequency()
   Future<void> get3DFrequency() async {
     debugPrint('📡 Getting 3D sensor frequency...');
-    // Command: 0x46 (70 decimal)
-    await _sendCommand([0xFF, 0x04, 0x46, 0x00]);
+    // Command: 0x75 (117) - GET frequency (from official SDK)
+    final cmd = OfficialChileafCommands.get3DFrequency();
+    await _sendCommand(cmd);
   }
 
 
@@ -5150,8 +5151,9 @@ class ChileafExtendedService {
   /// Equivalent to Android: WearManager.get3DStatus()
   Future<void> get3DStatus() async {
     debugPrint('📡 Getting 3D sensor status...');
-    // Command: 0x47 (71 decimal)
-    await _sendCommand([0xFF, 0x04, 0x47, 0x00]);
+    // Command: 0x75 (117) - GET status (from official SDK)
+    final cmd = OfficialChileafCommands.get3DStatus();
+    await _sendCommand(cmd);
   }
 
   /// Set 3D sensor enabled/disabled
