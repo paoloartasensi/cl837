@@ -155,7 +155,7 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
         });
       }
       // Log throttled to reduce spam (every 30th update = ~30 seconds)
-      if ((hrLogCounter++) % 30 == 0) {
+      if ((_hrLogCounter++) % 30 == 0) {
         debugPrint('💓 HOME SCREEN: Received HR from service: $hr BPM');
       }
     });
@@ -188,16 +188,15 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       await _heartRateService.start(device);
       debugPrint('💓 HOME SCREEN: Heart Rate service started');
       
-      // Reduce logging frequency
-      int hrLogCounter = 0;
+      // Subscribe to HR service (uses same _hrLogCounter for throttling)
       _heartRateSubscription = _heartRateService.dataStream.listen((hrData) {
         if (mounted && hrData != null) {
           setState(() {
           });
           
           // Log only every 30th HR update to reduce spam (~30 seconds)
-          hrLogCounter++;
-          if (hrLogCounter % 30 == 0) {
+          _hrLogCounter++;
+          if (_hrLogCounter % 30 == 0) {
             debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
             
             // Log RR intervals if available

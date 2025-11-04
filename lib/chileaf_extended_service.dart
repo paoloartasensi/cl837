@@ -120,6 +120,9 @@ class ChileafExtendedService {
   int _accelFrequencyMeasurementCount = 0;
   double _measuredAccelFrequency = 0.0;
   
+  // HR BLE Service logging throttle
+  int _hrBleLogCounter = 0;
+  
   void Function(String error)? _onSpO2Error;
 
   // HR Callback functions
@@ -589,7 +592,10 @@ class ChileafExtendedService {
     try {
       if (data.isEmpty) return;
       
-      debugPrint('💓 RAW HR DATA: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      // Throttle logging - only log every 30th HR update (~30 seconds)
+      if ((_hrBleLogCounter++) % 30 == 0) {
+        debugPrint('💓 RAW HR DATA: ${data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      }
       
       // Parse Heart Rate according to BLE Heart Rate Service specification
       // https://www.bluetooth.com/specifications/gatt/viewer?attributeUuid=org.bluetooth.characteristic.heart_rate_measurement
@@ -609,13 +615,20 @@ class ChileafExtendedService {
         }
       }
       
-      debugPrint('💓 Parsed HR: $heartRate BPM');
+      // Throttle parsing log
+      if (_hrBleLogCounter % 30 == 0) {
+        debugPrint('💓 Parsed HR: $heartRate BPM');
+      }
       
       // Validate heart rate range
       if (heartRate > 0 && heartRate < 250) {
         _realTimeHeartRateController.add(heartRate);
         _handleRealtimeHeartRate(heartRate);
-        debugPrint('💓 Real-time HR via BLE Service: $heartRate BPM');
+        
+        // Throttle real-time log
+        if (_hrBleLogCounter % 30 == 0) {
+          debugPrint('💓 Real-time HR via BLE Service: $heartRate BPM');
+        }
       } else {
         debugPrint('💓 Invalid HR value: $heartRate BPM');
       }
