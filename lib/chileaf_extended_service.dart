@@ -89,15 +89,11 @@ class ChileafExtendedService {
   int _hrDataStamp = 0;
   bool _isHRDataStamp = false;
 
-  // ===== SLEEP AND STEPS DATA SYSTEM =====
-  // Variabili per Sleep e Steps data (WearManager compatible)
-  final List<List<int>> _sleepPackages = [];
+  // ===== STEPS DATA SYSTEM (Sleep 0x05 format DEPRECATED - use 0x31) =====
+  // Variabili per Steps data (WearManager compatible)
   final List<List<int>> _stepsPackages = [];
-  final List<Map<String, dynamic>> _sleepDataList = [];
   final List<Map<String, dynamic>> _stepsDataList = [];
-  int _sleepDataStamp = 0;
   int _stepsDataStamp = 0;
-  bool _isSleepDataStamp = false;
   bool _isStepsDataStamp = false;
 
   // Historical data service with optimized checksum
@@ -118,9 +114,6 @@ class ChileafExtendedService {
   // Callback per UI updates e completamento automatico
   void Function(String spo2Value)? _onSpO2ValueReceived;
   void Function()? _onSpO2MeasurementComplete;
-  
-  // Accelerometer packet counter for debug logging
-  int _accelPacketCount = 0;
   
   // Accelerometer frequency measurement
   DateTime? _lastAccelPacketTime;
@@ -239,9 +232,6 @@ class ChileafExtendedService {
   
   // Sleep 0x31 CACHE - keeps last received sessions even after clear
   final List<SleepHistoryEntry> _sleepData31Cache = [];
-  
-  // Legacy Sleep 0x05 accumulator - accumulates all packets
-  final List<SleepHistoryEntry> _legacySleepAccumulator = [];
   
   // Sleep event streams (onset detection)
   final StreamController<SleepOnsetEvent> _sleepOnsetController =
@@ -367,8 +357,8 @@ class ChileafExtendedService {
   Stream<List<StepIntervalEntry>> get stepsHistoryStream =>
       _stepsHistoryController.stream;
   
-  // Sleep data cache getter - returns accumulated sleep sessions
-  List<SleepHistoryEntry> get cachedSleepSessions => List.from(_legacySleepAccumulator);
+  // Sleep data cache getter - returns accumulated sleep sessions (0x31 format)
+  List<SleepHistoryEntry> get cachedSleepSessions => List.from(_sleepData31Cache);
   
   // Sleep event streams (real-time onset detection)
   Stream<SleepOnsetEvent> get sleepOnsetStream => _sleepOnsetController.stream;
@@ -789,37 +779,11 @@ class ChileafExtendedService {
           _hardwareVersionController.add(hardwareVersion);
         }
         break;
-      case 0x05: // Device Name OR Sleep Data - Context dependent
-        debugPrint('📱🌙 DEVICE NAME/SLEEP (0x05): Checking data context...');
-        debugPrint('🔍 Raw data: ${_commandToHexString(data)}');
-        
-        // Verifica se è una risposta del sonno controllando il cmd byte (come nel WearManager)
-        if (data.length > 3) {
-          int cmd = data[3] & 0xFF;
-          debugPrint('🔍 Command byte: $cmd (0x${cmd.toRadixString(16)})');
-          
-          if (cmd == 3) {
-            // Sleep data response (WearManager exact match: mode 5, cmd 3)
-            debugPrint('🌙 SLEEP DATA: Processing sleep history (cmd 3 detected - WearManager format)');
-            _processSleepHistoryDataExact(data);
-          } else if (data.length > 15) {
-            // Fallback: longer packets might be sleep data
-            debugPrint('🌙 SLEEP DATA: Processing sleep history (longer packet detected)');
-            _processSleepHistoryData(data);
-          } else {
-            // Device name (shorter response)
-            debugPrint('📱 DEVICE NAME: Processing device name');
-            var deviceName = DeviceInfoProcessor.processDeviceName(data);
-            if (deviceName != null) {
-              _deviceNameController.add(deviceName);
-            }
-          }
-        } else {
-          debugPrint('📱 DEVICE NAME: Processing device name (short packet)');
-          var deviceName = DeviceInfoProcessor.processDeviceName(data);
-          if (deviceName != null) {
-            _deviceNameController.add(deviceName);
-          }
+      case 0x05: // Device Name (Sleep Data 0x05 format is DEPRECATED - use 0x31 instead)
+        debugPrint('📱 DEVICE NAME: Processing device name');
+        var deviceName = DeviceInfoProcessor.processDeviceName(data);
+        if (deviceName != null) {
+          _deviceNameController.add(deviceName);
         }
         break;
       case 0x06: // MAC Address
@@ -926,7 +890,7 @@ class ChileafExtendedService {
         // 3D Accelerometer Real-Time Data Stream (0x0C)
         // Real-time accelerometer data sent at configured frequency (25-400 Hz)
         // Format: [0xFF, length, 0x0C, X_low, X_high, Y_low, Y_high, Z_low, Z_high, ...]
-        debugPrint('📊 3D ACCEL: Received ${data.length} bytes');
+        // Debug logging disabled - generates too much spam at high frequency
         _process3DAccelerometerData(data);
         break;
       case 0x16: // Exercise History
@@ -1405,22 +1369,23 @@ class ChileafExtendedService {
 
   /// Richiede dati del sonno dal dispositivo (comando 0x05)
   /// Equivalente a getHistoryOfSleep() nel WearManager
+  /// Get sleep history data using OFFICIAL 0x31 protocol
+  /// DEPRECATED: Old 0x05 format no longer supported - use 0x31 format only
   Future<void> getHistoryOfSleep() async {
-    debugPrint('🌙 Requesting sleep history data (WearManager compatible)...');
+    debugPrint('🌙 Requesting sleep history data (OFFICIAL 0x31 protocol)...');
     
     try {
-      // Clear dei dati precedenti (equivalente a clearType(22) nel WearManager)
-      _sleepPackages.clear();
-      _sleepDataList.clear();
-      _sleepDataStamp = 0;
-      _isSleepDataStamp = false;
-      debugPrint('🧹 Cleared previous sleep data (clearType 22)');
+      // Clear previous session data
+      _sleepData31Buffer.clear();
+      _sleepData31CompletedSessions.clear();
+      _isSleepData31Active = false;
+      debugPrint('🧹 Cleared previous sleep 0x31 data');
       
-      // Costruisci comando secondo formato WearManager: sendCommand((byte)5, new int[] { 2 });
-      List<int> command = OfficialChileafCommands.buildOfficialCommand(5, [2]);
+      // Use official 0x31 command for sleep data
+      List<int> command = OfficialChileafCommands.buildOfficialCommand(0x31, [0x00]);
       
-      debugPrint('📡 Sleep data command: ${_commandToHexString(command)}');
-      debugPrint('🔍 Expected response: mode 5, cmd 3 with sleep action indices');
+      debugPrint('📡 Sleep 0x31 command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: 0x31 with UTC + activity indices');
       debugPrint('🔍 Java format: len + utc(4 bytes) + actions[len]');
       debugPrint('🔍 Time correction: utc *= 1000, utc -= 28800000 (8h offset)');
       
@@ -1819,207 +1784,8 @@ class ChileafExtendedService {
   }
 
   // ===== SLEEP AND STEPS DATA PROCESSING METHODS =====
-
-  /// Processa dati del sonno con parsing esatto dal WearManager Java
-  void _processSleepHistoryDataExact(List<int> data) {
-    debugPrint('🌙 Processing sleep history data (EXACT WearManager Java format)...');
-    debugPrint('🌙 Raw data: ${_commandToHexString(data)}');
-    
-    if (data.length < 4) {
-      debugPrint('❌ Sleep data too short: ${data.length} bytes');
-      return;
-    }
-    
-    List<int> value = data;
-    int cmd = value[3] & 0xFF;
-    
-    if (cmd == 3) {
-      debugPrint('🌙 Processing cmd 3 - Sleep history data');
-      
-      List<SleepHistoryEntry> sleepSessions = [];
-      
-      // Parsing esatto dal WearManager Java (linee 112-129)
-      for (int j = 4; j < value.length; j++) {
-        int len = value[j] & 0xFF;
-        
-        // Reduced logging - only show problematic entries
-        if (len == 0) {
-          debugPrint('🌙 Skipping empty sleep entry (length 0) at position $j');
-          continue;
-        }
-        
-        // Log only unusual lengths
-        if (len > 50 || sleepSessions.isEmpty) {
-          debugPrint('🌙 Sleep entry length: $len at position $j');
-        }
-        
-        if (len >= 1) {
-          j++;
-          if (j + 4 >= value.length) {
-            debugPrint('❌ Not enough data for UTC timestamp');
-            break;
-          }
-          
-          // long utc = getLongParse(value, j, 4);
-          int utc = _getLongParse(value, j, 4);
-          j += 4;
-          
-          // ✅ FIX: Convert UTC timestamp to local timezone
-          // Device sends UTC timestamp, we convert to user's local time
-          // NO MORE hardcoded -8 hours (China timezone)!
-          int utcMillis = utc * 1000;
-          DateTime utcDateTime = DateTime.fromMillisecondsSinceEpoch(utcMillis, isUtc: true);
-          DateTime localDateTime = utcDateTime.toLocal();
-          
-          // Reduced logging - only log every few sessions
-          if (sleepSessions.isEmpty || sleepSessions.length % 3 == 0) {
-            debugPrint('🌙 Sleep UTC: $utc -> ${utcDateTime.toIso8601String()} -> Local: ${localDateTime.toIso8601String()} (${localDateTime.timeZoneName})');
-          }
-          
-          // Check if we have enough data for actions, but don't break - skip invalid entries
-          if (j + len > value.length) {
-            debugPrint('❌ Not enough data for actions array (need $len, have ${value.length - j} remaining), skipping this entry');
-            // Skip this invalid entry - continue to next iteration
-            continue;
-          }
-          
-          // int[] actions = new int[len];
-          List<int> actions = [];
-          for (int i = 0; i < len; i++) {
-            int action = value[i + j] & 0xFF;
-            actions.add(action);
-          }
-          j += len - 1; // Move to the last action byte (loop will increment to next len)
-          
-          // Reduced logging - only show first few actions
-          if (sleepSessions.isEmpty || sleepSessions.length % 5 == 0) {
-            debugPrint('🌙 Sleep actions (${actions.length}): ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
-          }
-          
-          // HistorySleep historySleep = new HistorySleep(utc, actions);
-          SleepHistoryEntry sleepEntry = SleepHistoryEntry(
-            timestamp: localDateTime,  // ✅ Now in user's local timezone
-            count: actions.length,
-            actions: actions,
-          );
-          
-          sleepSessions.add(sleepEntry);
-          
-          // Check exit condition
-          if (j >= value.length - 1) {
-            debugPrint('🌙 Reached end of data');
-            break;
-          }
-        }
-      }
-      
-      debugPrint('✅ Sleep parsing complete: ${sleepSessions.length} sessions found in this packet');
-      
-      if (sleepSessions.isNotEmpty) {
-        // Add to accumulator instead of replacing
-        _legacySleepAccumulator.addAll(sleepSessions);
-        debugPrint('� Accumulated ${sleepSessions.length} sessions -> Total: ${_legacySleepAccumulator.length}');
-        
-        // Send the full accumulated list to UI
-        _sleepHistoryController.add(List.from(_legacySleepAccumulator));
-        debugPrint('📤 Sent ${_legacySleepAccumulator.length} total sleep sessions to UI stream');
-      } else {
-        debugPrint('🌙 No valid sleep sessions found in this packet');
-      }
-    } else {
-      debugPrint('❌ Expected cmd 3 for sleep data, got cmd $cmd');
-    }
-  }
-
-  /// Processa dati del sonno (mode 0x05) secondo logica WearManager
-  void _processSleepHistoryData(List<int> data) {
-    debugPrint('🌙 Processing sleep history data (WearManager style)...');
-    debugPrint('🌙 Raw data: ${_commandToHexString(data)}');
-    
-    if (data.length < 7) {
-      debugPrint('❌ Sleep data too short: ${data.length} bytes');
-      return;
-    }
-    
-    // Parse UTC tag (bytes 3-6, big-endian)
-    int utcTag = _getLongParse(data, 3, 4);
-    debugPrint('🌙 UTC tag: 0x${utcTag.toRadixString(16)} ($utcTag)');
-    
-    if (utcTag != END_TAG) {
-      // Accumula pacchetti fino al tag di fine
-      debugPrint('🌙 Accumulating sleep packet (${data.length} bytes)');
-      _sleepPackages.add(List.from(data));
-    } else {
-      debugPrint('🌙 End tag received, processing accumulated sleep packets...');
-      debugPrint('🌙 Total packets accumulated: ${_sleepPackages.length}');
-      
-      // Processa tutti i pacchetti per dati del sonno
-      _sleepDataList.clear();
-      
-      for (int index = 0; index < _sleepPackages.length; index++) {
-        List<int> packet = _sleepPackages[index];
-        List<int> slice = _subSlice(3, packet); // Skip header (3 bytes)
-        
-        debugPrint('🌙 Processing sleep packet $index: ${slice.length} bytes payload');
-        
-        // Inizializza timestamp se è il primo pacchetto
-        if (!_isSleepDataStamp && slice.length >= 4) {
-          _sleepDataStamp = _getLongParse(slice, 0, 4);
-          _isSleepDataStamp = true;
-          debugPrint('🌙 Initial sleep timestamp: $_sleepDataStamp');
-        }
-        
-        // Skip 4 bytes iniziali, poi processa action indices
-        List<int> actions = [];
-        for (int i = 4; i < slice.length; i++) {
-          int actionIndex = slice[i] & 0xFF;
-          actions.add(actionIndex);
-        }
-        
-        if (actions.isNotEmpty) {
-          int localStamp = _restoreZoneUTC(_sleepDataStamp);
-          DateTime sleepTime = DateTime.fromMillisecondsSinceEpoch(localStamp);
-          
-          debugPrint('🌙 Sleep session: ${actions.length} actions at $sleepTime');
-          debugPrint('🌙 Action pattern: ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
-          
-          _sleepDataList.add({
-            'timestamp': sleepTime,
-            'actions': actions,
-            'stamp': _sleepDataStamp,
-          });
-          
-          _sleepDataStamp++; // Incrementa per sessione successiva
-        }
-      }
-      
-      debugPrint('✅ Sleep data processing complete: ${_sleepDataList.length} sessions found');
-      
-      // Invia i dati processati al stream per l'UI
-      if (_sleepDataList.isNotEmpty) {
-        debugPrint('🌙 Sleep sessions available - sending to UI stream');
-        
-        List<SleepHistoryEntry> entries = _sleepDataList.map((data) {
-          return SleepHistoryEntry(
-            timestamp: data['timestamp'],
-            count: (data['actions'] as List<int>).length,
-            actions: data['actions'],
-          );
-        }).toList();
-        
-        _sleepHistoryController.add(entries);
-        debugPrint('📤 Sent ${entries.length} sleep sessions to UI stream');
-        
-      } else {
-        debugPrint('🌙 No sleep sessions found in response');
-      }
-      
-      // Reset per prossima richiesta
-      _sleepPackages.clear();
-      _isSleepDataStamp = false;
-      _sleepDataStamp = 0;
-    }
-  }
+  // NOTE: Sleep 0x05 format is DEPRECATED - removed legacy methods
+  // Use only Sleep 0x31 format (_processSleepData31) for official protocol
 
   /// Processa dati del contapassi (mode 0x40) secondo logica WearManager
   void _processStepsIntervalData(List<int> data) {
@@ -4294,17 +4060,14 @@ class ChileafExtendedService {
     await _historicalDataService.requestExerciseHistoryEnhanced();
   }
 
-  /// Recupera dati di sonno storici ottimizzati
-  /// Utilizza comando 0x05 con checksum Java ottimizzato (LEGACY)
-  /// ⚠️ DEPRECATO: Usa requestSleepData31() per il protocollo ufficiale
+  /// DEPRECATED: Legacy 0x05 sleep format no longer supported
+  /// Use requestSleepData31() instead for official 0x31 protocol
+  @Deprecated('Use requestSleepData31() instead - 0x05 format removed')
   Future<void> requestOptimizedSleepHistory({bool force = false}) async {
-    debugPrint('🔄😴 Requesting Sleep History with optimized checksum (LEGACY 0x05)...');
+    debugPrint('⚠️ DEPRECATED: requestOptimizedSleepHistory() - Use requestSleepData31() instead');
+    debugPrint('🔄 Redirecting to official 0x31 protocol...');
     
-    // Clear accumulator before starting new download
-    _legacySleepAccumulator.clear();
-    debugPrint('🧹 Cleared legacy sleep accumulator');
-    
-    await _historicalDataService.requestSleepHistoryEnhanced(force: force);
+    await requestSleepData31();
   }
 
   /// Recupera dati di sonno con comando 0x31 (PROTOCOLLO UFFICIALE)
@@ -5214,14 +4977,24 @@ class ChileafExtendedService {
   /// ⚠️ WARNING: This command will erase ALL data from the device!
   /// Device will respond with 0x4B to confirm reset completed.
   /// 
-  /// Command format: [0xFF, 0x04, 0xF3, checksum]
+  /// Command format: [0xFF, 0x05, 0xF3, 0x00, checksum]
   /// - 0xF3 = 243 decimal = -13 in signed byte (Java)
+  /// - 0x00 = Parameter (always 0 for restoration)
+  /// 
+  /// Official Java SDK code:
+  /// ```java
+  /// public void restoration() {
+  ///     sendCommand((byte) -13, 0);  // Sends [0xFF, 0x05, 0xF3, 0x00, checksum]
+  /// }
+  /// ```
   Future<void> factoryRestoration() async {
     debugPrint('⚠️ Performing factory restoration (0xF3)...');
     debugPrint('   This will ERASE ALL data from device!');
-    // Command: 0xF3 (243 decimal, -13 in signed byte)
-    // Fixed from incorrect 0x4B (which is the RESPONSE, not the command)
-    await _sendCommand([0xFF, 0x04, 0xF3]);
+    debugPrint('   Using EXACT format from official Java SDK: [0xFF, 0x05, 0xF3, 0x00]');
+    
+    // Command: 0xF3 with parameter 0x00 (matches official SDK exactly)
+    // Java: sendCommand((byte) -13, 0) → [0xFF, 0x05, 0xF3, 0x00, checksum]
+    await _sendCommand([0xFF, 0x05, 0xF3, 0x00]);
   }
 
   /// Get single button press history
@@ -5250,8 +5023,8 @@ class ChileafExtendedService {
       if (_lastAccelPacketTime != null) {
         _accelFrequencyMeasurementCount++;
         
-        // Calculate frequency every 50 packets for accuracy
-        if (_accelFrequencyMeasurementCount >= 50) {
+        // Calculate frequency every 500 packets (~20 seconds at 25Hz) to reduce log spam
+        if (_accelFrequencyMeasurementCount >= 500) {
           double elapsedSeconds = now.difference(_lastAccelPacketTime!).inMicroseconds / 1000000.0;
           _measuredAccelFrequency = _accelFrequencyMeasurementCount / elapsedSeconds;
           
@@ -5279,12 +5052,12 @@ class ChileafExtendedService {
         _lastAccelPacketTime = now;
       }
 
-      // Debug: Log raw packet to understand structure (throttled to avoid spam)
-      _accelPacketCount++;
-      if (_accelPacketCount % 100 == 1 || data.length <= 15) { // Log first and every 100th, or short packets
-        String hexDump = data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
-        debugPrint('📊 3D ACCEL RAW [#$_accelPacketCount] (${data.length} bytes): $hexDump');
-      }
+      // Debug logging completely disabled to reduce spam
+      // Uncomment if debugging is needed:
+      // if (packetCounter % 100 == 1 || data.length <= 15) {
+      //   String hexDump = data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ');
+      //   debugPrint('📊 3D ACCEL RAW [#packetCounter] (${data.length} bytes): $hexDump');
+      // }
 
       // Parse samples using 6-byte format (X, Y, Z as 2 bytes each)
       List<AccelerometerData> samples = [];
@@ -5319,18 +5092,16 @@ class ChileafExtendedService {
         
         samples.add(sample);
         
-        // Log first few samples with actual values
-        if (_accelPacketCount % 100 == 1 && samples.length <= 3) {
-          debugPrint('📊   Sample ${samples.length}: X=${sample.x.toStringAsFixed(3)}g, Y=${sample.y.toStringAsFixed(3)}g, Z=${sample.z.toStringAsFixed(3)}g (raw: $xRaw, $yRaw, $zRaw)');
-        }
+        // Log samples DISABLED to reduce spam (uncomment if debugging):
+        // if (sampleCounter <= 3) {
+        //   debugPrint('📊   Sample ${samples.length}: X=${sample.x.toStringAsFixed(3)}g, Y=${sample.y.toStringAsFixed(3)}g, Z=${sample.z.toStringAsFixed(3)}g (raw: $xRaw, $yRaw, $zRaw)');
+        // }
         
         i += 6; // Move to next sample (6 bytes per sample)
       }
 
       if (samples.isNotEmpty) {
-        if (_accelPacketCount % 100 == 1) {
-          debugPrint('📊 3D ACCEL: Parsed ${samples.length} samples from ${data.length} bytes');
-        }
+        // Logging disabled to reduce spam - only errors logged below
         _accelerometer3DController.add(samples);
       } else {
         debugPrint('⚠️ 3D ACCEL: No valid samples parsed from ${data.length} bytes');

@@ -330,8 +330,8 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
     try {
       debugPrint('🌙 SLEEP DATA DOWNLOAD STARTED');
       
-      // Request sleep history data (force=true bypasses throttling when user explicitly clicks)
-      await _service.requestOptimizedSleepHistory(force: true);
+      // Request sleep history data using official 0x31 protocol
+      await _service.getHistoryOfSleep();
       
       // Wait for sleep data to arrive
       await Future.delayed(const Duration(milliseconds: 3000));

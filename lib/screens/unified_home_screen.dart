@@ -52,6 +52,9 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   final Map<String, String> _lastDownload = {};
   final Map<String, int> _dataCount = {};
   
+  // HR log throttling counter
+  int _hrLogCounter = 0;
+  
   // Sleep data cache for CSV export
   final List<SleepHistoryEntry> _sleepHistoryData = [];
 
@@ -151,7 +154,10 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
         setState(() {
         });
       }
-      debugPrint('💓 HOME SCREEN: Received HR from service: $hr BPM');
+      // Log throttled to reduce spam (every 30th update = ~30 seconds)
+      if ((hrLogCounter++) % 30 == 0) {
+        debugPrint('💓 HOME SCREEN: Received HR from service: $hr BPM');
+      }
     });
     
     // Battery - will be set up when device connects
@@ -189,9 +195,9 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           setState(() {
           });
           
-          // Log only every 10th HR update to reduce spam
+          // Log only every 30th HR update to reduce spam (~30 seconds)
           hrLogCounter++;
-          if (hrLogCounter % 10 == 0) {
+          if (hrLogCounter % 30 == 0) {
             debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
             
             // Log RR intervals if available
@@ -485,7 +491,8 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
       return;
     }
     setState(() => _downloading['sleep'] = true);
-    await _service.requestOptimizedSleepHistory(force: true);
+    // Use official 0x31 protocol instead of deprecated method
+    await _service.getHistoryOfSleep();
   }
 
   Future<void> _downloadStepsHistory() async {

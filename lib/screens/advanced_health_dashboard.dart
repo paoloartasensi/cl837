@@ -99,8 +99,8 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
     debugPrint('📊 DASHBOARD: Loading initial data...');
     setState(() => _isLoading = true);
     
-    // Request sleep history to calculate recovery
-    await widget.service.requestOptimizedSleepHistory(force: false);
+    // Request sleep history using the official 0x31 protocol
+    await widget.service.getHistoryOfSleep();
     
     setState(() => _isLoading = false);
     debugPrint('📊 DASHBOARD: Initial data load complete');

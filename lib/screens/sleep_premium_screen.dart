@@ -16,9 +16,10 @@ import '../models/sleep_score.dart';
 import '../models/hrv_data.dart';
 import '../services/sleep_history_manager.dart';
 import '../services/readiness_calculator.dart';
-import '../widgets/sleep_score_dashboard.dart';
 import '../widgets/readiness_dashboard.dart';
 import '../widgets/sleep_trends_chart.dart';
+import '../widgets/sleep_timeline_chart.dart';
+import '../widgets/fitbit_sleep_score_card.dart';
 import 'sleep_trends_screen.dart';
 import 'alarm_config_screen.dart';
 
@@ -45,6 +46,7 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   SleepScore? _latestScore;
   ReadinessScore? _readinessScore;
   List<SleepScore> _recentScores = [];
+  SleepData31? _latestSleepData; // Raw sleep data for timeline chart
   bool _isLoading = true;
   HRVData? _latestHRV; // Latest HRV data for readiness calculation
 
@@ -292,6 +294,13 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         
         debugPrint('✅ Premium Screen: Latest score = ${_latestScore!.totalScore.toStringAsFixed(1)}, Date = ${_latestScore!.sleepDate}');
         
+        // Load raw sleep data for timeline chart
+        final recentSessions = await _historyManager.getRecentSessions(1);
+        if (recentSessions.isNotEmpty) {
+          _latestSleepData = recentSessions.first;
+          debugPrint('✅ Premium Screen: Loaded raw sleep data with ${recentSessions.first.activityIndices.length} intervals');
+        }
+        
         // Calculate readiness score (will use HRV if available)
         _updateReadinessScore();
         
@@ -378,20 +387,21 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Hero Score Card
-          SleepScoreDashboard(
-            preCalculatedScore: _latestScore,
+          // Fitbit-style Hero Score Card
+          FitbitSleepScoreCard(
+            sleepScore: _latestScore!,
+            showBreakdown: true,
           ),
+          
+          const SizedBox(height: 24),
+          
+          // Sleep Timeline (Fitbit-style horizontal bars)
+          _buildSleepPhasesCard(),
           
           const SizedBox(height: 24),
           
           // Quick Stats Row
           _buildQuickStats(),
-          
-          const SizedBox(height: 24),
-          
-          // Sleep Phases Breakdown
-          _buildSleepPhasesCard(),
           
           const SizedBox(height: 24),
           
@@ -571,10 +581,11 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     // Calculate phase percentages
     final totalMinutes = score.totalSleepTime.inMinutes;
     final deepMinutes = score.deepSleepMinutes;
-    final lightMinutes = totalMinutes - deepMinutes; // Light = Total - Deep
-    final deepPercent = ((deepMinutes / totalMinutes * 100).round());
-    final lightPercent = ((lightMinutes / totalMinutes * 100).round());
-    final awakePercent = 100 - deepPercent - lightPercent;
+    final lightMinutes = score.lightSleepMinutes;
+    final awakeMinutes = score.awakeMinutes;
+    final deepPercent = totalMinutes > 0 ? ((deepMinutes / totalMinutes * 100).round()) : 0;
+    final lightPercent = totalMinutes > 0 ? ((lightMinutes / totalMinutes * 100).round()) : 0;
+    final awakePercent = totalMinutes > 0 ? ((awakeMinutes / totalMinutes * 100).round()) : 0;
     
     return Card(
       elevation: 4,
@@ -584,28 +595,80 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Sleep Phases',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Sleep Timeline',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                // Sleep score badge (Fitbit-style)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _getScoreColor(score.totalScore),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        score.totalScore.round().toString(),
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        score.rating.displayName,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 16),
             
-            _buildPhaseBar(deepPercent, lightPercent, awakePercent),
+            // Fitbit-style horizontal timeline chart
+            if (_latestSleepData != null)
+              SleepTimelineChart(
+                sleepData: _latestSleepData!,
+                height: 100,
+              )
+            else
+              _buildPhaseBar(deepPercent, lightPercent, awakePercent),
             
             const SizedBox(height: 16),
             
-            _buildPhaseLegend('🌊 Deep', deepMinutes, deepPercent, Colors.indigo),
+            // Phase legend with accurate data
+            _buildPhaseLegend('🌊 Deep', deepMinutes, deepPercent, const Color(0xFF3F51B5)),
             const SizedBox(height: 8),
-            _buildPhaseLegend('😴 Light', lightMinutes, lightPercent, Colors.blue.shade300),
+            _buildPhaseLegend('😴 Light', lightMinutes, lightPercent, const Color(0xFF64B5F6)),
             const SizedBox(height: 8),
-            _buildPhaseLegend('👀 Awake', totalMinutes - deepMinutes - lightMinutes, awakePercent, Colors.orange),
+            _buildPhaseLegend('👀 Awake', awakeMinutes, awakePercent, const Color(0xFFFF9E80)),
           ],
         ),
       ),
     );
+  }
+
+  /// Get color based on sleep score (Fitbit-style)
+  Color _getScoreColor(double score) {
+    if (score >= 90) return const Color(0xFF4CAF50); // Green - Excellent
+    if (score >= 80) return const Color(0xFF8BC34A); // Light Green - Good
+    if (score >= 70) return const Color(0xFFFFA726); // Orange - Fair
+    if (score >= 60) return const Color(0xFFFF7043); // Deep Orange - Poor
+    return const Color(0xFFF44336); // Red - Very Poor
   }
 
   Widget _buildPhaseBar(int deep, int light, int awake) {
