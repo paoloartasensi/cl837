@@ -624,8 +624,8 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
   Widget _buildSleepPhasesCard() {
     final score = _latestScore!;
     
-    // Calculate phase percentages
-    final totalMinutes = score.totalSleepTime.inMinutes;
+    // Calculate phase percentages - FIXED: Use timeInBed as base (includes awake time)
+    final totalMinutes = score.timeInBed.inMinutes; // ✅ CORRECT: Total time in bed
     final deepMinutes = score.deepSleepMinutes;
     final lightMinutes = score.lightSleepMinutes;
     final awakeMinutes = score.awakeMinutes;

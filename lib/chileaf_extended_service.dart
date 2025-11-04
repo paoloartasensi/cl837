@@ -2312,12 +2312,16 @@ class ChileafExtendedService {
       return;
     }
     
-    debugPrint('  📊 Converting ${_sleepData05Buffer.length} sessions to SleepHistoryEntry format...');
+    debugPrint('  📊 Processing ${_sleepData05Buffer.length} raw sessions from device...');
     
-    // Converti formato iOS/Android in SleepHistoryEntry
+    // ✅ STEP 1: Unisci sessioni consecutive PRIMA della classificazione
+    List<Map<String, dynamic>> mergedSessions = _mergeConsecutiveSessions(_sleepData05Buffer);
+    debugPrint('  🔗 Merged ${_sleepData05Buffer.length} → ${mergedSessions.length} sessions');
+    
+    // ✅ STEP 2: Converti formato iOS/Android in SleepHistoryEntry
     List<SleepHistoryEntry> entries = [];
     
-    for (var session in _sleepData05Buffer) {
+    for (var session in mergedSessions) {
       DateTime timestamp = session['timestamp'] as DateTime;
       List<int> actions = List<int>.from(session['sleep']);
       
@@ -2329,7 +2333,7 @@ class ChileafExtendedService {
       
       entries.add(entry);
       
-      // Log dettagli
+      // Log dettagli della sessione FINALE (dopo merge)
       int totalMinutes = actions.length * 5;
       int awake = actions.where((a) => a > 20).length * 5;
       int light = actions.where((a) => a > 0 && a <= 20).length * 5;
@@ -2346,6 +2350,73 @@ class ChileafExtendedService {
     // Pulisci buffer
     _sleepData05Buffer.clear();
     debugPrint('  🧹 Buffer cleared - ready for next download');
+  }
+  
+  /// Unisce sessioni consecutive della stessa notte in una singola sessione
+  /// Logica: se due sessioni sono distanti <30min E sono nello stesso range notturno → merge
+  List<Map<String, dynamic>> _mergeConsecutiveSessions(List<Map<String, dynamic>> sessions) {
+    if (sessions.isEmpty) return [];
+    
+    debugPrint('🔗 Starting session merge analysis...');
+    
+    // Ordina per timestamp
+    sessions.sort((a, b) => (a['timestamp'] as DateTime).compareTo(b['timestamp'] as DateTime));
+    
+    List<Map<String, dynamic>> merged = [];
+    Map<String, dynamic>? currentGroup;
+    
+    for (var session in sessions) {
+      if (currentGroup == null) {
+        // Prima sessione - inizia nuovo gruppo
+        currentGroup = Map.from(session);
+        continue;
+      }
+      
+      DateTime currentEnd = (currentGroup['timestamp'] as DateTime)
+          .add(Duration(minutes: (currentGroup['sleep'] as List<int>).length * 5));
+      DateTime nextStart = session['timestamp'] as DateTime;
+      
+      // Calcola gap tra fine sessione corrente e inizio prossima
+      Duration gap = nextStart.difference(currentEnd);
+      
+      debugPrint('  🔍 Gap between sessions: ${gap.inMinutes} minutes');
+      
+      // Se gap < 30 minuti E stesso periodo notturno (18:00-10:00) → merge
+      bool sameNightPeriod = _isNightTime(currentEnd.hour) && _isNightTime(nextStart.hour);
+      
+      if (gap.inMinutes < 30 && sameNightPeriod) {
+        debugPrint('  ✅ Merging consecutive sessions (gap: ${gap.inMinutes}min)');
+        
+        // Merge: concatena gli activity indices
+        List<int> mergedActions = List<int>.from(currentGroup['sleep'] as List<int>);
+        mergedActions.addAll(session['sleep'] as List<int>);
+        
+        currentGroup['sleep'] = mergedActions;
+        currentGroup['count'] = mergedActions.length;
+        
+        debugPrint('  📊 Merged session now: ${mergedActions.length * 5} minutes');
+      } else {
+        debugPrint('  ❌ Not merging (gap: ${gap.inMinutes}min, same night: $sameNightPeriod)');
+        
+        // Salva gruppo corrente e inizia nuovo
+        merged.add(currentGroup);
+        currentGroup = Map.from(session);
+      }
+    }
+    
+    // Aggiungi ultimo gruppo
+    if (currentGroup != null) {
+      merged.add(currentGroup);
+    }
+    
+    debugPrint('🔗 Merge complete: ${sessions.length} → ${merged.length} sessions');
+    
+    return merged;
+  }
+  
+  /// Verifica se un'ora è nel periodo notturno (18:00-10:00)
+  bool _isNightTime(int hour) {
+    return hour >= 18 || hour <= 10;
   }
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====
