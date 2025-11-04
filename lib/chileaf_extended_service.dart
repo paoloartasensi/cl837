@@ -2336,7 +2336,7 @@ class ChileafExtendedService {
       int stillCount = actions.where((a) => a == 0).length;
       
       debugPrint('  📅 ${timestamp.toLocal().toString().substring(0, 19)}: '
-          '${totalMinutes}min total, Awake=${awake}min, Light=${light}min, Still=${stillCount}×5min');
+          '${totalMinutes}min total, Awake=${awake}min, Light=${light}min, Still=$stillCount×5min');
     }
     
     // Invia al controller principale
@@ -3911,34 +3911,23 @@ class ChileafExtendedService {
   /// Reset device usando comando ufficiale 0xF3 (Factory Restoration)
   /// Equivalente al metodo restoration() del SDK Android/iOS
   Future<void> deviceReset() async {
-    debugPrint('🔄 Factory Reset device using iOS/Android SDK command (0xF3)...');
+    debugPrint('🔄 Factory Reset device using official SDK command (0xF3)...');
+    
     try {
-      // Comando basato sull'SDK iOS: ff05f300 (senza checksum)
-      // Il checksum viene calcolato come nello shutdown
-      List<int> frame = [0xFF, 5, 0xF3, 0x00]; // Length 5 perché include il parametro 0x00
+      // ✅ CORRETTO: Usa OfficialChileafCommands che replica esattamente il comportamento Java
+      // Java: sendCommand((byte) -13, 0)
+      // Nostro: OfficialChileafCommands.deviceReset() → buildOfficialCommand(0xF3, [0])
+      List<int> command = OfficialChileafCommands.deviceReset();
 
-      // Calcola checksum identico allo shutdown (Java/iOS style)
-      int sum = 0;
-      for (int byte in frame) {
-        sum += byte;
-      }
-      int javaChecksum = (-sum) & 0xFF;
-      javaChecksum ^= 0x3A;
-      javaChecksum &= 0xFF;
-
-      frame.add(javaChecksum);
-
-      debugPrint('🔍 Factory Reset command (iOS/Android SDK):');
-      debugPrint('   Command: 0xF3 (restoration from MainViewController.m:350)');
-      debugPrint('   iOS SDK: ff05f300 + checksum');
-      debugPrint(
-          '   Frame: ${frame.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
-      debugPrint(
-          '   Checksum: 0x${javaChecksum.toRadixString(16).padLeft(2, '0')}');
+      debugPrint('🔍 Factory Reset command (Java/iOS SDK compatible):');
+      debugPrint('   Command: 0xF3 (-13 in signed byte)');
+      debugPrint('   Parameter: 0x00');
+      debugPrint('   Frame: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      debugPrint('   Checksum: 0x${command.last.toRadixString(16).padLeft(2, '0')}');
       debugPrint('   ⚠️  Device will be restored to factory settings!');
 
-      await _sendCommand(frame);
-      debugPrint('✅ Factory reset command sent - device should reset now');
+      await _sendCommand(command);
+      debugPrint('✅ Factory reset command sent - device should reset and respond with 0x4B');
     } catch (e) {
       debugPrint('❌ Failed to reset device: $e');
       rethrow;
@@ -5169,11 +5158,21 @@ class ChileafExtendedService {
   Future<void> factoryRestoration() async {
     debugPrint('⚠️ Performing factory restoration (0xF3)...');
     debugPrint('   This will ERASE ALL data from device!');
-    debugPrint('   Using EXACT format from official Java SDK: [0xFF, 0x05, 0xF3, 0x00]');
+    debugPrint('   Using EXACT format from official Java SDK');
     
-    // Command: 0xF3 with parameter 0x00 (matches official SDK exactly)
-    // Java: sendCommand((byte) -13, 0) → [0xFF, 0x05, 0xF3, 0x00, checksum]
-    await _sendCommand([0xFF, 0x05, 0xF3, 0x00]);
+    // ✅ CORRETTO: Usa OfficialChileafCommands che calcola il checksum automaticamente
+    // Java SDK: sendCommand((byte) -13, 0) → buildOfficialCommand(0xF3, [0])
+    // Risultato: [0xFF, 0x05, 0xF3, 0x00, checksum]
+    List<int> command = OfficialChileafCommands.deviceReset();
+    
+    debugPrint('📡 Factory Restoration command: ${_commandToHexString(command)}');
+    debugPrint('   Command: 0xF3 (restoration)');
+    debugPrint('   Parameter: 0x00');
+    debugPrint('   Checksum: 0x${command.last.toRadixString(16).padLeft(2, '0')}');
+    
+    await _sendCommand(command);
+    
+    debugPrint('✅ Factory restoration command sent - device should reset and respond with 0x4B');
   }
 
   /// Get single button press history
