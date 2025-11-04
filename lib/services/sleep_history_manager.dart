@@ -306,6 +306,56 @@ class SleepHistoryManager {
     return syncStr != null ? DateTime.parse(syncStr) : null;
   }
 
+  // ===== INTELLIGENT FILTERING METHODS (using SleepClassifier) =====
+
+  /// Get only main night sleep sessions (3+ hours, 18:00-10:00)
+  Future<List<SleepData31>> getMainNightSleeps() async {
+    final allSessions = await getAllSessions();
+    return SleepClassifier.filterMainSleeps(allSessions);
+  }
+
+  /// Get main night sleep scores (filtered)
+  Future<List<SleepScore>> getMainNightSleepScores() async {
+    final allScores = await getAllScores();
+    return SleepClassifier.filterMainSleepScores(allScores);
+  }
+
+  /// Get recent main night sleep sessions (last N days)
+  Future<List<SleepData31>> getRecentMainSleeps(int days) async {
+    final sessions = await getRecentSessions(days);
+    return SleepClassifier.filterMainSleeps(sessions);
+  }
+
+  /// Get recent main night sleep scores (last N days)
+  Future<List<SleepScore>> getRecentMainSleepScores(int days) async {
+    final scores = await getRecentScores(days);
+    return SleepClassifier.filterMainSleepScores(scores);
+  }
+
+  /// Get most recent main night sleep
+  Future<SleepData31?> getMostRecentMainSleep() async {
+    final sessions = await getAllSessions();
+    return SleepClassifier.getMostRecentMainSleep(sessions);
+  }
+
+  /// Get most recent main night sleep score
+  Future<SleepScore?> getMostRecentMainSleepScore() async {
+    final scores = await getAllScores();
+    return SleepClassifier.getMostRecentMainSleepScore(scores);
+  }
+
+  /// Classify all sessions by type
+  Future<Map<SleepType, List<SleepData31>>> getCategorizedSessions() async {
+    final sessions = await getAllSessions();
+    return SleepClassifier.categorizeSessions(sessions);
+  }
+
+  /// Get sleep statistics with classification
+  Future<Map<String, dynamic>> getClassificationStatistics() async {
+    final sessions = await getAllSessions();
+    return SleepClassifier.getStatistics(sessions);
+  }
+
   // Private helper methods
 
   String _getSessionKey(DateTime date) {

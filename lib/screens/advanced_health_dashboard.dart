@@ -4,6 +4,7 @@ import '../chileaf_extended_service.dart';
 import '../models/recovery_score.dart';
 import '../models/sport_health_data.dart';
 import '../models/historical_data.dart';
+import '../services/sleep_classifier.dart';
 import 'dart:async';
 
 /// Advanced Health Dashboard - Whoop-style Recovery Analytics
@@ -113,13 +114,10 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
       return;
     }
     
-    // Find main sleep (longest and most recent)
-    final mainSleeps = _sleepHistory.where((s) => 
-      s.count >= 36 && // At least 3 hours
-      (s.timestamp.hour >= 18 || s.timestamp.hour <= 10) // Night hours
-    ).toList();
+    // Use centralized classifier to find main night sleeps
+    final mainSleeps = SleepClassifier.filterMainSleepHistory(_sleepHistory);
     
-    debugPrint('📊 DASHBOARD: Found ${mainSleeps.length} main sleep sessions');
+    debugPrint('📊 DASHBOARD: Found ${mainSleeps.length} main sleep sessions (filtered by SleepClassifier)');
     
     if (mainSleeps.isNotEmpty) {
       mainSleeps.sort((a, b) => b.timestamp.compareTo(a.timestamp));

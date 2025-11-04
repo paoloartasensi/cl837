@@ -299,8 +299,8 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
       }
       
       // Step 2: Load recent sleep scores from storage
-      final recentScores = await _historyManager.getRecentScores(7);
-      debugPrint('📊 Premium Screen: Loaded ${recentScores.length} recent scores from storage');
+      final recentScores = await _historyManager.getRecentMainSleepScores(7);  // ✅ Only main night sleeps
+      debugPrint('📊 Premium Screen: Loaded ${recentScores.length} main night sleep scores from storage');
       
       if (recentScores.isNotEmpty) {
         _latestScore = recentScores.first;

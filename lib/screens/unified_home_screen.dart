@@ -14,11 +14,12 @@ import 'dashboard_screen.dart';
 import 'advanced_health_dashboard.dart';
 import 'timezone_test_screen.dart';
 import '../chileaf_extended_service.dart';
-import '../models/heart_rate_data.dart';
 import '../models/historical_data.dart';
+import '../models/heart_rate_data.dart';
 import '../battery.dart' show BatteryService;
 import '../heartrate.dart' show HeartRateService;
 import '../widgets/sensor_3d_quick_actions.dart';
+import '../services/sleep_classifier.dart';
 
 /// Unified Home Screen - Persistent BT connection with individual data download
 class UnifiedHomeScreen extends StatefulWidget {
@@ -564,13 +565,18 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
   String _generateSleepCSVContent(List<SleepHistoryEntry> sleepData) {
     StringBuffer csvContent = StringBuffer();
     
-    // Header CSV - Formato piatto (ogni riga completa)
-    csvContent.writeln('Session,Timestamp,Minutes_From_Start,Activity_Index,Sleep_State,Notes,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Sleep_Efficiency_%,Sleep_Quality');
+    // Header CSV - Added Sleep_Type column
+    csvContent.writeln('Session,Sleep_Type,Timestamp,Minutes_From_Start,Activity_Index,Sleep_State,Notes,Duration_Minutes,Total_Sleep_Minutes,Deep_Sleep_Minutes,Light_Sleep_Minutes,Sleep_Efficiency_%,Sleep_Quality');
     csvContent.writeln('# NOTE: Each Activity_Index = 5-MINUTE block (SDK 0x31 specification)');
+    csvContent.writeln('# Sleep_Type: Night Sleep (3+h, 18:00-10:00) | Short Nap | Long Nap | Brief Rest');
     
     // Dati per ogni sessione
     int sessionNumber = 1;
     for (var sleep in sleepData) {
+      // Classify session type
+      final sleepType = SleepClassifier.classifyHistoryEntry(sleep);
+      final typeLabel = '${sleepType.emoji} ${sleepType.displayName}';
+      
       final phases = sleep.calculateSleepPhases();
       final totalSleep = phases.lightSleep + phases.deepSleep;
       final totalMinutes = phases.totalMinutes;
@@ -613,8 +619,8 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           sleepState = 'AWAKE';
         }
         
-        // Scrivi riga completa (NO virgole vuote!)
-        csvContent.writeln('$sessionNumber,$sessionTimestamp,$minutesFromStart,$action,$sleepState,$notes,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},$efficiency,$quality');
+        // Scrivi riga completa con Sleep_Type
+        csvContent.writeln('$sessionNumber,$typeLabel,$sessionTimestamp,$minutesFromStart,$action,$sleepState,$notes,$totalMinutes,$totalSleep,${phases.deepSleep},${phases.lightSleep},$efficiency,$quality');
       }
       
       sessionNumber++;

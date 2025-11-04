@@ -236,6 +236,11 @@ class ChileafExtendedService {
   // Sleep 0x31 CACHE - keeps last received sessions even after clear
   final List<SleepHistoryEntry> _sleepData31Cache = [];
   
+  // Sleep 0x05 LEGACY format buffer (SDK compatible)
+  // Formato iOS/Android: {utcTime: timestamp, count: len, sleep: [actions...]}
+  final List<Map<String, dynamic>> _sleepData05Buffer = [];
+
+  
   // Sleep event streams (onset detection)
   final StreamController<SleepOnsetEvent> _sleepOnsetController =
       StreamController<SleepOnsetEvent>.broadcast();
@@ -792,11 +797,27 @@ class ChileafExtendedService {
           _hardwareVersionController.add(hardwareVersion);
         }
         break;
-      case 0x05: // Device Name (Sleep Data 0x05 format is DEPRECATED - use 0x31 instead)
-        debugPrint('📱 DEVICE NAME: Processing device name');
-        var deviceName = DeviceInfoProcessor.processDeviceName(data);
-        if (deviceName != null) {
-          _deviceNameController.add(deviceName);
+      case 0x05: // Sleep Data (LEGACY FORMAT) or Device Name
+        // Il comando 0x05 ha significati multipli basati su sub-comando (byte 3)
+        if (data.length > 3) {
+          if (data[3] == 0x03) {
+            // Sub-comando 0x03 = Sleep Data (formato LEGACY SDK)
+            debugPrint('🌙💤 SLEEP DATA 0x05 0x03: Processing legacy sleep data (SDK compatible)');
+            _processSleepData05(data);
+          } else if (data[3] == 0xFF) {
+            // Sub-comando 0xFF = Fine trasmissione sleep data
+            debugPrint('🌙✅ SLEEP DATA 0x05 0xFF: End signal - sleep data transmission complete');
+            _finalizeSleepData05();
+          } else if (data.length >= 4) {
+            // Altri sub-comandi = Device name
+            debugPrint('📱 DEVICE NAME: Processing device name');
+            var deviceName = DeviceInfoProcessor.processDeviceName(data);
+            if (deviceName != null) {
+              _deviceNameController.add(deviceName);
+            }
+          }
+        } else {
+          debugPrint('⚠️ Command 0x05 packet too short: ${data.length} bytes');
         }
         break;
       case 0x06: // MAC Address
@@ -1382,25 +1403,32 @@ class ChileafExtendedService {
 
   /// Richiede dati del sonno dal dispositivo (comando 0x05)
   /// Equivalente a getHistoryOfSleep() nel WearManager
-  /// Get sleep history data using OFFICIAL 0x31 protocol
-  /// DEPRECATED: Old 0x05 format no longer supported - use 0x31 format only
+  /// 
+  /// ⚠️ IMPORTANTE: Ci sono DUE protocolli per sleep data:
+  /// 1. COMANDO 0x05 param 0x02: Formato legacy (compatibile con JAVA/iOS SDK)
+  ///    - Risposta 0x05 con formato: count + utcTime + actions[]
+  ///    - Ogni pacchetto contiene 1 sessione completa
+  ///    - Fine trasmissione: pacchetto con 0xFF
+  /// 
+  /// 2. COMANDO 0x31 param 0x00: Formato nuovo (documentazione ufficiale)
+  ///    - Risposta 0x31/0x32 con multi-packet per sessione lunga
+  ///    - Maggior granularità e supporto sessioni lunghe
+  ///    - Fine trasmissione: comando 0x32
+  /// 
+  /// Questo metodo usa il FORMATO LEGACY 0x05 per compatibilità con SDK ufficiali
   Future<void> getHistoryOfSleep() async {
-    debugPrint('🌙 Requesting sleep history data (OFFICIAL 0x31 protocol)...');
+    debugPrint('🌙 Requesting sleep history data (LEGACY 0x05 protocol - SDK compatible)...');
     
     try {
-      // Clear previous session data
-      _sleepData31Buffer.clear();
-      _sleepData31CompletedSessions.clear();
-      _isSleepData31Active = false;
-      debugPrint('🧹 Cleared previous sleep 0x31 data');
+      // ✅ COMANDO CORRETTO come da JAVA/iOS SDK
+      // WearManager.java: sendCommand((byte) 5, 2)
+      // HeartBLEDevice.m: "ff050502"
+      List<int> command = OfficialChileafCommands.getHistoryOfSleep();
       
-      // Use official 0x31 command for sleep data
-      List<int> command = OfficialChileafCommands.buildOfficialCommand(0x31, [0x00]);
-      
-      debugPrint('📡 Sleep 0x31 command: ${_commandToHexString(command)}');
-      debugPrint('🔍 Expected response: 0x31 with timestamp + activity indices');
-      debugPrint('🔍 Format: len + timestamp(4 bytes) + actions[len]');
-      debugPrint('🔍 Timestamp handling: Interpreted as local time (Android SDK compatible)');
+      debugPrint('📡 Sleep 0x05 command: ${_commandToHexString(command)}');
+      debugPrint('🔍 Expected response: 0x05 with format [count, utcTime(4), actions...]');
+      debugPrint('🔍 End signal: packet with 0xFF');
+      debugPrint('🔍 This is the SAME command used by official JAVA and iOS SDKs');
       
       await _sendCommand(command);
       debugPrint('✅ Sleep history command sent successfully');
@@ -2183,6 +2211,141 @@ class ChileafExtendedService {
     
     debugPrint('═══════════════════════════════════════════════════════');
     debugPrint('');
+  }
+
+  // ===== SLEEP DATA 0x05 LEGACY FORMAT (SDK COMPATIBLE) =====
+  
+  /// Processa risposta 0x05 0x03 (formato legacy iOS/Android SDK)
+  /// Formato iOS: buffer_[3]=0x03, length=buffer_[1]-5, start=4
+  /// Loop: count=buffer[start], utc=4bytes, actions[count]
+  /// Formato: [FF][len][05][03][count1][utc1_4bytes][actions...][count2][utc2_4bytes][actions...][checksum]
+  void _processSleepData05(List<int> data) {
+    debugPrint('🌙📦 Processing sleep data 0x05 format...');
+    
+    if (data.length < 10) {
+      debugPrint('❌ Sleep 0x05 data too short: ${data.length} bytes');
+      return;
+    }
+    
+    // Verifica header
+    if (data[0] != 0xFF || data[2] != 0x05 || data[3] != 0x03) {
+      debugPrint('❌ Invalid sleep 0x05 header: ${data.take(4).map((e) => e.toRadixString(16)).join(' ')}');
+      return;
+    }
+    
+    int length = data[1] - 5; // Come iOS SDK
+    int start = 4;
+    int sessionCount = 0;
+    
+    debugPrint('📏 Data length: $length bytes, starting at offset $start');
+    
+    while (start < length && start < data.length - 1) {
+      sessionCount++;
+      
+      // Leggi count (action indices length)
+      int postCount = data[start];
+      debugPrint('  📊 Session $sessionCount: $postCount action indices');
+      
+      if (start + 4 >= data.length) {
+        debugPrint('  ⚠️ Incomplete session data at offset $start');
+        break;
+      }
+      
+      // Leggi UTC timestamp (4 bytes, big-endian) - COME iOS SDK
+      int utcTime = (data[start + 1] << 24) + 
+                    (data[start + 2] << 16) + 
+                    (data[start + 3] << 8) + 
+                    data[start + 4];
+      
+      // Converti in DateTime (interpreta come local time)
+      DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTime * 1000);
+      debugPrint('  🕐 Timestamp: $utcTime → $timestamp');
+      
+      // Estrai activity indices
+      List<int> actions = [];
+      int actionStart = start + 5;
+      
+      if (actionStart + postCount > data.length - 1) {
+        debugPrint('  ⚠️ Incomplete actions array (need $postCount, have ${data.length - 1 - actionStart})');
+        postCount = (data.length - 1 - actionStart).clamp(0, postCount);
+      }
+      
+      for (int i = 0; i < postCount; i++) {
+        int activityIndex = data[actionStart + i] & 0xFF;
+        actions.add(activityIndex);
+      }
+      
+      debugPrint('  📈 Activity sample: ${actions.take(10).join(", ")}${actions.length > 10 ? "..." : ""}');
+      
+      // Crea oggetto compatibile con formato iOS
+      Map<String, dynamic> session = {
+        'utcTime': utcTime,
+        'count': postCount,
+        'sleep': actions,
+        'timestamp': timestamp, // Campo aggiuntivo per facilità
+      };
+      
+      _sleepData05Buffer.add(session);
+      debugPrint('  ✅ Session $sessionCount added to buffer');
+      
+      // Avanza al prossimo record
+      start = start + 5 + postCount;
+    }
+    
+    debugPrint('💾 Total sessions in buffer: ${_sleepData05Buffer.length}');
+    
+    // Se pacchetto piccolo (<= 50 bytes), iOS chiama subito il delegate
+    // Noi facciamo lo stesso - se è piccolo, finalizza subito
+    if (data.length <= 50) {
+      debugPrint('📦 Small packet detected (${data.length} bytes) - finalizing immediately');
+      _finalizeSleepData05();
+    }
+  }
+  
+  /// Finalizza e invia i dati 0x05 al sistema
+  /// Chiamato quando arriva il segnale 0xFF o pacchetto piccolo
+  void _finalizeSleepData05() {
+    debugPrint('🌙✅ Finalizing sleep data 0x05...');
+    
+    if (_sleepData05Buffer.isEmpty) {
+      debugPrint('  ℹ️  No sleep 0x05 data to finalize');
+      return;
+    }
+    
+    debugPrint('  📊 Converting ${_sleepData05Buffer.length} sessions to SleepHistoryEntry format...');
+    
+    // Converti formato iOS/Android in SleepHistoryEntry
+    List<SleepHistoryEntry> entries = [];
+    
+    for (var session in _sleepData05Buffer) {
+      DateTime timestamp = session['timestamp'] as DateTime;
+      List<int> actions = List<int>.from(session['sleep']);
+      
+      SleepHistoryEntry entry = SleepHistoryEntry(
+        timestamp: timestamp,
+        actions: actions,
+        count: actions.length,
+      );
+      
+      entries.add(entry);
+      
+      // Log dettagli
+      int totalMinutes = actions.length * 5;
+      int awake = actions.where((a) => a > 20).length * 5;
+      int light = actions.where((a) => a > 0 && a <= 20).length * 5;
+      int stillCount = actions.where((a) => a == 0).length;
+      
+      debugPrint('  📅 ${timestamp.toLocal().toString().substring(0, 19)}: '
+          '${totalMinutes}min total, Awake=${awake}min, Light=${light}min, Still=${stillCount}×5min');
+    }
+    
+    // Invia al controller principale
+    _sleepHistoryController.add(entries);
+    debugPrint('  📤 Sent ${entries.length} sessions to UI stream');
+    
+    // Pulisci buffer
+    _sleepData05Buffer.clear();
+    debugPrint('  🧹 Buffer cleared - ready for next download');
   }
 
   // ===== BLOOD OXYGEN (SpO2) MEASUREMENT METHODS =====
