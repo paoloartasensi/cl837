@@ -282,9 +282,23 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     setState(() => _isLoading = true);
 
     try {
-      debugPrint('🔄 Premium Screen: Loading sleep data from storage...');
+      debugPrint('🔄 Premium Screen: Starting sleep data sync...');
       
-      // Load recent sleep scores from history
+      // Step 1: Try to download fresh data from device
+      try {
+        debugPrint('📡 Premium Screen: Requesting sleep data from device...');
+        await widget.chileafService.getHistoryOfSleep();
+        
+        // Wait a bit for data to be received and processed
+        await Future.delayed(const Duration(seconds: 2));
+        
+        debugPrint('✅ Premium Screen: Sleep data request sent to device');
+      } catch (deviceError) {
+        debugPrint('⚠️ Premium Screen: Could not request from device: $deviceError');
+        // Continue anyway - we'll try to load from storage
+      }
+      
+      // Step 2: Load recent sleep scores from storage
       final recentScores = await _historyManager.getRecentScores(7);
       debugPrint('📊 Premium Screen: Loaded ${recentScores.length} recent scores from storage');
       
@@ -305,11 +319,43 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         _updateReadinessScore();
         
         debugPrint('✅ Premium Screen: Readiness score = ${_readinessScore!.totalScore.toStringAsFixed(1)}');
+        
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('✅ Sleep data synced - ${recentScores.length} session(s) available'),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
       } else {
         debugPrint('⚠️ Premium Screen: No sleep scores found in storage');
+        
+        // Show "no data" message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('ℹ️ No sleep data available yet. Make sure device is connected and has recorded sleep sessions.'),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
       }
     } catch (e) {
       debugPrint('❌ Premium Screen: Error loading sleep data: $e');
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Error syncing data: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
     }
 
     setState(() => _isLoading = false);
