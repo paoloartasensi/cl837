@@ -16,6 +16,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/historical_data.dart';
 import '../models/sleep_score.dart';
 import '../models/smart_alarm.dart';
+import 'sleep_classifier.dart';
 
 class SleepHistoryManager {
   static final SleepHistoryManager _instance = SleepHistoryManager._internal();
