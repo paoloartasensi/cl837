@@ -133,8 +133,8 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         }
       }
       
-      // Reload data to show new sessions
-      await _loadSleepData();
+      // ✅ FIX: Reload ONLY from storage, DON'T request from device again!
+      await _loadSleepDataFromStorage();
     });
   }
   
@@ -298,52 +298,9 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
         // Continue anyway - we'll try to load from storage
       }
       
-      // Step 2: Load recent sleep scores from storage
-      final recentScores = await _historyManager.getRecentMainSleepScores(7);  // ✅ Only main night sleeps
-      debugPrint('📊 Premium Screen: Loaded ${recentScores.length} main night sleep scores from storage');
+      // Step 2: Load from storage
+      await _loadSleepDataFromStorage();
       
-      if (recentScores.isNotEmpty) {
-        _latestScore = recentScores.first;
-        _recentScores = recentScores;
-        
-        debugPrint('✅ Premium Screen: Latest score = ${_latestScore!.totalScore.toStringAsFixed(1)}, Date = ${_latestScore!.sleepDate}');
-        
-        // Load raw sleep data for timeline chart
-        final recentSessions = await _historyManager.getRecentSessions(1);
-        if (recentSessions.isNotEmpty) {
-          _latestSleepData = recentSessions.first;
-          debugPrint('✅ Premium Screen: Loaded raw sleep data with ${recentSessions.first.activityIndices.length} intervals');
-        }
-        
-        // Calculate readiness score (will use HRV if available)
-        _updateReadinessScore();
-        
-        debugPrint('✅ Premium Screen: Readiness score = ${_readinessScore!.totalScore.toStringAsFixed(1)}');
-        
-        // Show success message
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('✅ Sleep data synced - ${recentScores.length} session(s) available'),
-              backgroundColor: Colors.green,
-              duration: const Duration(seconds: 2),
-            ),
-          );
-        }
-      } else {
-        debugPrint('⚠️ Premium Screen: No sleep scores found in storage');
-        
-        // Show "no data" message
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('ℹ️ No sleep data available yet. Make sure device is connected and has recorded sleep sessions.'),
-              backgroundColor: Colors.orange,
-              duration: Duration(seconds: 4),
-            ),
-          );
-        }
-      }
     } catch (e) {
       debugPrint('❌ Premium Screen: Error loading sleep data: $e');
       
@@ -359,6 +316,45 @@ class _SleepPremiumScreenState extends State<SleepPremiumScreen> with SingleTick
     }
 
     setState(() => _isLoading = false);
+  }
+
+  /// Load sleep data from storage only (NO device request)
+  /// Used by stream listener to avoid infinite loops
+  Future<void> _loadSleepDataFromStorage() async {
+    try {
+      // Load recent sleep scores from storage
+      final recentScores = await _historyManager.getRecentMainSleepScores(7);  // ✅ Only main night sleeps
+      debugPrint('📊 Premium Screen: Loaded ${recentScores.length} main night sleep scores from storage');
+      
+      if (recentScores.isNotEmpty) {
+        setState(() {
+          _latestScore = recentScores.first;
+          _recentScores = recentScores;
+        });
+        
+        debugPrint('✅ Premium Screen: Latest score = ${_latestScore!.totalScore.toStringAsFixed(1)}, Date = ${_latestScore!.sleepDate}');
+        
+        // Load raw sleep data for timeline chart
+        final recentSessions = await _historyManager.getRecentSessions(1);
+        if (recentSessions.isNotEmpty) {
+          setState(() {
+            _latestSleepData = recentSessions.first;
+          });
+          debugPrint('✅ Premium Screen: Loaded raw sleep data with ${recentSessions.first.activityIndices.length} intervals');
+        }
+        
+        // Calculate readiness score (will use HRV if available)
+        _updateReadinessScore();
+        
+        debugPrint('✅ Premium Screen: Readiness score = ${_readinessScore!.totalScore.toStringAsFixed(1)}');
+        
+        // ✅ Update UI silently (no snackbar - already shown by main load)
+      } else {
+        debugPrint('⚠️ Premium Screen: No sleep scores found in storage');
+      }
+    } catch (e) {
+      debugPrint('❌ Premium Screen: Error loading from storage: $e');
+    }
   }
 
   @override
