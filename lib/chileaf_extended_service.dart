@@ -1398,9 +1398,9 @@ class ChileafExtendedService {
       List<int> command = OfficialChileafCommands.buildOfficialCommand(0x31, [0x00]);
       
       debugPrint('📡 Sleep 0x31 command: ${_commandToHexString(command)}');
-      debugPrint('🔍 Expected response: 0x31 with UTC + activity indices');
-      debugPrint('🔍 Java format: len + utc(4 bytes) + actions[len]');
-      debugPrint('🔍 Time correction: utc *= 1000, utc -= 28800000 (8h offset)');
+      debugPrint('🔍 Expected response: 0x31 with timestamp + activity indices');
+      debugPrint('🔍 Format: len + timestamp(4 bytes) + actions[len]');
+      debugPrint('🔍 Timestamp handling: Interpreted as local time (Android SDK compatible)');
       
       await _sendCommand(command);
       debugPrint('✅ Sleep history command sent successfully');
@@ -1932,11 +1932,14 @@ class ChileafExtendedService {
         _finalizeSleepData31();
       }
       
-      // Converti UTC in DateTime
-      int utcMillis = utcOrSequence * 1000;
-      timestamp = DateTime.fromMillisecondsSinceEpoch(utcMillis, isUtc: true);
+      // Converti timestamp in DateTime
+      // Device invia timestamp locale (come Android SDK), non UTC puro
+      // Android: new Date(time) con Locale.getDefault()
+      // iOS: aggiunge +8h ma poi forza UTC (errato per non-Cina)
+      int localMillis = utcOrSequence * 1000;
+      timestamp = DateTime.fromMillisecondsSinceEpoch(localMillis); // Interpreta come locale
       
-      debugPrint('🕐 UTC timestamp: $utcOrSequence → $timestamp');
+      debugPrint('🕐 Device timestamp: $utcOrSequence → $timestamp (local time)');
       _isSleepData31Active = true;
       
     } else {
