@@ -2257,9 +2257,14 @@ class ChileafExtendedService {
                     (data[start + 3] << 8) + 
                     data[start + 4];
       
-      // Converti in DateTime (interpreta come local time)
-      DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(utcTime * 1000);
-      debugPrint('  🕐 Timestamp: $utcTime → $timestamp');
+      // Converti UTC → Local time (come SDK iOS: dateWithTimeIntervalSince1970 - timeZoneSecond)
+      // utcTime è in SECONDI, fromMillisecondsSinceEpoch accetta millisecondi
+      DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(
+        utcTime * 1000,  // Converti secondi → millisecondi
+        isUtc: true      // ✅ CRITICAL: interpreta come UTC!
+      ).toLocal();       // ✅ Converti a local timezone
+      
+      debugPrint('  🕐 Timestamp: $utcTime (UTC) → ${timestamp.toLocal()} (Local)');
       
       // Estrai activity indices
       List<int> actions = [];

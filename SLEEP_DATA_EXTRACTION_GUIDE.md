@@ -141,7 +141,13 @@ FUNCTION parseSleepData05(data):
     
     WHILE start < length AND start < data.length - 1:
         count = data[start]                    // Number of 5-min blocks
-        utcTime = readBigEndian32(data, start+1)  // 4 bytes UTC
+        utcTime = readBigEndian32(data, start+1)  // 4 bytes UTC (in SECONDS!)
+        
+        // ⚠️ CRITICAL: UTC → Local Time Conversion
+        // Device sends UTC timestamp in SECONDS (not milliseconds!)
+        // iOS SDK: [NSDate dateWithTimeIntervalSince1970:stamp - timeZoneSecond]
+        // Must convert: UTC seconds → Local DateTime
+        timestamp = convertUTCSecondsToLocal(utcTime)
         
         actions = []
         FOR i = 0 TO count - 1:
@@ -149,7 +155,7 @@ FUNCTION parseSleepData05(data):
         END FOR
         
         sessions.append({
-            timestamp: utcTimeToDateTime(utcTime),
+            timestamp: timestamp,  // Local time, not UTC!
             count: count,
             actions: actions
         })
@@ -160,6 +166,54 @@ FUNCTION parseSleepData05(data):
     RETURN sessions
 END FUNCTION
 ```
+
+### ⚠️ CRITICAL: UTC Timestamp Conversion
+
+**The device sends timestamps in UTC (SECONDS), not local time!**
+
+You **MUST** convert UTC → Local time, or all sleep timestamps will be wrong by your timezone offset!
+
+**iOS SDK Reference (SleepDataController.m line 245):**
+```objectivec
+NSInteger timeZoneSecond = [[NSTimeZone localTimeZone] secondsFromGMT];
+NSDate *detaildate = [NSDate dateWithTimeIntervalSince1970:stamp - timeZoneSecond];
+```
+
+**Conversion Algorithm:**
+```pseudocode
+FUNCTION convertUTCSecondsToLocal(utcSeconds):
+    // Step 1: Convert seconds → milliseconds
+    milliseconds = utcSeconds * 1000
+    
+    // Step 2: Create DateTime as UTC
+    utcDateTime = DateTime.fromEpoch(milliseconds, timezone=UTC)
+    
+    // Step 3: Convert to local timezone
+    localDateTime = utcDateTime.toLocalTimezone()
+    
+    RETURN localDateTime
+END FUNCTION
+```
+
+**Example:**
+```
+Device sends: 1730847381 (UTC seconds)
+  = 2024-11-05 14:30:41 UTC
+  
+❌ WRONG (interpret as local):
+  DateTime.fromEpoch(1730847381 * 1000)
+  = 2024-11-05 14:30:41 Local (WRONG if you're not in UTC+0!)
+  
+✅ CORRECT (convert UTC → Local):
+  DateTime.fromEpoch(1730847381 * 1000, isUtc=true).toLocal()
+  = 2024-11-05 15:30:41 CET (if timezone is UTC+1) ✅
+```
+
+**Why This Matters:**
+- If you sleep at 22:00 local time (CET = UTC+1)
+- Device saves: 21:00 UTC (22:00 - 1h)
+- Without conversion: CSV shows 21:00 ❌
+- With conversion: CSV shows 22:00 ✅
 
 ### End Signal
 
@@ -599,6 +653,22 @@ command = [0xFF, 0x09, 0x31, 0x00, 0x00, 0x00, 0x00, 0x00, checksum]
 command = [0xFF, 0x05, 0x05, 0x02, 0xCF]
 ```
 
+### ❌ WRONG: Ignore UTC Conversion
+
+```pseudocode
+// THIS WILL GIVE WRONG TIMESTAMPS!
+timestamp = DateTime.fromEpoch(utcTime * 1000)  // Interprets as local ❌
+```
+
+**Result:** All timestamps wrong by timezone offset!
+
+### ✅ CORRECT: Convert UTC → Local
+
+```pseudocode
+// Correct conversion (like iOS SDK)
+timestamp = DateTime.fromEpoch(utcTime * 1000, isUtc=true).toLocal()  // ✅
+```
+
 ### ❌ WRONG: Request in Loop
 
 ```pseudocode
@@ -648,10 +718,18 @@ void _processSleepData05(List<int> data) {
   
   while (start < length && start < data.length - 1) {
     int count = data[start];
+    
+    // Read UTC timestamp (4 bytes, big-endian)
     int utcTime = (data[start + 1] << 24) + 
                   (data[start + 2] << 16) + 
                   (data[start + 3] << 8) + 
                   data[start + 4];
+    
+    // ✅ CRITICAL: Convert UTC → Local (like iOS SDK)
+    DateTime timestamp = DateTime.fromMillisecondsSinceEpoch(
+      utcTime * 1000,  // Convert seconds → milliseconds
+      isUtc: true      // Interpret as UTC!
+    ).toLocal();       // Convert to local timezone
     
     List<int> actions = [];
     for (int i = 0; i < count; i++) {
@@ -659,7 +737,7 @@ void _processSleepData05(List<int> data) {
     }
     
     _buffer.add({
-      'timestamp': DateTime.fromMillisecondsSinceEpoch(utcTime * 1000),
+      'timestamp': timestamp,  // Local time, not UTC!
       'count': count,
       'sleep': actions,
     });
