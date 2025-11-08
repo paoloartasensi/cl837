@@ -4,7 +4,6 @@
 /// This is CRITICAL for proper sleep classification!
 /// 
 /// Author: Extracted from chileaf_extended_service.dart
-/// Date: November 5, 2025
 /// 
 /// WHY MERGING IS NECESSARY:
 /// Device sends sleep in 60-minute chunks. Without merging:

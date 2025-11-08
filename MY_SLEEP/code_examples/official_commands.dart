@@ -4,7 +4,6 @@
 /// Based on SDK documentation and reverse engineering
 /// 
 /// Author: Extracted from lib/services/ble_commands.dart
-/// Date: November 5, 2025
 library;
 
 /// Command IDs

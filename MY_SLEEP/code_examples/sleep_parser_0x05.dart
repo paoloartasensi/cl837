@@ -4,7 +4,6 @@
 /// Compatible with official Android (JAVA) and iOS (Objective-C) SDKs
 /// 
 /// Author: Extracted from chileaf_extended_service.dart
-/// Date: November 5, 2025
 /// 
 /// CRITICAL FEATURES:
 /// 1. UTC → Local timestamp conversion

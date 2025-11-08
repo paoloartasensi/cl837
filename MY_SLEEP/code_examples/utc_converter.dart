@@ -7,7 +7,6 @@
 /// Based on Android SDK: HistorySleepActivity.java millsToDate()
 /// 
 /// Author: Extracted from lib/services/utc_converter.dart
-/// Date: November 8, 2025
 library;
 
 /// Converts CL837 UTC seconds to local DateTime
