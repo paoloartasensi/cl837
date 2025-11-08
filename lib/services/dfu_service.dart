@@ -103,6 +103,9 @@ class DfuService {
   String? _dfuMacAddress;
   bool _isInitialized = false;
   
+  // Cache delle device info per evitare letture multiple
+  Map<String, String>? _cachedDeviceInfo;
+  
   DfuService({
     required ChileafExtendedService chileafService,
     required BluetoothDevice device,
@@ -161,20 +164,114 @@ class DfuService {
     }
   }
   
-  /// Ottiene versione firmware attuale (OPZIONALE - non critico per DFU)
-  /// Nota: Il comando 0x03 risponde con User Info invece di firmware version
-  /// La versione firmware non è necessaria per il processo DFU
+  /// Legge informazioni dal Device Information Service standard BLE (0x180A)
+  /// Usa cache se disponibile per evitare letture multiple
+  Future<Map<String, String>> readDeviceInformation({bool forceRefresh = false}) async {
+    // Usa cache se disponibile e non forzato refresh
+    if (!forceRefresh && _cachedDeviceInfo != null) {
+      debugPrint('📋 Using cached device information');
+      return Map.from(_cachedDeviceInfo!);
+    }
+    
+    Map<String, String> info = {};
+    
+    try {
+      debugPrint('📋 Reading Device Information Service (0x180A)...');
+      
+      // UUID del Device Information Service (standard BLE)
+      final Guid disServiceUuid = Guid('0000180a-0000-1000-8000-00805f9b34fb');
+      
+      // UUID delle caratteristiche
+      final Map<String, String> characteristics = {
+        'manufacturer': '00002a29-0000-1000-8000-00805f9b34fb',
+        'model': '00002a24-0000-1000-8000-00805f9b34fb',
+        'serial': '00002a25-0000-1000-8000-00805f9b34fb',
+        'hardware': '00002a27-0000-1000-8000-00805f9b34fb',
+        'firmware': '00002a26-0000-1000-8000-00805f9b34fb',
+        'software': '00002a28-0000-1000-8000-00805f9b34fb',
+        'systemId': '00002a23-0000-1000-8000-00805f9b34fb',
+      };
+      
+      // Scopri i servizi
+      List<BluetoothService> services = await _device.discoverServices();
+      
+      // Trova il Device Information Service
+      BluetoothService? disService;
+      try {
+        disService = services.firstWhere(
+          (s) => s.uuid == disServiceUuid
+        );
+      } catch (e) {
+        debugPrint('   ⚠️ Device Information Service not found');
+        return info;
+      }
+      
+      debugPrint('   ✓ Device Information Service found');
+      
+      // Leggi ogni caratteristica
+      for (var entry in characteristics.entries) {
+        try {
+          final charUuid = Guid(entry.value);
+          
+          // Trova la caratteristica
+          BluetoothCharacteristic? char;
+          try {
+            char = disService.characteristics.firstWhere(
+              (c) => c.uuid == charUuid
+            );
+          } catch (e) {
+            // Caratteristica non trovata, continua
+            continue;
+          }
+          
+          List<int> value = await char.read();
+          // Decodifica come stringa UTF-8
+          String decoded = String.fromCharCodes(value)
+              .replaceAll('\x00', '') // Rimuovi null terminators
+              .trim();
+          
+          if (decoded.isNotEmpty) {
+            info[entry.key] = decoded;
+            debugPrint('   ${entry.key}: $decoded');
+          }
+          
+        } catch (e) {
+          debugPrint('   ${entry.key}: Not available');
+        }
+      }
+      
+      debugPrint('✓ Device information read complete');
+      
+      // Salva in cache
+      _cachedDeviceInfo = Map.from(info);
+      
+    } catch (e) {
+      debugPrint('❌ Error reading device information: $e');
+    }
+    
+    return info;
+  }
+  
+  /// Ottiene versione firmware dal Device Information Service (se disponibile)
   Future<String?> getCurrentFirmwareVersion() async {
-    debugPrint('💾 Attempting to read firmware version (optional)...');
+    debugPrint('💾 Reading firmware version...');
     
-    // NOTA: Questo device non supporta la lettura diretta della versione firmware
-    // Il comando 0x03 risponde sempre con User Info (15 bytes)
-    // La lettura della versione è opzionale - procediamo comunque con il DFU
-    
-    debugPrint('⚠️ Firmware version reading not supported by this device');
-    debugPrint('   This is OK - version is not required for DFU update');
-    
-    return 'Unknown (not readable)';
+    try {
+      Map<String, String> info = await readDeviceInformation();
+      
+      if (info.containsKey('firmware') && info['firmware']!.isNotEmpty) {
+        String version = info['firmware']!;
+        debugPrint('✓ Firmware version: $version');
+        return version;
+      }
+      
+      debugPrint('⚠️ Firmware version not available in Device Information Service');
+      return null;
+      
+    } catch (e) {
+      debugPrint('❌ Error reading firmware version: $e');
+      return null;
+    }
   }
   
   /// Entra in modalità DFU
@@ -235,7 +332,7 @@ class DfuService {
           debugPrint('   GATT error 133 = device is rebooting into bootloader mode');
         } else {
           // Altri errori sono problematici
-          throw e;
+          rethrow;
         }
       }
       

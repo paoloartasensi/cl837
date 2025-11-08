@@ -260,6 +260,73 @@ if (e.toString().contains('133')) {
 ---
 
 ## 📦 Dipendenze
+```
+
+---
+
+## � Test con Python (Bleak)
+
+Per verificare rapidamente le info del device senza Flutter:
+
+```python
+"""
+Read Device Information Service (0x180A)
+Shows: manufacturer, model, serial, hardware, firmware, software versions
+"""
+import asyncio
+from bleak import BleakClient, BleakScanner
+
+# Device Information Service (standard BLE)
+DIS_SERVICE = "0000180a-0000-1000-8000-00805f9b34fb"
+CHARACTERISTICS = {
+    "Manufacturer Name": "00002a29-0000-1000-8000-00805f9b34fb",
+    "Model Number": "00002a24-0000-1000-8000-00805f9b34fb",
+    "Serial Number": "00002a25-0000-1000-8000-00805f9b34fb",
+    "Hardware Revision": "00002a27-0000-1000-8000-00805f9b34fb",
+    "Firmware Revision": "00002a26-0000-1000-8000-00805f9b34fb",
+    "Software Revision": "00002a28-0000-1000-8000-00805f9b34fb",
+}
+
+async def read_device_info():
+    # Find device
+    devices = await BleakScanner.discover(timeout=5.0)
+    cl837 = [d for d in devices if d.name and d.name.startswith("CL83")]
+    
+    if not cl837:
+        print("❌ Device not found")
+        return
+    
+    device = cl837[0]
+    print(f"✓ Found: {device.name} ({device.address})")
+    
+    # Connect and read
+    async with BleakClient(device, timeout=15.0) as client:
+        for name, uuid in CHARACTERISTICS.items():
+            try:
+                value = await client.read_gatt_char(uuid)
+                decoded = value.decode('utf-8').strip('\x00')
+                print(f"{name:20s}: {decoded}")
+            except:
+                print(f"{name:20s}: Not available")
+
+if __name__ == "__main__":
+    asyncio.run(read_device_info())
+```
+
+**Esempio output:**
+```
+✓ Found: CL837 (C1:AE:7C:3A:A1:78)
+Manufacturer Name   : Chileaf
+Model Number        : CL837
+Serial Number       : 12345678
+Hardware Revision   : V3.0
+Firmware Revision   : 4.1.9
+Software Revision   : 1.0.0
+```
+
+---
+
+## �📦 Dipendenze
 
 ```yaml
 # pubspec.yaml
@@ -287,13 +354,34 @@ dependencies:
 
 ## 📝 Note Implementative
 
-### Versione Firmware Non Leggibile
-Il comando `0x03` risponde sempre con User Info (15 bytes) invece della versione firmware.
-**Soluzione:** La versione è opzionale per il DFU - procediamo comunque.
+### Device Information Service (0x180A)
+Il device ESPONE il servizio standard BLE Device Information Service!
 
-### Device Information Service
-Il device NON espone il servizio standard BLE `0x180A` (Device Information).
-**Soluzione:** Usiamo il comando custom DFU direttamente.
+**Caratteristiche leggibili:**
+- Manufacturer Name (0x2A29)
+- Model Number (0x2A24)
+- Serial Number (0x2A25)
+- Hardware Revision (0x2A27)
+- **Firmware Revision (0x2A26)** ✅
+- **Software Revision (0x2A28)** ✅
+- System ID (0x2A23)
+
+**Codice Flutter:**
+```dart
+// Leggi tutte le info del device
+Map<String, String> info = await dfuService.readDeviceInformation();
+
+// Info disponibili:
+// info['manufacturer'] - es. "Chileaf"
+// info['model'] - es. "CL837"
+// info['firmware'] - es. "4.1.9"
+// info['software'] - es. "1.0.0"
+// info['hardware'] - es. "V3.0"
+// info['serial'] - numero seriale univoco
+```
+
+**Nota:** Il comando custom `0x03` risponde con User Info, NON con firmware version.
+Per leggere la versione firmware, usa il Device Information Service standard!
 
 ### Service Initialization
 Prima di inviare comandi, assicurati che ChileafExtendedService sia inizializzato:
