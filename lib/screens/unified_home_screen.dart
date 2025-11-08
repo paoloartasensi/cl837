@@ -265,9 +265,9 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           
           debugPrint('  Device: $name ($id)');
           
-          // 🔍 FILTRO: Solo device che iniziano con CL837 o CL831
-          final nameLower = name.toLowerCase();
-          if (!nameLower.startsWith('cl837') && !nameLower.startsWith('cl831')) {
+          // 🔍 FILTRO: Solo device che contengono CL837 o CL831 (case-insensitive)
+          final nameUpper = name.toUpperCase();
+          if (!nameUpper.contains('CL837') && !nameUpper.contains('CL831')) {
             debugPrint('  ⏭️ Skipped: not a CL837/CL831 device');
             continue;
           }

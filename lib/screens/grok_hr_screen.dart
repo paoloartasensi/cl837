@@ -147,9 +147,9 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
         setState(() {
           foundDevices = results
               .where((r) {
-                final name = r.device.platformName.toLowerCase();
-                // 🔍 FILTRO: Solo CL837/CL831 devices
-                return name.startsWith('cl837') || name.startsWith('cl831');
+                final name = r.device.platformName.toUpperCase();
+                // 🔍 FILTRO: Solo CL837/CL831 devices (case-insensitive, contains invece di startsWith)
+                return name.contains('CL837') || name.contains('CL831');
               })
               .map((r) => r.device)
               .toSet()
