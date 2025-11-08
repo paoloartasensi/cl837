@@ -118,7 +118,6 @@ class ChileafExtendedService {
   // Accelerometer frequency measurement
   DateTime? _lastAccelPacketTime;
   int _accelFrequencyMeasurementCount = 0;
-  double _measuredAccelFrequency = 0.0;
   
   // HR BLE Service logging throttle
   int _hrBleLogCounter = 0;
@@ -718,8 +717,7 @@ class ChileafExtendedService {
         } else {
           // Log batch updates much less frequently
           if (_totalDataPackets % _logThrottleInterval == 0) {
-            debugPrint(
-                '🔄 Processed $_totalDataPackets packets (batch update)');
+            // debugPrint('🔄 Processed $_totalDataPackets packets (batch update)');
           }
         }
       }
@@ -1011,7 +1009,7 @@ class ChileafExtendedService {
           for (int i = 3; i < data.length; i++) {
             int value = data[i];
             if (value >= 40 && value <= 200) {
-              debugPrint('🔍 Potential HR value at byte $i: $value BPM');
+              // debugPrint('🔍 Potential HR value at byte $i: $value BPM');
             }
           }
         }
@@ -5279,24 +5277,9 @@ class ChileafExtendedService {
         
         // Calculate frequency every 500 packets (~20 seconds at 25Hz) to reduce log spam
         if (_accelFrequencyMeasurementCount >= 500) {
-          double elapsedSeconds = now.difference(_lastAccelPacketTime!).inMicroseconds / 1000000.0;
-          _measuredAccelFrequency = _accelFrequencyMeasurementCount / elapsedSeconds;
           
-          // Determine configured frequency from measured value
-          String configuredFreq;
-          if (_measuredAccelFrequency < 37.5) {
-            configuredFreq = "25 Hz";
-          } else if (_measuredAccelFrequency < 75) {
-            configuredFreq = "50 Hz";
-          } else if (_measuredAccelFrequency < 150) {
-            configuredFreq = "100 Hz";
-          } else if (_measuredAccelFrequency < 300) {
-            configuredFreq = "200 Hz";
-          } else {
-            configuredFreq = "400 Hz";
-          }
-          
-          debugPrint('📊 3D ACCEL FREQUENCY: ${_measuredAccelFrequency.toStringAsFixed(1)} Hz (configured: $configuredFreq)');
+          // Log disabled to reduce noise during DFU debugging
+          // debugPrint('📊 3D ACCEL FREQUENCY: ${_measuredAccelFrequency.toStringAsFixed(1)} Hz');
           
           // Reset for next measurement
           _accelFrequencyMeasurementCount = 0;
@@ -5663,22 +5646,22 @@ class ChileafExtendedService {
       DeviceStatus? deviceStatus = DeviceStatus.fromDeviceResponse(data);
       
       if (deviceStatus != null) {
-        debugPrint('✅ User Info parsed successfully:');
-        debugPrint('   👤 User: ${deviceStatus.userInfo.toString()}');
-        debugPrint('   🔋 Battery: ${deviceStatus.batteryLevel}% (${deviceStatus.chargingStatusString})');
-        debugPrint('   💓 ECG: ${deviceStatus.ecgOpen ? "ON" : "OFF"}');
+        // debugPrint('✅ User Info parsed successfully:');
+        // debugPrint('   👤 User: ${deviceStatus.userInfo.toString()}');
+        // debugPrint('   🔋 Battery: ${deviceStatus.batteryLevel}% (${deviceStatus.chargingStatusString})');
+        // debugPrint('   💓 ECG: ${deviceStatus.ecgOpen ? "ON" : "OFF"}');
         
         // Emit to streams
         _userInfoController.add(deviceStatus.userInfo);
         _deviceStatusController.add(deviceStatus);
         
-        // Log health insights
-        debugPrint('📊 Health Insights:');
-        debugPrint('   BMI: ${deviceStatus.userInfo.bmi.toStringAsFixed(1)} (${deviceStatus.userInfo.bmiCategory})');
-        debugPrint('   Max HR: ${deviceStatus.userInfo.maxHeartRate} BPM (by age)');
+        // Log health insights (disabled to reduce noise)
+        // debugPrint('📊 Health Insights:');
+        // debugPrint('   BMI: ${deviceStatus.userInfo.bmi.toStringAsFixed(1)} (${deviceStatus.userInfo.bmiCategory})');
+        // debugPrint('   Max HR: ${deviceStatus.userInfo.maxHeartRate} BPM (by age)');
         
-        Map<String, double> idealWeight = deviceStatus.userInfo.idealWeightRange;
-        debugPrint('   Ideal Weight: ${idealWeight['ideal']!.toStringAsFixed(1)} kg (±5 kg range)');
+        // Map<String, double> idealWeight = deviceStatus.userInfo.idealWeightRange;
+        // debugPrint('   Ideal Weight: ${idealWeight['ideal']!.toStringAsFixed(1)} kg (±5 kg range)');
       } else {
         debugPrint('❌ Failed to parse user info from response');
       }

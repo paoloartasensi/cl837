@@ -199,11 +199,11 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
           // Log only every 30th HR update to reduce spam (~30 seconds)
           _hrLogCounter++;
           if (_hrLogCounter % 30 == 0) {
-            debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
+            // debugPrint('💓 HOME SCREEN: HR from service: ${hrData.heartRate} BPM');
             
             // Log RR intervals if available
             if (hrData.rrIntervals != null && hrData.rrIntervals!.isNotEmpty) {
-              debugPrint('💓 RR Intervals: ${hrData.rrIntervals!.length} intervals');
+              // debugPrint('💓 RR Intervals: ${hrData.rrIntervals!.length} intervals');
             }
           }
         }
