@@ -326,6 +326,231 @@ Software Revision   : 1.0.0
 
 ---
 
+## � File Necessari per DFU
+
+### 1. Service DFU (CORE)
+**Path:** `lib/services/dfu_service.dart` (831 righe)
+
+**Contiene:**
+- `DfuService` class - Pipeline completa DFU
+- `readDeviceInformation()` - Lettura Device Info Service (0x180A)
+- `getCurrentFirmwareVersion()` - Lettura firmware version
+- `enterDfuMode()` - Invio comando 0x27 con checksum corretto
+- `_calculateChecksum()` - Algoritmo iOS (sum → two's complement → XOR 0x3A)
+- `scanForDfuDevice()` - Scansione bootloader
+- `performDfuUpdate()` - Pipeline 6 step completa
+
+**Dipendenze:**
+```dart
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:nordic_dfu/nordic_dfu.dart';
+import 'package:path_provider/path_provider.dart';
+import '../chileaf_extended_service.dart';
+```
+
+### 2. BLE Service (REQUIRED)
+**Path:** `lib/chileaf_extended_service.dart` (5673 righe)
+
+**Contiene:**
+- Gestione connessione BLE
+- Caratteristiche TX (aae28f01 - NOTIFY) e RX (aae28f02 - WRITE)
+- Protocollo comunicazione Chileaf custom
+- Parsing dati: HR, sleep, sport, 3D accel
+
+**IMPORTANTE:** Le caratteristiche TX/RX devono essere corrette (bug fix applicato):
+- `_txCharacteristic` - SOLO per ricevere notifiche dal device
+- `_rxCharacteristic` - SOLO per scrivere comandi al device
+
+### 3. Firmware File (REQUIRED)
+**Path:** `lib/assets/fw/FW_V419.zip`
+
+**Specifiche:**
+- Formato: Nordic DFU ZIP package
+- Size: 120261 bytes (119.6 KB)
+- Versione target: 4.1.9
+- Contenuto ZIP:
+  * `manifest.json` - Metadati DFU
+  * `*.bin` - Firmware binario
+  * `*.dat` - Init packet (firma/checksum)
+
+**MUST:** Dichiarare in `pubspec.yaml`:
+```yaml
+flutter:
+  assets:
+    - assets/fw/FW_V419.zip
+```
+
+### 4. Configurazione Progetto
+**Path:** `pubspec.yaml`
+
+**Dipendenze minime:**
+```yaml
+dependencies:
+  flutter_blue_plus: ^2.0.0
+  nordic_dfu: ^6.0.0
+  path_provider: ^2.0.0
+
+flutter:
+  assets:
+    - assets/fw/FW_V419.zip
+```
+
+**Installazione:**
+```bash
+flutter pub get
+```
+
+---
+
+## 💻 Codice Minimo per Integrare DFU
+
+### Esempio Completo
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'services/dfu_service.dart';
+import 'chileaf_extended_service.dart';
+
+class DfuUpdateScreen extends StatefulWidget {
+  final BluetoothDevice device;
+  
+  const DfuUpdateScreen({Key? key, required this.device}) : super(key: key);
+
+  @override
+  State<DfuUpdateScreen> createState() => _DfuUpdateScreenState();
+}
+
+class _DfuUpdateScreenState extends State<DfuUpdateScreen> {
+  late DfuService _dfuService;
+  late ChileafExtendedService _chileafService;
+  
+  String? _currentVersion;
+  bool _isUpdating = false;
+  String _status = '';
+  int _progress = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initServices();
+  }
+
+  Future<void> _initServices() async {
+    _chileafService = ChileafExtendedService();
+    _dfuService = DfuService(
+      chileafService: _chileafService,
+      device: widget.device,
+    );
+    
+    // Ascolta progress updates
+    _dfuService.progressStream.listen((progress) {
+      setState(() {
+        _progress = progress.percent;
+        _status = progress.message ?? progress.state.toString();
+      });
+    });
+    
+    // Leggi versione corrente
+    _currentVersion = await _dfuService.getCurrentFirmwareVersion();
+    setState(() {});
+  }
+
+  Future<void> _startDfu() async {
+    setState(() {
+      _isUpdating = true;
+      _status = 'Starting DFU...';
+    });
+    
+    try {
+      DfuResult result = await _dfuService.performDfuUpdate(
+        assetPath: 'assets/fw/FW_V419.zip',
+        targetVersion: '4.1.9',
+      );
+      
+      if (result.success) {
+        _showSuccess();
+      } else {
+        _showError(result.errorMessage ?? 'Unknown error');
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      setState(() {
+        _isUpdating = false;
+      });
+    }
+  }
+
+  void _showSuccess() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('✅ Firmware aggiornato con successo!'),
+        backgroundColor: Colors.green,
+      ),
+    );
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('❌ Errore: $message'),
+        backgroundColor: Colors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Firmware Update'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Versione corrente: ${_currentVersion ?? "Lettura..."}'),
+                    const SizedBox(height: 8),
+                    const Text('Versione target: 4.1.9'),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (_isUpdating) ...[
+              LinearProgressIndicator(value: _progress / 100),
+              const SizedBox(height: 16),
+              Text(_status, textAlign: TextAlign.center),
+            ] else ...[
+              ElevatedButton(
+                onPressed: _startDfu,
+                child: const Text('Aggiorna Firmware'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dfuService.dispose();
+    super.dispose();
+  }
+}
+```
+
+---
+
 ## �📦 Dipendenze
 
 ```yaml
