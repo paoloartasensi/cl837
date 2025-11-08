@@ -206,6 +206,10 @@ class _DfuUpdateWidgetState extends State<DfuUpdateWidget> {
   }
   
   void _showErrorDialog(String message) {
+    // Determina se è un timeout di scan DFU
+    bool isDfuScanTimeout = message.contains('DFU device not found') || 
+                            message.contains('timeout');
+    
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -213,10 +217,55 @@ class _DfuUpdateWidgetState extends State<DfuUpdateWidget> {
           children: [
             Icon(Icons.error, color: Colors.red),
             SizedBox(width: 12),
-            Text('Update Failed'),
+            Expanded(child: Text('Update Failed')),
           ],
         ),
-        content: Text(message),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              if (isDfuScanTimeout) ...[
+                SizedBox(height: 16),
+                Container(
+                  padding: EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                          SizedBox(width: 8),
+                          Text(
+                            'Troubleshooting',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blue.shade900,
+                            ),
+                          ),
+                        ],
+                      ),
+                      SizedBox(height: 8),
+                      Text(
+                        '• Keep device within 1 meter\n'
+                        '• Wait 5 seconds and retry\n'
+                        '• Check device battery > 30%\n'
+                        '• Try restarting the device\n'
+                        '• Ensure device is not connected to other apps',
+                        style: TextStyle(fontSize: 12, color: Colors.blue.shade900),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

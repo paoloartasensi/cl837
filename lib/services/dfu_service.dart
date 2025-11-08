@@ -112,7 +112,18 @@ class DfuService {
   Future<String?> getCurrentFirmwareVersion() async {
     debugPrint('💾 Reading current firmware version...');
     
+    // Verifica stato connessione
+    final connState = await _device.connectionState.first;
+    debugPrint('💾 Device connection state: $connState');
+    
+    if (connState != BluetoothConnectionState.connected) {
+      debugPrint('❌ Device not connected (state: $connState)');
+      return null;
+    }
+    
     try {
+      debugPrint('💾 ChileafService started: ${_chileafService.isConnected}');
+      
       // Richiedi versione firmware (comando 0x03)
       await _chileafService.requestFirmwareVersion();
       
@@ -156,16 +167,27 @@ class DfuService {
       
       debugPrint('📤 Sending DFU command: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
       
-      // Ottieni TX characteristic
-      var txChar = await _getTxCharacteristic();
-      if (txChar == null) {
-        throw Exception('TX characteristic not found');
+      // Ottieni RX characteristic (per scrivere al device)
+      var rxChar = await _getRxCharacteristic();
+      if (rxChar == null) {
+        throw Exception('RX characteristic not found');
       }
       
-      await txChar.write(command, withoutResponse: false);
+      debugPrint('📝 Using RX characteristic: ${rxChar.uuid}');
+      debugPrint('   Properties: write=${rxChar.properties.write}, writeWithoutResponse=${rxChar.properties.writeWithoutResponse}');
+      
+      await rxChar.write(command, withoutResponse: false);
       
       debugPrint('✅ DFU mode command sent successfully');
       debugPrint('⏳ Device will reboot in DFU mode (2-3 seconds)...');
+      
+      // Check connection state (device dovrebbe disconnettersi)
+      debugPrint('🔌 Current connection state: ${_device.connectionState}');
+      
+      // Attendi un momento per vedere se si disconnette
+      await Future.delayed(Duration(milliseconds: 500));
+      
+      debugPrint('🔌 Connection state after 500ms: ${_device.connectionState}');
       
       return _dfuMacAddress;
       
@@ -203,56 +225,98 @@ class DfuService {
     return sum & 0xFF;
   }
   
-  /// Ottiene TX characteristic
-  Future<BluetoothCharacteristic?> _getTxCharacteristic() async {
+  /// Ottiene RX characteristic (per scrivere al device)
+  /// RX = Receive dal punto di vista del device = Write dal nostro lato
+  /// UUID: aae28f02-71b5-42a1-8c3c-f9cf6ac969d0
+  Future<BluetoothCharacteristic?> _getRxCharacteristic() async {
+    const String rxCharUuid = 'aae28f02-71b5-42a1-8c3c-f9cf6ac969d0';
+    
     try {
       List<BluetoothService> services = await _device.discoverServices();
       
       for (var service in services) {
         for (var characteristic in service.characteristics) {
-          // Cerca characteristic con proprietà WRITE
-          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
-            debugPrint('✅ Found TX characteristic: ${characteristic.uuid}');
+          // Cerca prima per UUID specifico
+          if (characteristic.uuid.toString().toLowerCase() == rxCharUuid.toLowerCase()) {
+            debugPrint('✅ Found RX characteristic (by UUID): ${characteristic.uuid}');
             return characteristic;
           }
         }
       }
       
-      debugPrint('❌ TX characteristic not found');
+      // Fallback: cerca per proprietà WRITE
+      for (var service in services) {
+        for (var characteristic in service.characteristics) {
+          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+            debugPrint('⚠️ Found RX characteristic (by WRITE property): ${characteristic.uuid}');
+            return characteristic;
+          }
+        }
+      }
+      
+      debugPrint('❌ RX characteristic not found');
       return null;
       
     } catch (e) {
-      debugPrint('❌ Error finding TX characteristic: $e');
+      debugPrint('❌ Error finding RX characteristic: $e');
       return null;
     }
   }
   
   /// Scansiona device in DFU mode
   /// Device avrà nome con suffisso "U" (es. "CL831" → "CL831U")
-  Future<BluetoothDevice?> scanForDfuDevice(String dfuMac) async {
+  Future<BluetoothDevice?> scanForDfuDevice(String dfuMac, {int timeoutSeconds = 45}) async {
     debugPrint('🔍 Scanning for DFU device...');
     debugPrint('   Target MAC: $dfuMac');
+    debugPrint('   Timeout: ${timeoutSeconds}s');
     
     _updateProgress(DfuProgress(
       state: DfuState.scanningDfuDevice,
-      message: 'Scanning for DFU device...',
+      message: 'Scanning for DFU device (0/${timeoutSeconds}s)...',
     ));
     
     Completer<BluetoothDevice?> completer = Completer();
+    int elapsedSeconds = 0;
     
-    // Timeout 30 secondi
-    Timer timeoutTimer = Timer(Duration(seconds: 30), () {
+    // Progress timer ogni secondo
+    Timer? progressTimer = Timer.periodic(Duration(seconds: 1), (timer) {
+      elapsedSeconds++;
       if (!completer.isCompleted) {
-        debugPrint('❌ DFU device not found (timeout)');
+        _updateProgress(DfuProgress(
+          state: DfuState.scanningDfuDevice,
+          percent: (elapsedSeconds * 100 / timeoutSeconds).round(),
+          message: 'Scanning for DFU device ($elapsedSeconds/${timeoutSeconds}s)...',
+        ));
+      } else {
+        timer.cancel();
+      }
+    });
+    
+    // Timeout
+    Timer timeoutTimer = Timer(Duration(seconds: timeoutSeconds), () {
+      if (!completer.isCompleted) {
+        progressTimer.cancel();
+        debugPrint('❌ DFU device not found (timeout after ${timeoutSeconds}s)');
+        debugPrint('💡 Suggestions:');
+        debugPrint('   1. Check device is within 1 meter range');
+        debugPrint('   2. Ensure device rebooted (2-3 seconds after command)');
+        debugPrint('   3. Try manually restarting device');
+        debugPrint('   4. Check if device name changed to end with "U"');
         _updateProgress(DfuProgress(
           state: DfuState.error,
-          message: 'DFU device not found (timeout)',
+          message: 'DFU device not found after ${timeoutSeconds}s. Device may not have entered DFU mode.',
         ));
         completer.complete(null);
       }
     });
     
     try {
+      debugPrint('🔍 Starting DFU device scan...');
+      debugPrint('   Looking for MAC: $dfuMac');
+      debugPrint('   Looking for name ending with: U');
+      
+      List<String> candidateDevices = [];
+      
       // Start scan
       StreamSubscription? scanSubscription;
       scanSubscription = FlutterBluePlus.scanResults.listen((results) {
@@ -260,13 +324,27 @@ class DfuService {
           String deviceMac = result.device.remoteId.toString();
           String deviceName = result.device.platformName;
           
-          debugPrint('🔎 Found device: $deviceName ($deviceMac)');
+          // Log tutti i device per debug
+          if (deviceName.isNotEmpty) {
+            String candidateInfo = '$deviceName ($deviceMac)';
+            if (!candidateDevices.contains(candidateInfo)) {
+              candidateDevices.add(candidateInfo);
+              debugPrint('🔎 Candidate: $candidateInfo');
+            }
+          }
           
-          // Verifica MAC address E nome finisce con "U"
-          if (deviceMac.toUpperCase() == dfuMac.toUpperCase() &&
-              deviceName.toUpperCase().endsWith('U')) {
-            
-            debugPrint('✅ DFU device found!');
+          // Verifica 1: MAC address match
+          bool macMatch = deviceMac.toUpperCase() == dfuMac.toUpperCase();
+          
+          // Verifica 2: Nome finisce con "U" (case insensitive)
+          bool nameMatch = deviceName.toUpperCase().endsWith('U');
+          
+          // Verifica 3: Nome contiene "CL831" o "CL837" (fallback)
+          bool nameFallback = deviceName.toUpperCase().contains('CL831') || 
+                             deviceName.toUpperCase().contains('CL837');
+          
+          if (macMatch && nameMatch) {
+            debugPrint('✅ DFU device found (exact match)!');
             debugPrint('   Name: $deviceName');
             debugPrint('   MAC: $deviceMac');
             
@@ -278,13 +356,30 @@ class DfuService {
               completer.complete(result.device);
             }
             break;
+          } else if (macMatch && nameFallback) {
+            debugPrint('⚠️ Potential DFU device found (MAC match, name fallback)');
+            debugPrint('   Name: $deviceName (expected to end with U)');
+            debugPrint('   MAC: $deviceMac ✓');
+            // Non interrompiamo, continuiamo a cercare match perfetto
+          } else if (nameMatch && !macMatch) {
+            debugPrint('⚠️ Device with U suffix but wrong MAC: $deviceName ($deviceMac)');
+            debugPrint('   Expected MAC: $dfuMac');
           }
         }
       });
       
       await FlutterBluePlus.startScan(timeout: Duration(seconds: 30));
       
-      return await completer.future;
+      BluetoothDevice? result = await completer.future;
+      
+      if (result == null) {
+        debugPrint('❌ DFU scan completed. Candidates found:');
+        for (var candidate in candidateDevices) {
+          debugPrint('   - $candidate');
+        }
+      }
+      
+      return result;
       
     } catch (e) {
       debugPrint('❌ Scan error: $e');

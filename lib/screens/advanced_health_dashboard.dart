@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../models/recovery_score.dart';
+import 'firmware_update_screen.dart';
 import '../models/sport_health_data.dart';
 import '../models/historical_data.dart';
 import '../services/sleep_classifier.dart';
@@ -146,6 +147,23 @@ class _AdvancedHealthDashboardState extends State<AdvancedHealthDashboard> with 
       appBar: AppBar(
         title: const Text('Health Analytics'),
         backgroundColor: Colors.black,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.system_update),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FirmwareUpdateScreen(
+                    service: widget.service,
+                    device: widget.device,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Firmware Update',
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           indicatorColor: Colors.greenAccent,

@@ -1,15 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../chileaf_extended_service.dart';
 import 'sensor_3d_settings_screen.dart';
+import 'firmware_update_screen.dart';
 
 /// Schermata di debug/impostazioni avanzate
 /// Replica le funzionalità dell'app di debug cinese
 class AdvancedSettingsScreen extends StatelessWidget {
   final ChileafExtendedService service;
+  final BluetoothDevice? device;
 
   const AdvancedSettingsScreen({
     super.key,
     required this.service,
+    this.device,
   });
 
   @override
@@ -34,6 +38,35 @@ class AdvancedSettingsScreen extends StatelessWidget {
                 builder: (context) => Sensor3DSettingsScreen(service: service),
               ),
             ),
+          ),
+          const SizedBox(height: 24),
+          _buildSectionHeader('Sistema'),
+          _buildSettingsTile(
+            context,
+            icon: Icons.system_update,
+            title: 'Aggiornamento Firmware',
+            subtitle: 'Update firmware dispositivo (DFU)',
+            color: Colors.orange,
+            onTap: () {
+              if (device == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Dispositivo non connesso'),
+                    backgroundColor: Colors.red,
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FirmwareUpdateScreen(
+                    service: service,
+                    device: device!,
+                  ),
+                ),
+              );
+            },
           ),
           const SizedBox(height: 24),
           _buildSectionHeader('Salute'),

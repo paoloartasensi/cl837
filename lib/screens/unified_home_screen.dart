@@ -13,6 +13,7 @@ import 'accelerometer_realtime_screen.dart';
 import 'dashboard_screen.dart';
 import 'advanced_health_dashboard.dart';
 import 'timezone_test_screen.dart';
+import 'firmware_update_screen.dart';
 import '../chileaf_extended_service.dart';
 import '../models/historical_data.dart';
 import '../models/heart_rate_data.dart';
@@ -747,12 +748,28 @@ class _UnifiedHomeScreenState extends State<UnifiedHomeScreen> {
               ),
             ),
           ),
-        if (_connectedDevice != null)
+        if (_connectedDevice != null) ...[
+          IconButton(
+            icon: const Icon(Icons.system_update),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FirmwareUpdateScreen(
+                    service: _service,
+                    device: _connectedDevice!,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Firmware Update',
+          ),
           IconButton(
             icon: const Icon(Icons.bluetooth_disabled),
             onPressed: _disconnect,
             tooltip: 'Disconnect',
           ),
+        ],
         if (_connectedDevice == null)
           IconButton(
             icon: const Icon(Icons.bluetooth_searching),

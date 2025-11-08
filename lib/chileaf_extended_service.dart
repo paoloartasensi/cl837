@@ -3612,13 +3612,13 @@ class ChileafExtendedService {
   Future<void> setRopeMode(RopeMode mode) async {
     debugPrint('🪢⚙️ Setting rope mode to: ${mode.name}');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var command = RopeSkippingProcessor.createSetModeCommand(mode);
         var frame = ChileafProtocol.buildProtocolFrame(command);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Rope mode command sent successfully');
       } else {
-        debugPrint('❌ TX characteristic not available for rope mode command');
+        debugPrint('❌ RX characteristic not available for rope mode command');
       }
     } catch (e) {
       debugPrint('❌ Failed to set rope mode: $e');
@@ -3629,13 +3629,13 @@ class ChileafExtendedService {
   Future<void> clearRopeData() async {
     debugPrint('🪢🧹 Clearing rope skipping data...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var command = RopeSkippingProcessor.createClearDataCommand();
         var frame = ChileafProtocol.buildProtocolFrame(command);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Rope clear data command sent successfully');
       } else {
-        debugPrint('❌ TX characteristic not available for rope clear command');
+        debugPrint('❌ RX characteristic not available for rope clear command');
       }
     } catch (e) {
       debugPrint('❌ Failed to clear rope data: $e');
@@ -3699,12 +3699,12 @@ class ChileafExtendedService {
   Future<void> requestDeviceInfo() async {
     debugPrint('📱 Requesting device info...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var frame = ChileafProtocol.buildProtocolFrame([0x01]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Device info request sent');
       } else {
-        debugPrint('❌ TX characteristic not available for device info request');
+        debugPrint('❌ RX characteristic not available for device info request');
       }
     } catch (e) {
       debugPrint('❌ Failed to request device info: $e');
@@ -3715,13 +3715,13 @@ class ChileafExtendedService {
   Future<void> requestFirmwareVersion() async {
     debugPrint('💾 Requesting firmware version...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var frame = ChileafProtocol.buildProtocolFrame([0x03]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Firmware version request sent');
       } else {
         debugPrint(
-            '❌ TX characteristic not available for firmware version request');
+            '❌ RX characteristic not available for firmware version request');
       }
     } catch (e) {
       debugPrint('❌ Failed to request firmware version: $e');
@@ -3732,13 +3732,13 @@ class ChileafExtendedService {
   Future<void> requestHardwareVersion() async {
     debugPrint('🔧 Requesting hardware version...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var frame = ChileafProtocol.buildProtocolFrame([0x04]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Hardware version request sent');
       } else {
         debugPrint(
-            '❌ TX characteristic not available for hardware version request');
+            '❌ RX characteristic not available for hardware version request');
       }
     } catch (e) {
       debugPrint('❌ Failed to request hardware version: $e');
@@ -3749,12 +3749,12 @@ class ChileafExtendedService {
   Future<void> requestDeviceName() async {
     debugPrint('📱 Requesting device name...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var frame = ChileafProtocol.buildProtocolFrame([0x05]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ Device name request sent');
       } else {
-        debugPrint('❌ TX characteristic not available for device name request');
+        debugPrint('❌ RX characteristic not available for device name request');
       }
     } catch (e) {
       debugPrint('❌ Failed to request device name: $e');
@@ -3765,12 +3765,12 @@ class ChileafExtendedService {
   Future<void> requestMacAddress() async {
     debugPrint('🔗 Requesting MAC address...');
     try {
-      if (_txCharacteristic != null) {
+      if (_rxCharacteristic != null) {
         var frame = ChileafProtocol.buildProtocolFrame([0x06]);
-        await _txCharacteristic!.write(frame, withoutResponse: false);
+        await _rxCharacteristic!.write(frame, withoutResponse: false);
         debugPrint('✅ MAC address request sent');
       } else {
-        debugPrint('❌ TX characteristic not available for MAC address request');
+        debugPrint('❌ RX characteristic not available for MAC address request');
       }
     } catch (e) {
       debugPrint('❌ Failed to request MAC address: $e');
