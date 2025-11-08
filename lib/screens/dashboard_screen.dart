@@ -3,6 +3,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../chileaf_extended_service.dart';
 import '../models/realtime_data.dart';
 import 'dart:async';
+import 'firmware_update_screen.dart';
 
 /// Dashboard principale che mostra i dati real-time ricevuti automaticamente
 /// Simile alla MainViewController dell'SDK iOS
@@ -164,6 +165,21 @@ class _DashboardScreenState extends State<DashboardScreen> {
         title: const Text('Dashboard'),
         backgroundColor: Colors.teal,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.system_update),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => FirmwareUpdateScreen(
+                    service: widget.service,
+                    device: widget.device,
+                  ),
+                ),
+              );
+            },
+            tooltip: 'Firmware Update',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadInitialData,

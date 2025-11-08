@@ -19,6 +19,7 @@ dependencies:
   logging: ^1.2.0
   fl_chart: ^1.1.1
   flutter_local_notifications: ^19.5.0
+  nordic_dfu: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -29,3 +30,4 @@ flutter:
   uses-material-design: true
   assets:
     - lib/assets/
+    - lib/assets/fw/

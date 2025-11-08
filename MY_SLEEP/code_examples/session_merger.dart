@@ -11,6 +11,7 @@
 ///   - 7 sessions × 60min each = classified as 7 "Naps" ❌
 /// With merging:
 ///   - 1 session × 420min = classified as "Night Sleep" ✅
+library;
 
 /// Merges consecutive sleep sessions based on gap and time period
 /// 

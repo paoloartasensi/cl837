@@ -650,7 +650,31 @@ class CommandBatch {
 
 ---
 
-**Created:** November 2025  
-**Compatibility:** CL837 firmware v3.0+  
-**SDK Reference:** Android/iOS official SDKs</content>
+## 📝 Quick Reference
+
+### Comandi Più Usati
+
+| Comando | Hex | Descrizione | Priorità |
+|---------|-----|-------------|----------|
+| UTC Sync | 0x08 | Sincronizza ora | 🔴 CRITICAL |
+| Sleep History | 0x05 | Download sleep data | 🔴 HIGH |
+| HR History | 0x21/0x22 | Download HR data | 🟡 MEDIUM |
+| Sport Health | 0x13 | Metriche salute | 🟡 MEDIUM |
+| SpO2 | 0x37 | Blood oxygen | 🟢 LOW |
+| Device Info | 0x01 | Info dispositivo | 🟢 LOW |
+
+### Response Codes
+
+| Code | Significato | Azione |
+|------|-------------|--------|
+| 0xFF | Header valido | Continue |
+| Checksum OK | Packet valido | Process |
+| Checksum FAIL | Packet corrotto | Retry |
+| END_TAG | Fine trasmissione | Finalize |
+
+---
+
+**Creato:** Novembre 2025  
+**Compatibilità:** CL837 firmware v3.0+  
+**Riferimento:** Android/iOS official SDKs</content>
 <parameter name="filePath">c:\Users\Admin\Documents\visualstudiocode\cl837\docs\DEVICE_PROTOCOLS.md

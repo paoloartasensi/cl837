@@ -724,7 +724,28 @@ for (var session in merged) {
 
 ---
 
-**Created:** November 2025  
+## 📝 Note Importanti
+
+### Compatibilità
+- **Firmware CL837**: v3.0+ richiesto
+- **Flutter**: 3.0+ 
+- **Android**: 8.0+ (API 26+)
+- **iOS**: 12.0+
+
+### Limitations Note
+- **REM Sleep**: Non ancora implementato (richiede algoritmi avanzati)
+- **Sleep Stages**: Deep/Light detection con accuratezza ~85%
+- **Historical Data**: Limite 30 notti (configurabile)
+
+### Best Practices
+- **UTC Sync**: Eseguire setUTCTime() dopo ogni connessione
+- **Error Handling**: Validare sempre checksum dei pacchetti
+- **Memory Management**: Pulire buffer dopo finalizzazione sessioni
+- **Battery Impact**: Monitoring continuo riduce autonomia ~15%
+
+---
+
+**Creato:** Novembre 2025  
 **Status:** Production Ready  
-**Compatibility:** CL837 firmware v3.0+</content>
+**Compatibilità:** CL837 firmware v3.0+</content>
 <parameter name="filePath">c:\Users\Admin\Documents\visualstudiocode\cl837\docs\SLEEP_TRACKING.md

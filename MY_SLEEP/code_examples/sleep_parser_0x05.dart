@@ -11,6 +11,7 @@
 /// 2. Multi-session parsing in single packet
 /// 3. Big-endian timestamp reading
 /// 4. SDK-compatible format
+library;
 
 /// Parses sleep data in 0x05 format (legacy SDK compatible)
 /// 

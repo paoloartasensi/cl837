@@ -5,6 +5,7 @@
 /// 
 /// Author: Extracted from lib/services/sleep_phases_calculator.dart
 /// Date: November 5, 2025
+library;
 
 /// Sleep phase types
 enum SleepPhase {

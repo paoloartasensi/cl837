@@ -28,12 +28,11 @@ L'app sincronizza automaticamente l'ora con il dispositivo. Se noti discrepanze 
 
 Imposta i tuoi dati personali per calcoli più accurati:
 
-```dart
-// Dati richiesti per algoritmi ottimali:
-- Età (per VO2 Max e HRV baseline)
-- Sesso (per calcoli metabolici)
-- Altezza e peso (per stime VO2 Max)
-```
+**Dati richiesti per algoritmi ottimali:**
+- **Età**: Per calcoli VO2 Max e baseline HRV
+- **Sesso**: Per algoritmi metabolici specifici
+- **Altezza e peso**: Per stime accurate del VO2 Max
+- **Livello attività**: Per raccomandazioni personalizzate
 
 ---
 
@@ -399,7 +398,26 @@ Per segnalare problemi, includi:
 
 ---
 
+## 🔗 Link Utili
+
+### Documentazione Tecnica
+- **[ARCHITECTURE.md](ARCHITECTURE.md)**: Architettura del progetto
+- **[DEVICE_PROTOCOLS.md](DEVICE_PROTOCOLS.md)**: Protocolli BLE
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**: Risoluzione problemi tecnici
+
+### Supporto Online
+- **Email**: support@cl837.com
+- **GitHub**: [CL837 Repository](https://github.com/paoloartasensi/cl837)
+- **Documentation**: Consulta i file .md nella cartella docs/
+
+### Video Tutorial
+- **Setup Iniziale**: Coming soon
+- **Sleep Tracking**: Coming soon
+- **Advanced Features**: Coming soon
+
+---
+
 **Versione Guida:** 1.0  
 **Data:** Novembre 2025  
-**Compatibilità:** CL837 app v1.0+</content>
+**Compatibilità:** CL837 app v1.0+ | Firmware v3.0+</content>
 <parameter name="filePath">c:\Users\Admin\Documents\visualstudiocode\cl837\docs\USER_GUIDE.md

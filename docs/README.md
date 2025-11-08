@@ -41,6 +41,33 @@ Questa cartella contiene la documentazione completa per il progetto CL837 - un'a
 - Spiegazione delle funzionalità principali
 - Troubleshooting comune per utenti finali
 
+### [🔄 DFU_UPDATE_PIPELINE.md](DFU_UPDATE_PIPELINE.md)
+- **Pipeline completa aggiornamento firmware** (Device Firmware Update)
+- Comando BLE 0x27 e protocollo DFU
+- Implementazioni Android/iOS estratte da SDK ufficiali
+- Codice Flutter/Dart pronto all'uso con Nordic DFU Library
+- Step-by-step: lettura versione → DFU mode → scan → upload → validazione
+
+### [🚀 DFU_FLUTTER_IMPLEMENTATION.md](DFU_FLUTTER_IMPLEMENTATION.md)
+- **Implementazione completa DFU in Flutter**
+- Servizio DfuService (560+ righe)
+- Widget DfuUpdateWidget con UI completa
+- Schermata FirmwareUpdateScreen
+- Guida utilizzo e troubleshooting
+
+## 📂 File SDK di Riferimento
+
+### CL831SDK/
+- **SDK Android/iOS originali** del produttore
+- **File di riferimento** per protocolli BLE
+- **WearManager.java** - Implementazione Android ufficiale
+- **HeartBLEDevice.m** - Implementazione iOS ufficiale
+
+### CL831SE_Android_SDK_V3.0.4/
+- **SDK Android completo** versione 3.0.4
+- **Documentazione tecnica** e esempi
+- **File di riferimento** per compatibilità
+
 ## 📂 Struttura del Progetto
 
 ```
@@ -73,10 +100,11 @@ tools/               # Script di sviluppo
 
 ## 📊 Stato del Progetto
 
-- ✅ **87% Feature Parity** con dispositivi premium
-- ✅ **13/15 componenti** implementati
-- ✅ **Production Ready** per le funzionalità core
+- ✅ **87% Feature Parity** con dispositivi premium (Whoop, Oura, Apple Watch)
+- ✅ **13/15 componenti** core implementati
+- ✅ **Production Ready** per funzionalità principali
 - 🔄 **Integrazione finale** in corso (Sleep Insights + UI tabs)
+- 📱 **Compatibilità**: Flutter 3.0+, iOS 12+, Android 8.0+
 
 ## 📞 Supporto
 

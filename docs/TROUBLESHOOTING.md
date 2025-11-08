@@ -503,7 +503,26 @@ bool validateSleepData(List<int> data) {
 
 ---
 
-**Last Updated:** November 2025  
-**Total Fixes:** 7 critical bugs resolved  
-**Status:** All known issues resolved</content>
+## 🎓 Learning Resources
+
+### Per Sviluppatori
+- **ARCHITECTURE.md**: Comprendi l'architettura del progetto
+- **DEVICE_PROTOCOLS.md**: Reference completo comandi BLE
+- **SLEEP_TRACKING.md**: Deep dive sleep algorithms
+
+### Per Debugging
+- **Debug Console**: Abilita verbose logging in app settings
+- **Packet Inspector**: Analizza raw BLE packets
+- **Timezone Tester**: Valida conversioni timestamp
+
+### Community
+- **GitHub Issues**: Segnala nuovi bug o feature request
+- **Documentation**: Contribuisci miglioramenti alla doc
+- **Code Review**: Partecipa alle PR reviews
+
+---
+
+**Ultimo Aggiornamento:** Novembre 2025  
+**Bug Risolti:** 7 critical issues  
+**Status:** Tutti i problemi noti risolti ✅</content>
 <parameter name="filePath">c:\Users\Admin\Documents\visualstudiocode\cl837\docs\TROUBLESHOOTING.md

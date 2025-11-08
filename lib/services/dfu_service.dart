@@ -1,0 +1,562 @@
+/// 🔄 DFU (Device Firmware Update) Service
+/// 
+/// Gestisce l'aggiornamento firmware del dispositivo CL837/CL831
+/// seguendo il protocollo ufficiale SDK Android/iOS
+/// 
+/// Pipeline:
+/// 1. Legge versione firmware attuale (comando 0x03)
+/// 2. Entra in modalità DFU (comando 0x27)
+/// 3. Calcola nuovo MAC address (ultimo byte + 1)
+/// 4. Scansiona device DFU (nome con suffisso "U")
+/// 5. Avvia Nordic DFU upload
+/// 6. Monitora progresso e stato
+/// 
+/// Riferimenti: docs/DFU_UPDATE_PIPELINE.md
+library;
+
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_blue_plus/flutter_blue_plus.dart';
+import 'package:nordic_dfu/nordic_dfu.dart';
+import 'package:path_provider/path_provider.dart';
+import '../chileaf_extended_service.dart';
+
+/// Stati DFU
+enum DfuState {
+  idle,
+  preparingFile,
+  enteringDfuMode,
+  scanningDfuDevice,
+  connecting,
+  uploading,
+  validating,
+  completed,
+  error,
+  aborted,
+}
+
+/// Risultato DFU
+class DfuResult {
+  final bool success;
+  final String? errorMessage;
+  final String? newVersion;
+  
+  DfuResult({
+    required this.success,
+    this.errorMessage,
+    this.newVersion,
+  });
+}
+
+/// Progress data
+class DfuProgress {
+  final DfuState state;
+  final int percent;
+  final double speed;
+  final double avgSpeed;
+  final int currentPart;
+  final int totalParts;
+  final String? message;
+  
+  DfuProgress({
+    required this.state,
+    this.percent = 0,
+    this.speed = 0.0,
+    this.avgSpeed = 0.0,
+    this.currentPart = 1,
+    this.totalParts = 1,
+    this.message,
+  });
+  
+  DfuProgress copyWith({
+    DfuState? state,
+    int? percent,
+    double? speed,
+    double? avgSpeed,
+    int? currentPart,
+    int? totalParts,
+    String? message,
+  }) {
+    return DfuProgress(
+      state: state ?? this.state,
+      percent: percent ?? this.percent,
+      speed: speed ?? this.speed,
+      avgSpeed: avgSpeed ?? this.avgSpeed,
+      currentPart: currentPart ?? this.currentPart,
+      totalParts: totalParts ?? this.totalParts,
+      message: message ?? this.message,
+    );
+  }
+}
+
+class DfuService {
+  final ChileafExtendedService _chileafService;
+  final BluetoothDevice _device;
+  
+  final StreamController<DfuProgress> _progressController = StreamController<DfuProgress>.broadcast();
+  Stream<DfuProgress> get progressStream => _progressController.stream;
+  
+  DfuProgress _currentProgress = DfuProgress(state: DfuState.idle);
+  
+  String? _dfuMacAddress;
+  
+  DfuService({
+    required ChileafExtendedService chileafService,
+    required BluetoothDevice device,
+  })  : _chileafService = chileafService,
+        _device = device;
+  
+  /// Ottiene versione firmware attuale
+  Future<String?> getCurrentFirmwareVersion() async {
+    debugPrint('💾 Reading current firmware version...');
+    
+    try {
+      // Richiedi versione firmware (comando 0x03)
+      await _chileafService.requestFirmwareVersion();
+      
+      // Attendi risposta (max 5 secondi)
+      String? version = await _chileafService.firmwareVersionStream
+          .timeout(Duration(seconds: 5))
+          .first;
+      
+      debugPrint('💾 Current firmware version: $version');
+      
+      return version;
+      
+    } catch (e) {
+      debugPrint('❌ Failed to get firmware version: $e');
+      return null;
+    }
+  }
+  
+  /// Entra in modalità DFU
+  /// Invia comando 0x27 e calcola nuovo MAC address
+  Future<String?> enterDfuMode() async {
+    debugPrint('🔧 Entering DFU mode...');
+    
+    _updateProgress(DfuProgress(
+      state: DfuState.enteringDfuMode,
+      message: 'Entering DFU mode...',
+    ));
+    
+    try {
+      // Calcola nuovo MAC address (ultimo byte + 1)
+      String currentMac = _device.remoteId.toString();
+      _dfuMacAddress = _calculateDfuAddress(currentMac);
+      
+      debugPrint('📍 Current MAC: $currentMac');
+      debugPrint('📍 DFU MAC: $_dfuMacAddress');
+      
+      // Invia comando 0x27 per entrare in DFU mode
+      List<int> command = [0xFF, 0x04, 0x27, 0x00];
+      int checksum = _calculateChecksum(command);
+      command.add(checksum);
+      
+      debugPrint('📤 Sending DFU command: ${command.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(' ')}');
+      
+      // Ottieni TX characteristic
+      var txChar = await _getTxCharacteristic();
+      if (txChar == null) {
+        throw Exception('TX characteristic not found');
+      }
+      
+      await txChar.write(command, withoutResponse: false);
+      
+      debugPrint('✅ DFU mode command sent successfully');
+      debugPrint('⏳ Device will reboot in DFU mode (2-3 seconds)...');
+      
+      return _dfuMacAddress;
+      
+    } catch (e) {
+      debugPrint('❌ Failed to enter DFU mode: $e');
+      _updateProgress(DfuProgress(
+        state: DfuState.error,
+        message: 'Failed to enter DFU mode: $e',
+      ));
+      return null;
+    }
+  }
+  
+  /// Calcola nuovo MAC address per DFU mode
+  /// Incrementa l'ultimo byte dell'indirizzo originale
+  String _calculateDfuAddress(String originalMac) {
+    List<String> parts = originalMac.split(':');
+    String lastByte = parts.last;
+    
+    // Incrementa ultimo byte (modulo 256 per overflow)
+    int lastByteInt = int.parse(lastByte, radix: 16);
+    int newLastByte = (lastByteInt + 1) & 0xFF;
+    
+    parts[parts.length - 1] = newLastByte.toRadixString(16).padLeft(2, '0').toUpperCase();
+    
+    return parts.join(':');
+  }
+  
+  /// Calcola checksum (somma bytes & 0xFF)
+  int _calculateChecksum(List<int> data) {
+    int sum = 0;
+    for (int byte in data) {
+      sum += byte;
+    }
+    return sum & 0xFF;
+  }
+  
+  /// Ottiene TX characteristic
+  Future<BluetoothCharacteristic?> _getTxCharacteristic() async {
+    try {
+      List<BluetoothService> services = await _device.discoverServices();
+      
+      for (var service in services) {
+        for (var characteristic in service.characteristics) {
+          // Cerca characteristic con proprietà WRITE
+          if (characteristic.properties.write || characteristic.properties.writeWithoutResponse) {
+            debugPrint('✅ Found TX characteristic: ${characteristic.uuid}');
+            return characteristic;
+          }
+        }
+      }
+      
+      debugPrint('❌ TX characteristic not found');
+      return null;
+      
+    } catch (e) {
+      debugPrint('❌ Error finding TX characteristic: $e');
+      return null;
+    }
+  }
+  
+  /// Scansiona device in DFU mode
+  /// Device avrà nome con suffisso "U" (es. "CL831" → "CL831U")
+  Future<BluetoothDevice?> scanForDfuDevice(String dfuMac) async {
+    debugPrint('🔍 Scanning for DFU device...');
+    debugPrint('   Target MAC: $dfuMac');
+    
+    _updateProgress(DfuProgress(
+      state: DfuState.scanningDfuDevice,
+      message: 'Scanning for DFU device...',
+    ));
+    
+    Completer<BluetoothDevice?> completer = Completer();
+    
+    // Timeout 30 secondi
+    Timer timeoutTimer = Timer(Duration(seconds: 30), () {
+      if (!completer.isCompleted) {
+        debugPrint('❌ DFU device not found (timeout)');
+        _updateProgress(DfuProgress(
+          state: DfuState.error,
+          message: 'DFU device not found (timeout)',
+        ));
+        completer.complete(null);
+      }
+    });
+    
+    try {
+      // Start scan
+      StreamSubscription? scanSubscription;
+      scanSubscription = FlutterBluePlus.scanResults.listen((results) {
+        for (ScanResult result in results) {
+          String deviceMac = result.device.remoteId.toString();
+          String deviceName = result.device.platformName;
+          
+          debugPrint('🔎 Found device: $deviceName ($deviceMac)');
+          
+          // Verifica MAC address E nome finisce con "U"
+          if (deviceMac.toUpperCase() == dfuMac.toUpperCase() &&
+              deviceName.toUpperCase().endsWith('U')) {
+            
+            debugPrint('✅ DFU device found!');
+            debugPrint('   Name: $deviceName');
+            debugPrint('   MAC: $deviceMac');
+            
+            timeoutTimer.cancel();
+            scanSubscription?.cancel();
+            FlutterBluePlus.stopScan();
+            
+            if (!completer.isCompleted) {
+              completer.complete(result.device);
+            }
+            break;
+          }
+        }
+      });
+      
+      await FlutterBluePlus.startScan(timeout: Duration(seconds: 30));
+      
+      return await completer.future;
+      
+    } catch (e) {
+      debugPrint('❌ Scan error: $e');
+      timeoutTimer.cancel();
+      FlutterBluePlus.stopScan();
+      
+      _updateProgress(DfuProgress(
+        state: DfuState.error,
+        message: 'Scan error: $e',
+      ));
+      
+      if (!completer.isCompleted) {
+        completer.complete(null);
+      }
+      
+      return null;
+    }
+  }
+  
+  /// Copia file firmware da assets a directory temporanea
+  Future<String?> _prepareFirmwareFile(String assetPath) async {
+    debugPrint('📦 Preparing firmware file from assets...');
+    
+    _updateProgress(DfuProgress(
+      state: DfuState.preparingFile,
+      message: 'Preparing firmware file...',
+    ));
+    
+    try {
+      // Carica file da assets
+      ByteData data = await rootBundle.load(assetPath);
+      
+      // Ottieni directory temporanea
+      Directory tempDir = await getTemporaryDirectory();
+      String fileName = assetPath.split('/').last;
+      String tempPath = '${tempDir.path}/$fileName';
+      
+      // Scrivi file
+      File tempFile = File(tempPath);
+      await tempFile.writeAsBytes(data.buffer.asUint8List());
+      
+      debugPrint('✅ Firmware file ready: $tempPath');
+      debugPrint('   Size: ${await tempFile.length()} bytes');
+      
+      return tempPath;
+      
+    } catch (e) {
+      debugPrint('❌ Failed to prepare firmware file: $e');
+      _updateProgress(DfuProgress(
+        state: DfuState.error,
+        message: 'Failed to prepare firmware file: $e',
+      ));
+      return null;
+    }
+  }
+  
+  /// Avvia DFU update con Nordic library
+  Future<bool> _startDfuUpload(String deviceId, String zipFilePath) async {
+    debugPrint('🚀 Starting DFU upload...');
+    debugPrint('   Device: $deviceId');
+    debugPrint('   File: $zipFilePath');
+    
+    _updateProgress(DfuProgress(
+      state: DfuState.uploading,
+      message: 'Starting DFU upload...',
+    ));
+    
+    try {
+      await NordicDfu().startDfu(
+        deviceId,
+        zipFilePath,
+        numberOfPackets: 12,
+        enableUnsafeExperimentalButtonlessServiceInSecureDfu: true,
+        
+        onProgressChanged: (deviceAddress, percent, speed, avgSpeed, currentPart, partsTotal) {
+          debugPrint('📊 DFU Progress: $percent%');
+          
+          _updateProgress(DfuProgress(
+            state: DfuState.uploading,
+            percent: percent,
+            speed: speed,
+            avgSpeed: avgSpeed,
+            currentPart: currentPart,
+            totalParts: partsTotal,
+            message: partsTotal > 1 
+                ? 'Uploading part $currentPart/$partsTotal ($percent%)'
+                : 'Uploading firmware: $percent%',
+          ));
+        },
+        
+        onDeviceConnecting: (deviceAddress) {
+          debugPrint('🔗 Connecting to DFU device...');
+          _updateProgress(DfuProgress(
+            state: DfuState.connecting,
+            message: 'Connecting to DFU device...',
+          ));
+        },
+        
+        onDeviceConnected: (deviceAddress) {
+          debugPrint('✅ Connected to DFU device');
+        },
+        
+        onDfuProcessStarting: (deviceAddress) {
+          debugPrint('🔧 DFU process starting...');
+          _updateProgress(DfuProgress(
+            state: DfuState.uploading,
+            message: 'DFU process starting...',
+          ));
+        },
+        
+        onEnablingDfuMode: (deviceAddress) {
+          debugPrint('⚙️ Enabling DFU bootloader...');
+          _updateProgress(DfuProgress(
+            state: DfuState.uploading,
+            message: 'Enabling DFU bootloader...',
+          ));
+        },
+        
+        onFirmwareValidating: (deviceAddress) {
+          debugPrint('✔️ Validating firmware...');
+          _updateProgress(DfuProgress(
+            state: DfuState.validating,
+            percent: 100,
+            message: 'Validating firmware...',
+          ));
+        },
+        
+        onDeviceDisconnecting: (deviceAddress) {
+          debugPrint('🔌 Disconnecting...');
+        },
+        
+        onDfuCompleted: (deviceAddress) {
+          debugPrint('🎉 DFU completed successfully!');
+          _updateProgress(DfuProgress(
+            state: DfuState.completed,
+            percent: 100,
+            message: 'Firmware update completed!',
+          ));
+        },
+        
+        onDfuAborted: (deviceAddress) {
+          debugPrint('❌ DFU aborted');
+          _updateProgress(DfuProgress(
+            state: DfuState.aborted,
+            message: 'Firmware update aborted',
+          ));
+        },
+        
+        onError: (deviceAddress, error, errorType, message) {
+          debugPrint('❌ DFU error: $message');
+          debugPrint('   Error code: $error');
+          debugPrint('   Error type: $errorType');
+          _updateProgress(DfuProgress(
+            state: DfuState.error,
+            message: message,
+          ));
+        },
+      );
+      
+      return _currentProgress.state == DfuState.completed;
+      
+    } catch (e) {
+      debugPrint('❌ Exception during DFU: $e');
+      _updateProgress(DfuProgress(
+        state: DfuState.error,
+        message: 'Update failed: $e',
+      ));
+      return false;
+    }
+  }
+  
+  /// Pipeline completa: prepara file → entra DFU → scansiona → aggiorna
+  Future<DfuResult> performDfuUpdate({
+    required String assetPath,
+    String? targetVersion,
+  }) async {
+    debugPrint('🔄 ========================================');
+    debugPrint('🔄 STARTING DFU UPDATE PIPELINE');
+    debugPrint('🔄 ========================================');
+    
+    try {
+      // STEP 1: Leggi versione attuale
+      debugPrint('\n📋 STEP 1: Reading current firmware version...');
+      String? currentVersion = await getCurrentFirmwareVersion();
+      debugPrint('   Current: $currentVersion');
+      debugPrint('   Target: $targetVersion');
+      
+      // STEP 2: Prepara file firmware
+      debugPrint('\n📦 STEP 2: Preparing firmware file...');
+      String? firmwarePath = await _prepareFirmwareFile(assetPath);
+      
+      if (firmwarePath == null) {
+        return DfuResult(
+          success: false,
+          errorMessage: 'Failed to prepare firmware file',
+        );
+      }
+      
+      // STEP 3: Entra in modalità DFU
+      debugPrint('\n🔧 STEP 3: Entering DFU mode...');
+      String? dfuMac = await enterDfuMode();
+      
+      if (dfuMac == null) {
+        return DfuResult(
+          success: false,
+          errorMessage: 'Failed to enter DFU mode',
+        );
+      }
+      
+      // STEP 4: Attendi riavvio device (2-3 secondi)
+      debugPrint('\n⏳ STEP 4: Waiting for device reboot...');
+      await Future.delayed(Duration(seconds: 3));
+      
+      // STEP 5: Scansiona device DFU
+      debugPrint('\n🔍 STEP 5: Scanning for DFU device...');
+      BluetoothDevice? dfuDevice = await scanForDfuDevice(dfuMac);
+      
+      if (dfuDevice == null) {
+        return DfuResult(
+          success: false,
+          errorMessage: 'DFU device not found after 30 seconds',
+        );
+      }
+      
+      // STEP 6: Avvia DFU upload
+      debugPrint('\n🚀 STEP 6: Starting DFU upload...');
+      bool success = await _startDfuUpload(
+        dfuDevice.remoteId.toString(),
+        firmwarePath,
+      );
+      
+      if (!success) {
+        return DfuResult(
+          success: false,
+          errorMessage: 'DFU upload failed',
+        );
+      }
+      
+      debugPrint('\n🎉 ========================================');
+      debugPrint('🎉 DFU UPDATE COMPLETED SUCCESSFULLY!');
+      debugPrint('🎉 ========================================');
+      
+      return DfuResult(
+        success: true,
+        newVersion: targetVersion,
+      );
+      
+    } catch (e) {
+      debugPrint('\n❌ ========================================');
+      debugPrint('❌ DFU UPDATE FAILED: $e');
+      debugPrint('❌ ========================================');
+      
+      _updateProgress(DfuProgress(
+        state: DfuState.error,
+        message: 'Update failed: $e',
+      ));
+      
+      return DfuResult(
+        success: false,
+        errorMessage: e.toString(),
+      );
+    }
+  }
+  
+  /// Aggiorna stato progresso
+  void _updateProgress(DfuProgress progress) {
+    _currentProgress = progress;
+    _progressController.add(progress);
+  }
+  
+  /// Cleanup
+  void dispose() {
+    _progressController.close();
+  }
+}

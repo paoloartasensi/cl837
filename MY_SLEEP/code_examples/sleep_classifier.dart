@@ -5,6 +5,7 @@
 /// 
 /// Author: Extracted from lib/services/sleep_classifier.dart
 /// Date: November 5, 2025
+library;
 
 /// Sleep classification types
 enum SleepType {
