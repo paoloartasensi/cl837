@@ -146,7 +146,11 @@ class _GrokHrScreenState extends State<GrokHrScreen> {
       FlutterBluePlus.scanResults.listen((results) {
         setState(() {
           foundDevices = results
-              .where((r) => r.device.platformName.isNotEmpty)
+              .where((r) {
+                final name = r.device.platformName.toLowerCase();
+                // 🔍 FILTRO: Solo CL837/CL831 devices
+                return name.startsWith('cl837') || name.startsWith('cl831');
+              })
               .map((r) => r.device)
               .toSet()
               .toList();
